@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect thermal metrics and write to JSON file
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/usr/local/bin/thermal-metrics-exporter > /var/lib/thermal-metrics/thermal.json.tmp && mv /var/lib/thermal-metrics/thermal.json.tmp /var/lib/thermal-metrics/thermal.json'
+
+User=root
+Group=root
+
+ExecStartPre=/bin/mkdir -p /var/lib/thermal-metrics
+ExecStartPre=/bin/chown root:metrics /var/lib/thermal-metrics
+ExecStartPre=/bin/chmod 0750 /var/lib/thermal-metrics
+
+ExecStartPost=/bin/chown root:metrics /var/lib/thermal-metrics/thermal.json
+ExecStartPost=/bin/chmod 0640 /var/lib/thermal-metrics/thermal.json

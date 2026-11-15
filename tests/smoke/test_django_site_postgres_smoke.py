@@ -1,4 +1,4 @@
-"""Synthetic PostgreSQL Django conversion/resume on an isolated Linux VM."""
+"""Synthetic PostgreSQL Django site: drift, idempotence and resume on an isolated Linux VM."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
 from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.services.django_site import DjangoSiteConfig, deploy_django_site
@@ -53,7 +52,7 @@ class Command(BaseCommand):
     subprocess.run(["uv", "lock", "--project", str(path)], check=True, capture_output=True)
 
 
-def test_postgres_conversion_idempotence_and_resume(smoke_host: SmokeHost, tmp_path: Path) -> None:
+def test_postgres_idempotence_and_resume(smoke_host: SmokeHost, tmp_path: Path) -> None:
     smoke_host.run(
         "systemctl stop school-smoke 2>/dev/null || true; "
         "runuser -u postgres -- dropdb --if-exists school-smoke; "
@@ -148,118 +147,18 @@ def test_postgres_conversion_idempotence_and_resume(smoke_host: SmokeHost, tmp_p
         "echo preserved > /home/school-smoke/site/media/sentinel; echo cached > /home/school-smoke/site/cache/sentinel; "  # noqa: E501
         "chown school-smoke:school-smoke /home/school-smoke/site/media/sentinel /home/school-smoke/site/cache/sentinel"
     )
-    # Put the actual frozen origin templates in place through Ansible, then
-    # convert that file set once. Provisioning/data already exist above.
-    origin = Path(__file__).parents[1] / "parity/ansible"
-    origin_vars = {
-        "wagtail_service_name": "school-smoke",
-        "wagtail_user": "school-smoke",
-        "wagtail_group": "school-smoke",
-        "wagtail_site_path": str(cfg.site_path),
-        "wagtail_env_path": str(cfg.env_path),
-        "wagtail_cache_dir": str(cfg.cache_dir),
-        "wagtail_venv_bin": str(cfg.venv_bin),
-        "wagtail_django_settings_module": cfg.app.settings_module,
-        "wagtail_gunicorn_workers": cfg.app.workers,
-        "wagtail_gunicorn_timeout": cfg.app.timeout,
-        "wagtail_gunicorn_extra_args": "",
-        "wagtail_app_host": "127.0.0.1",
-        "wagtail_app_port": cfg.app.port,
-        "wagtail_wsgi_module": "school.wsgi",
-        "wagtail_django_secret_key": "synthetic-django-key",
-        "wagtail_admin_url": "hidden_admin/",
-        "wagtail_django_allowed_hosts": cfg.allowed_hosts,
-        "wagtail_django_cache_location": str(cfg.cache_dir),
-        "wagtail_postgres_user": "school-smoke",
-        "wagtail_postgres_password": "synthetic-db-password",
-        "wagtail_postgres_host": "localhost",
-        "wagtail_postgres_port": 5432,
-        "wagtail_postgres_database": "school-smoke",
-        "wagtail_require_object_storage": False,
-        "wagtail_require_sentry": False,
-        "wagtail_django_mailgun_api_key": "synthetic-mail",
-        "wagtail_mailgun_sender_domain": "mail.example.invalid",
-        "wagtail_mailgun_api_url": "",
-        "wagtail_django_server_email": "server@example.invalid",
-        "wagtail_env_extra": {},
-        "wagtail_traefik_host_rule": cfg.route.host_rule,
-        "wagtail_traefik_entrypoints": ["web-secure"],
-        "wagtail_traefik_middlewares": ["school-smoke-noindex@file"],
-        "wagtail_traefik_cert_resolver": "letsencrypt",
-    }
-    play = [
-        {
-            "hosts": "all",
-            "gather_facts": False,
-            "vars": origin_vars,
-            "tasks": [
-                {
-                    "name": "Install origin file set",
-                    "ansible.builtin.template": {
-                        "src": "{{ item.src }}",
-                        "dest": "{{ item.dest }}",
-                        "mode": "0600",
-                        "owner": "school-smoke",
-                        "group": "school-smoke",
-                    },
-                    "loop": [
-                        {"src": str(origin / "wagtail_deploy__wagtail.env.j2"), "dest": str(cfg.env_path)},
-                        {
-                            "src": str(origin / "wagtail_deploy__wagtail.service.j2"),
-                            "dest": "/etc/systemd/system/school-smoke.service",
-                        },
-                        {
-                            "src": str(origin / "wagtail_deploy__wagtail.traefik.yml.j2"),
-                            "dest": "/etc/traefik/dynamic/school-smoke.traefik.yml",
-                        },
-                    ],
-                },
-                {
-                    "ansible.builtin.systemd_service": {
-                        "name": "school-smoke",
-                        "daemon_reload": True,
-                        "state": "restarted",
-                    }
-                },
-            ],
-        }
-    ]
-    play_path = tmp_path / "origin.yml"
-    play_path.write_text(yaml.safe_dump(play))
-    argv = [
-        "ansible-playbook",
-        "-i",
-        f"{smoke_host.hostname},",
-        "-u",
-        "root",
-        "--private-key",
-        smoke_host.key,
-        "-e",
-        f"ansible_port={smoke_host.port}",
-        "-e",
-        "ansible_shell_executable=/bin/sh",
-        "--ssh-common-args",
-        f"-o UserKnownHostsFile={smoke_host.known_hosts} -o StrictHostKeyChecking=yes",
-        str(play_path),
-    ]
-    result = subprocess.run(argv, text=True, capture_output=True)
-    assert result.returncode == 0, result.stdout + result.stderr
     traefik = smoke_host.out("systemctl show -p MainPID --value traefik")
-    old_pid = smoke_host.out("systemctl show -p MainPID --value school-smoke")
-    converted = run()
-    assert converted.mutating_changed_ops
+    run()
     assert smoke_host.out("stat -c %a /home/school-smoke/site/media") == "755"
     assert smoke_host.out("readlink /home/school-smoke/site/venv") == ".venv"
     assert smoke_host.out("find /home/school-smoke/site -name .ruff_cache -print") == ""
-    assert smoke_host.out("systemctl show -p MainPID --value school-smoke") != old_pid
     assert smoke_host.out("systemctl show -p MainPID --value traefik") == traefik
     pid = smoke_host.out("systemctl show -p MainPID --value school-smoke")
     second = run()
     assert not second.mutating_changed_ops, second.mutating_changed_ops
     assert smoke_host.out("systemctl show -p MainPID --value school-smoke") == pid
     assert smoke_host.out("cat /home/school-smoke/site/media/sentinel") == "preserved"
-    # A prior pyinfra source sync interrupted before migrations/restart. A
-    # following Ansible --delete sync does not own the root-only markers.
+    # A prior source sync interrupted before migrations/restart: the next run resumes.
     smoke_host.run("touch /var/lib/ops-deploy/school_smoke/.ops-deploy-pending")
     (source / "school/urls.py").write_text((source / "school/urls.py").read_text() + "\n# source change\n")
     resumed = run()

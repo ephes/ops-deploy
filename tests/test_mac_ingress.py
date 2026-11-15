@@ -1,12 +1,9 @@
-"""Exact ingress role bytes, transaction guard and conditional handler behavior."""
+"""Exact ingress route bytes, transaction guard and conditional handler behavior."""
 
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.helpers.traefik import route_guard_command
@@ -16,6 +13,9 @@ from ops_deploy.services.voxhelm.ingress import VoxhelmIngressConfig, deploy_vox
 from ops_deploy.services.voxhelm.ingress import render_ingress as render_voxhelm
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
+
+GOLDEN = Path(__file__).parent / "golden" / "mac_ingress"
 
 SPECS = [
     ("opsgate", OpsGateIngressConfig, deploy_opsgate_ingress, render_opsgate),
@@ -56,38 +56,18 @@ def test_disabled_is_role_noop(name: str, config: Any, deploy: Any, render: Any)
 
 @pytest.mark.parametrize(("name", "config", "deploy", "render"), SPECS)
 @pytest.mark.parametrize("resolver", ["", "letsencrypt"])
-def test_actual_current_role_parity(name: str, config: Any, deploy: Any, render: Any, resolver: str) -> None:
-    import os
+def test_route_is_golden(name: str, config: Any, deploy: Any, render: Any, resolver: str) -> None:
+    """The route below ``/etc/traefik/dynamic``: a changed byte reloads Traefik."""
 
-    root = os.environ.get("OPS_LIBRARY_PATH")
-    if not root:
-        pytest.skip("set absolute OPS_LIBRARY_PATH to compare actual role source")
-    role = Path(root) / "roles" / f"{name}_ingress_deploy"
-    defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
-    template = f"{name}-traefik.yml.j2"
-    assert (
-        files(f"ops_deploy.services.{name}").joinpath("templates", template).read_bytes()
-        == (role / "templates" / template).read_bytes()
-    )
     values: dict[str, Any] = {
-        f"{name}_ingress_traefik_host": f"{name}.example.invalid",
-        f"{name}_ingress_backend_url": "http://backend.invalid:8787",
-        f"{name}_ingress_traefik_cert_resolver": resolver,
+        "traefik_host": f"{name}.example.invalid",
+        "backend_url": "http://backend.invalid:8787",
+        "traefik_cert_resolver": resolver,
     }
     if name == "voxhelm":
-        values.update(
-            voxhelm_ingress_internal_api_enabled=True, voxhelm_ingress_internal_api_allowed_ip_ranges=["100.64.0.0/10"]
-        )
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(role / "templates"), trim_blocks=True, keep_trailing_newline=True
-    )
-    env.filters["bool"] = bool
-    cfg = config(**{key.removeprefix(name + "_ingress_"): value for key, value in values.items()})
-    assert render(cfg) == env.get_template(template).render({**defaults, **values})
-    for key, value in defaults.items():
-        suffix = key.removeprefix(name + "_ingress_")
-        if suffix not in {key.removeprefix(name + "_ingress_") for key in values}:
-            assert getattr(cfg, suffix) == (tuple(value) if isinstance(value, list) else value)
+        values.update(internal_api_enabled=True, internal_api_allowed_ip_ranges=["100.64.0.0/10"])
+
+    assert_golden(GOLDEN / f"{name}-{resolver or 'default'}.yml", render(config(**values)))
 
 
 @pytest.mark.parametrize(

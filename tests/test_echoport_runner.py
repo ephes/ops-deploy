@@ -266,7 +266,7 @@ def test_group_writable_by_root_group_is_accepted() -> None:
 
 
 def test_a_template_is_rendered_with_the_plays_variables() -> None:
-    from tests.test_echoport_runner_parity import EXPECTED, INPUTS
+    from tests.echoport_runner_data import INPUTS, runner_sha256
 
     spec = INPUTS["snappymail-backup"]
     cfg = runner(service="snappymail-backup", content=None, template=spec["template"])
@@ -276,7 +276,7 @@ def test_a_template_is_rendered_with_the_plays_variables() -> None:
 
     run = run_deploy_fake(deploy, responses={**ANCESTORS})
 
-    assert hashlib.sha256(run.upload(cfg.script)).hexdigest() == EXPECTED["runners"]["snappymail-backup"]
+    assert hashlib.sha256(run.upload(cfg.script)).hexdigest() == runner_sha256()["snappymail-backup"]
 
 
 # -- MinIO account and mc alias ---------------------------------------------------------

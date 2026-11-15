@@ -1,8 +1,7 @@
-"""Original Ansible template bytes and actual shell environment interpretation."""
+"""Rendered host files (golden) and actual shell environment interpretation."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shlex
 import subprocess
@@ -13,32 +12,40 @@ import pytest
 
 from ops_deploy.services.paperless.config import PaperlessConfig, PaperlessCredentials
 from ops_deploy.services.paperless.render import render
+from tests.goldens import assert_golden
 
-FIXTURES = Path(__file__).parent / "parity/paperless"
-MANIFEST = json.loads((FIXTURES / "templates-source.json").read_text())
+FIXTURES = Path(__file__).parent / "fixtures" / "paperless"
+GOLDEN = Path(__file__).parent / "golden" / "paperless"
+CASES = ["defaults", "authenticated-redis", "custom-account"]
+TEMPLATES = [
+    "gunicorn.conf.py.j2",
+    "paperless-consumer.service.j2",
+    "paperless-scheduler.service.j2",
+    "paperless-worker.service.j2",
+    "paperless.env.j2",
+    "paperless.service.j2",
+    "paperless.traefik.yml.j2",
+    "sshd_sftp_scanner.conf.j2",
+]
 
 
-@pytest.mark.parametrize("case", MANIFEST["cases"])
-@pytest.mark.parametrize("template", MANIFEST["templates"])
-def test_actual_original_template_parity(case: str, template: str) -> None:
+def inputs(case: str) -> tuple[PaperlessConfig, PaperlessCredentials]:
     root = FIXTURES / case
     cfg = PaperlessConfig.model_validate_json((root / "config.json").read_text())
     credentials = PaperlessCredentials.model_validate_json((root / "synthetic-inputs.json").read_text())
-    assert render(template, cfg, credentials) == (root / (template + ".rendered")).read_text()
+    return cfg, credentials
 
 
-def test_templates_preserve_checksum_bound_original_source() -> None:
-    root = Path(__file__).parents[1] / "src/ops_deploy/services/paperless/templates"
-    assert {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in root.glob("*.j2")} == MANIFEST[
-        "templates"
-    ]
+@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("template", TEMPLATES)
+def test_render_matches_golden(case: str, template: str) -> None:
+    cfg, credentials = inputs(case)
+    assert_golden(GOLDEN / case / template.removesuffix(".j2"), render(template, cfg, credentials))
 
 
-@pytest.mark.parametrize("case", MANIFEST["cases"])
-def test_original_bash_environment_reader_preserves_values(case: str, tmp_path: Path) -> None:
-    root = FIXTURES / case
-    cfg = PaperlessConfig.model_validate_json((root / "config.json").read_text())
-    credentials = PaperlessCredentials.model_validate_json((root / "synthetic-inputs.json").read_text())
+@pytest.mark.parametrize("case", CASES)
+def test_bash_environment_reader_preserves_values(case: str, tmp_path: Path) -> None:
+    cfg, credentials = inputs(case)
     # Synthetic values only. Avoid secret-looking temporary filenames that the
     # independent review sandbox intentionally prevents reading/removing.
     env_file = tmp_path / "synthetic-paperless.conf"

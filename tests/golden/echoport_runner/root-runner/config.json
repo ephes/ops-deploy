@@ -1,0 +1,19 @@
+{
+    "deploy_script": "/usr/local/libexec/fastdeploy/paperless-backup/backup.py",
+    "description": "Paperless backup \u2013 same-host PostgreSQL + filesystem backup/restore with rollback safety",
+    "name": "paperless-backup",
+    "steps": [
+        {
+            "name": "init"
+        },
+        {
+            "name": "dump_database"
+        },
+        {
+            "name": "upload"
+        },
+        {
+            "name": "result"
+        }
+    ]
+}

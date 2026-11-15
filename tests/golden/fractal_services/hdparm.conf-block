@@ -1,0 +1,9 @@
+/dev/disk/by-id/owned-a {
+  apm = 127
+  spindown_time = 241
+}
+/dev/disk/by-id/owned-b {
+  apm = 127
+  acoustic_management = 128
+  spindown_time = 241
+}

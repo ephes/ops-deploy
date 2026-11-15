@@ -1,0 +1,51 @@
+[Unit]
+Description=Minecraft Java Edition Server
+Documentation=https://minecraft.net
+After=network.target
+
+[Service]
+Type=simple
+User=minecraft
+Group=minecraft
+WorkingDirectory=/opt/minecraft/server
+EnvironmentFile=/opt/minecraft/.env
+
+
+# Vanilla start command with optimized JVM settings
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java \
+    -Xms2G \
+    -Xmx4G \
+    -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 \
+    -jar server.jar nogui
+
+
+# Graceful shutdown via RCON
+ExecStop=/usr/local/bin/mcrcon -H 127.0.0.1 -P 25575 "stop"
+
+# Forge exits 143 after a clean RCON stop.
+SuccessExitStatus=143
+
+# Auto-restart on failure
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minecraft-java
+
+# Resource limits
+LimitNOFILE=65535
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Note: ProtectHome disabled because server lives in /home/minecraft and needs write access
+ProtectHome=false
+ReadWritePaths=/opt/minecraft
+
+[Install]
+WantedBy=multi-user.target

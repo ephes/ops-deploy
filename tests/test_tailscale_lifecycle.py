@@ -148,7 +148,7 @@ def test_operator_backup_directory_has_no_workspace_requirement(tmp_path: Path) 
 
 
 def test_actual_vendor_purge_source_provenance() -> None:
-    root = Path(__file__).parent / "parity"
+    root = Path(__file__).parent / "fixtures" / "tailscale"
     import hashlib
 
     receipt = json.loads((root / "tailscale_postrm_1_104_2.json").read_text())

@@ -31,8 +31,7 @@ every pin, the selected binary, the one the drop-in named before this run and
 the executable the unit ran while planning.
 
 The argv, sandbox and probe-coverage rules are ops-library's
-``plugins/filter/metrics_httpd.py``, vendored byte for byte as ``rules.py``
-(``tests/test_ops_library_drift.py`` compares both).
+``plugins/filter/metrics_httpd.py``, vendored byte for byte as ``rules.py`` (ops-deploy owns it now).
 """
 
 from __future__ import annotations

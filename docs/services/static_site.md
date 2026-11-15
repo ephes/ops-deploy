@@ -101,8 +101,8 @@ Defaults follow the role's `defaults/main.yml`; `user`, `site_path` and
 
 ## Tests
 
-`tests/test_static_site_parity.py` (unit, server script and route against the
-vendored role templates, four variants), `tests/test_static_site.py` (fake
+`tests/test_static_site_golden.py` (unit, server script and route against
+their goldens, three variants), `tests/test_static_site.py` (fake
 connector: first run, converged no-op, content/server/unit/route changes,
 private mode, public probe, source validation, config validation),
 `tests/test_sync_tree.py` (the `chmod` flag, including real rsync) and

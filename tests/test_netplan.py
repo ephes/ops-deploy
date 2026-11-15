@@ -1,10 +1,7 @@
-"""Persistent-network admission and exact original template resource contracts."""
+"""Persistent-network admission and the exact bytes of the files it writes."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +18,7 @@ from ops_deploy.infra.netplan.config import (
     NetplanRouteGuard,
 )
 from ops_deploy.infra.netplan.render import render
+from tests.goldens import assert_golden
 
 
 def test_static_network_retains_original_yaml_bytes() -> None:
@@ -103,20 +101,14 @@ def test_dhcp_override_python_names_and_original_yaml_aliases_match() -> None:
     assert cfg.model_dump(exclude_none=True, by_alias=True) == {"use-dns": False, "route-metric": 100}
 
 
-def test_original_selected_role_resource_provenance() -> None:
-    root = Path(__file__).parents[1]
-    hashes = json.loads((root / "tests/parity/netplan_sources.json").read_text())
-    actual = root / "src/ops_deploy/infra/netplan/templates"
-    for name, digest in hashes["resources"].items():
-        assert hashlib.sha256((actual / name).read_bytes()).hexdigest() == digest
+GOLDEN = Path(__file__).parent / "golden" / "netplan"
 
 
-def test_paired_original_selected_role_resource_provenance() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if not library:
-        pytest.skip("Explicit paired ops-library checkout required for original-role provenance")
-    root = Path(__file__).parents[1]
-    hashes = json.loads((root / "tests/parity/netplan_sources.json").read_text())
-    for name, digest in hashes["resources"].items():
-        path = Path(library) / "roles/netplan_config/templates" / name
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+@pytest.mark.parametrize("name", ["netplan-route-guard.sh", "netplan-route-guard.service", "netplan-route-guard.timer"])
+def test_route_guard_files_are_golden(name: str) -> None:
+    """The guard reverts the network when routes vanish; a changed byte restarts it on the host."""
+
+    guard = NetplanRouteGuard(enabled=True, interfaces=("eth0",))
+    cfg = NetplanConfig(interfaces=(NetplanInterface(name="eth0", dhcp4=True),), route_guard=guard)
+
+    assert_golden(GOLDEN / name, render(cfg, name))

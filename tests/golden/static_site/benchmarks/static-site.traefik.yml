@@ -1,0 +1,47 @@
+# Managed by Ansible - static site benchmarks-static
+
+http:
+  routers:
+    benchmarks-static-secure:
+      rule: "Host(`static.test.example`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - benchmarks-static-headers
+        - benchmarks-static-compress
+      service: benchmarks-static
+      tls:
+        certResolver: letsencrypt
+
+    benchmarks-static-http:
+      rule: "Host(`static.test.example`)"
+      entryPoints:
+        - web
+      middlewares:
+        - benchmarks-static-redirect
+      service: noop@internal
+
+  middlewares:
+    benchmarks-static-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: no-referrer
+        customResponseHeaders:
+          Cache-Control: no-cache
+
+    benchmarks-static-compress:
+      compress: {}
+
+    benchmarks-static-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    benchmarks-static:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:10061"

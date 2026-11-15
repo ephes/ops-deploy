@@ -1,7 +1,0 @@
-{% macro acl_list(value) -%}
-{%- if value is string -%}
-{{ value }}
-{%- else -%}
-{{ value | join('; ') }}
-{%- endif -%}
-{%- endmacro %}

@@ -2,30 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
-import yaml
 
 from ops_deploy.services.homelab import HomelabRemoveConfig, remove_homelab
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/homelab/remove"
 UNIT = "/etc/systemd/system/homelab.service"
 ROUTE = "/etc/traefik/dynamic/homelab.yml"
 DB = "/home/homelab/site/db.sqlite3"
 MEDIA = "/home/homelab/site/media"
 HOME = "/home/homelab"
-
-
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
 
 
 def confirmed(**values: Any) -> HomelabRemoveConfig:
@@ -54,62 +45,15 @@ def commands(run: Any) -> list[str]:
     return [command for command in run.executed_commands if "import json, subprocess" not in command]
 
 
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles_and_the_shared_paths() -> None:
-    defaults, shared = role("defaults.yml"), role("shared-defaults.yml")
+def test_defaults_remove_everything_after_confirmation() -> None:
     cfg = HomelabRemoveConfig()
-    assert cfg.confirm is defaults["homelab_remove_confirm"] is False
-    assert cfg.auto_confirm is defaults["homelab_remove_auto_confirm"] is False
+    assert cfg.confirm is False
+    assert cfg.auto_confirm is False
     for flag in ("user", "home", "database", "media", "traefik_config"):
-        assert getattr(cfg, "remove_" + flag) is defaults["homelab_remove_" + flag] is True
-    assert cfg.user == shared["homelab_user"] == "homelab"
-    assert cfg.service_name == shared["homelab_service_name"]
-    assert shared["homelab_home"] == "/home/{{ homelab_user }}"
-    assert shared["homelab_site_path"] == "{{ homelab_home }}/site"
-    assert shared["homelab_database_path"] == "{{ homelab_site_path }}/db.sqlite3"
-    assert shared["homelab_media_root"] == "{{ homelab_site_path }}/media"
-    assert shared["homelab_systemd_unit_path"] == "/etc/systemd/system/{{ homelab_service_name }}.service"
+        assert getattr(cfg, "remove_" + flag) is True
+    assert (cfg.user, cfg.service_name) == ("homelab", "homelab")
     assert (cfg.home, cfg.database_path, cfg.media_root) == (HOME, DB, MEDIA)
-    assert (cfg.systemd_unit_path, cfg.traefik_config_path) == (UNIT, shared["homelab_traefik_config_path"])
-
-
-def test_role_task_order_is_the_ported_one() -> None:
-    main = role("main.yml")
-    assert [task.get("ansible.builtin.include_tasks") for task in main[1:-1]] == [
-        "validation.yml",
-        "service.yml",
-        "traefik.yml",
-        "user.yml",
-    ]
-    service = role("service.yml")
-    assert [task["name"] for task in service] == [
-        "Check if systemd service exists",
-        "Stop homelab service",
-        "Disable homelab service",
-        "Remove systemd unit file",
-        "Reload systemd daemon",
-    ]
-    assert [task.get("failed_when") for task in service[1:3]] == [False, False]
-    assert all(task["when"] == "homelab_service_file.stat.exists" for task in service[1:])
-    user = role("user.yml")
-    assert user[1]["loop"] == [
-        "{{ homelab_database_path }}",
-        "{{ homelab_database_path }}-wal",
-        "{{ homelab_database_path }}-shm",
-    ]
-    assert user[3]["when"][-1] == "not (homelab_remove_user | bool)"
-    assert user[4]["ansible.builtin.user"]["remove"] == "{{ homelab_remove_home | bool }}"
-    validation = role("validation.yml")
-    pause = next(task for task in validation if "ansible.builtin.pause" in task)
-    assert pause["when"] == ["not (homelab_remove_auto_confirm | bool)", "homelab_remove_deletes_data | bool"]
+    assert (cfg.systemd_unit_path, cfg.traefik_config_path) == (UNIT, ROUTE)
 
 
 def test_confirmation_and_inconsistent_flags_precede_every_probe() -> None:
@@ -148,7 +92,7 @@ def test_unsafe_targets_are_refused(values: dict[str, Any]) -> None:
         confirmed(**values)
 
 
-def test_full_removal_follows_the_role_order() -> None:
+def test_full_removal_order() -> None:
     run = run_deploy_fake(remove_homelab, confirmed(), responses=host(UNIT, ROUTE, DB, DB + "-wal", MEDIA, HOME))
     assert run.succeeded, run.error
     executed = commands(run)

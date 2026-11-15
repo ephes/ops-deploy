@@ -1,0 +1,9 @@
+# Managed by ops-library ssh_guard_deploy. Do not edit.
+[sshd-ddos]
+enabled = true
+backend = systemd
+filter = sshd
+port = ssh
+maxretry = 3
+findtime = 10m
+bantime = 1h

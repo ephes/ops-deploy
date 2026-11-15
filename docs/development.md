@@ -7,7 +7,6 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 | `just sync` | `uv sync --locked` |
 | `just test` | `pytest -n <half the CPUs> --dist worksteal` with bytecode cached in `~/.cache/ops-deploy/pycache` (pass extra args: `just test -k toy`; `PYTEST_JOBS=auto just test` for one worker per CPU; serial, for example with `--pdb`: `just test -n 0`) |
 | `just test-changed` | only the test files the working-tree change can affect (`scripts/affected_tests.py`, see below); an inner loop, not a gate |
-| `just test-parity` | the same with `OPS_LIBRARY_PATH` (default `../ops-library`, made absolute), in its own `.venv-parity` with `ansible-core==2.21.5`: the parity, drift and role-oracle tests that `just test` skips; prints the ops-library HEAD and whether it is dirty |
 | `just typecheck` | `mypy` in strict mode over `src/` and `tests/` |
 | `just lint` | `ruff check` and `ruff format --check` |
 | `just fmt` | apply ruff fixes and formatting |
@@ -97,7 +96,7 @@ says why each path selects what. The rules:
   `smoke/*.py`: helpers no test imports, found by the tests naming them);
 - any file selects the test files that import a module naming it (its file
   name, a path suffix such as `traefik_routine/run.sh`, also spelled as path
-  segments, `"parity" / "ansible"`, or a template family prefix such as
+  segments, `"golden" / "nyxmon"`, or a template family prefix such as
   `ssh_guard_deploy__`), and, under `services/<svc>/` or `infra/<x>/`, the
   tests of that package;
 - `PATH_RULES` in the script adds what only a run shows (tests that build a
@@ -127,53 +126,14 @@ listings by the import system. It is still an inner loop that a rule can
 miss (a path a child process builds, a file only stat-ed): run `just test` or
 `just check` before each commit.
 
-## Optional original-role oracle checks
+## Golden host files
 
-`just test-parity` runs all of these against `../ops-library` (or
-`OPS_LIBRARY_PATH`). The drift tests compare against the checkout's working
-tree, so run it on a clean `main` checkout before recording digests. The
-recipe syncs the locked environment into `.venv-parity` and installs
-`ansible-core` there; it stays out of the dev group, because only these oracle
-tests import it, and a skip on a missing import would hide an oracle that
-silently did not run. Not `uv run --with ansible-core`: its overlay brings a
-second `packaging`, and the Home Assistant extras probe (rightly) treats
-duplicate distribution metadata as not current.
-
-Setting `OPS_LIBRARY_PATH` enables additional comparisons with the original
-Ansible roles. Use an absolute path to the intended owned checkout and record
-its Git HEAD. Some tests import Ansible filters in the **pytest interpreter**;
-a separate `ansible --version` or `ansible-playbook` on `PATH` does not prove that
-those imports work. For these optional checks, install the qualified test tool
-into the same owned environment after syncing (no product dependency change):
-
-```bash
-uv sync --locked
-uv pip install --python .venv/bin/python 'ansible-core==2.21.5'
-OPS_LIBRARY_PATH=/absolute/path/to/owned/ops-library uv run --locked python - <<'PYTHON'
-import importlib.metadata
-import os
-from pathlib import Path
-import subprocess
-import sys
-
-import ansible
-import pytest
-
-library = Path(os.environ["OPS_LIBRARY_PATH"])
-assert library.is_absolute()
-assert importlib.metadata.version("ansible-core") == "2.21.5"
-print("pytest Python:", sys.executable, "Ansible:", ansible.__file__)
-print("original roles:", library,
-      subprocess.check_output(["git", "-C", str(library), "rev-parse", "HEAD"], text=True).strip())
-raise SystemExit(pytest.main(["-q", "tests/test_daybook_inbox_declaration.py"]))
-PYTHON
-```
-
-Select the applicable oracle tests in that final argument. If a broader run
-fails solely because this optional import is missing, retain the initial result,
-repair that owned environment and rerun the exact failed nodes plus the checks
-that did not execute. Report both runs; do not describe them as an uninterrupted
-passing suite or replay unrelated native qualification.
+Rendered host files are pinned under `tests/golden/`; after an intended change
+to one, rerun its test with `OPS_DEPLOY_UPDATE_GOLDEN=1` and review
+`git diff tests/golden` (see [Testing deploys](concepts/testing.md#golden-host-files)).
+There are no Ansible parity, drift or role-oracle tests any more, and no
+`just test-parity`: every deploy runs on pyinfra, and nothing in the suite
+needs an ops-library checkout or `ansible-core`.
 
 ## Rules enforced by tests and lint
 

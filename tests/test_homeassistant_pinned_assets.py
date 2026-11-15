@@ -304,34 +304,10 @@ def test_deploy_restarts_home_assistant_only_through_the_pending_handlers() -> N
         assert untouched not in helper_source
 
 
-def test_defaults_match_the_ansible_role() -> None:
-    import yaml
-
-    role = yaml.safe_load((Path(__file__).parent / "parity/homeassistant/deployment/defaults.yml").read_text())
-    gps, card = GpsTimelineConfig(), TimelineCardConfig()
-    assert role["homeassistant_gps_timeline_enabled"] is gps.enabled is False
-    assert role["homeassistant_timeline_card_enabled"] is card.enabled is False
-    assert (role["homeassistant_gps_timeline_version"], role["homeassistant_gps_timeline_sha256"]) == (
-        gps.version,
-        gps.sha256,
-    )
-    assert (role["homeassistant_timeline_card_version"], role["homeassistant_timeline_card_sha256"]) == (
-        card.version,
-        card.sha256,
-    )
-    assert (
-        role["homeassistant_gps_timeline_download_url"].replace("{{ homeassistant_gps_timeline_version }}", gps.version)
-        == gps.url()
-    )
-    assert (
-        role["homeassistant_timeline_card_download_url"].replace(
-            "{{ homeassistant_timeline_card_version }}", card.version
-        )
-        == card.url()
-    )
-    # Both tools write the same stamp, so either sees the other's install as current.
-    tasks = (Path(__file__).parent / "parity/homeassistant/deployment/main.yml").read_text()
-    assert "gps_timeline.yml" in tasks
+def test_disabled_by_default_and_the_install_stamp_hosts_carry() -> None:
+    assert GpsTimelineConfig().enabled is False
+    assert TimelineCardConfig().enabled is False
+    # Installed components carry this stamp; renaming it would reinstall them.
     assert helper.STAMP == ".ops-pinned-version"
 
 

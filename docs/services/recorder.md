@@ -107,8 +107,8 @@ The database (`data_dir/recorder.db`) and the object store
 
 ## Tests
 
-`tests/test_recorder_parity.py` (env file, unit and route against the
-vendored role templates), `tests/test_recorder.py` (fake connector: first
+`tests/test_recorder_golden.py` (env file, unit and route against their
+goldens), `tests/test_recorder.py` (fake connector: first
 run, converged no-op, binary (staged rename), env, unit and route changes, build and smoke
 failures, secret handling) and `tests/smoke/test_recorder_smoke.py` (fresh
 install, converged rerun, and a new binary replacing the running one on the

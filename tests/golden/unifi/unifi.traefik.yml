@@ -1,0 +1,20 @@
+http:
+  routers:
+    unifi:
+      rule: "Host(`unifi.example.com`)"
+      entryPoints:
+        - "web-secure"
+      service: unifi
+      tls:
+        certResolver: "letsencrypt"
+
+  services:
+    unifi:
+      loadBalancer:
+        servers:
+          - url: "https://10.2.3.4:8443"
+        serversTransport: unifi-transport
+
+  serversTransports:
+    unifi-transport:
+      insecureSkipVerify: true

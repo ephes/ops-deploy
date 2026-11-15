@@ -1,0 +1,11 @@
+[Unit]
+Description=MinIO replication lag/parity monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/minio
+ExecStart=/usr/local/bin/minio-replication-lag-probe.py \
+   \
+  /etc/minio-replication-monitor-jobs.json

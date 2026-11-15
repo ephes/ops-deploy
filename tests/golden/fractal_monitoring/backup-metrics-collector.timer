@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect backup metrics every 300 seconds
+
+[Timer]
+OnActiveSec=30
+OnUnitInactiveSec=300
+AccuracySec=10
+RandomizedDelaySec=15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

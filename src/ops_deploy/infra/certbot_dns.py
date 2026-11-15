@@ -50,7 +50,7 @@ from ops_deploy.ops import secret_file
 
 FILES = Path(__file__).parent / "files"
 HOST_SCRIPT = (FILES / "certbot_dns_host.py").read_text()
-# Vendored byte for byte from the role (tests/test_ops_library_drift.py).
+# Vendored byte for byte from the certbot_dns_deploy role (ops-deploy owns it now).
 STRAY_GUARD = (FILES / "certbot_stray_guard.py").read_text()
 
 Provider = Literal["gandi", "rfc2136"]

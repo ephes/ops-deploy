@@ -1,0 +1,5 @@
+# FastDeploy runner paperless-backup (ops-library fastdeploy_runner).
+# The script and every directory above it are root-owned; NOSETENV because
+# FastDeploy passes the context in the --config file, not the environment.
+fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/paperless-backup/backup.py *
+deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/paperless-backup/backup.py *

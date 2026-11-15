@@ -1,0 +1,67 @@
+# Managed by Ansible - Traefik configuration for MeTube
+
+http:
+  routers:
+    metube-int:
+      rule: "Host(`metube.example.com`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - metube-headers
+        - metube-gzip
+      service: metube
+      tls: {}
+
+    metube-ext:
+      rule: "Host(`metube.example.com`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - metube-auth
+        - metube-headers
+        - metube-gzip
+      service: metube
+      tls: {}
+
+    metube-http:
+      rule: "Host(`metube.example.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - metube-redirect
+      service: metube
+
+  middlewares:
+    metube-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$fixture"
+        removeHeader: True
+
+    metube-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "metube.example.com"
+
+    metube-gzip:
+      compress: {}
+
+    metube-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    metube:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8081"

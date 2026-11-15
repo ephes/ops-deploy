@@ -1,0 +1,411 @@
+{
+  "files": {
+    "/etc/logrotate.d/openclaw": {
+      "sha256": "f28edca968428201b7fb5c55c4cb9b52db35fd1e6e9e8d6f79e017273b8b7e45",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/etc/systemd/system/openclaw-metrics-collector.service": {
+      "sha256": "394c485d5e68bedfb77d0e5b1677ccfdfe488a54c6e79912ef40d99d6303af3a",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/etc/systemd/system/openclaw-metrics-collector.timer": {
+      "sha256": "b3484075364ecc2604421b991d96d403074cfce0c405b7e8103479282c66cc1f",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/etc/systemd/system/openclaw-metrics-endpoint.service": {
+      "sha256": "81056520fa79bb5be8bd4e332a1ffdd7e0ce6d3cb2998a56cc3e5c6760ececee",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/etc/systemd/system/openclaw.service": {
+      "sha256": "2577d0635566ec28d47d01b480bc4335117ba9c59992879e9c31a9b13a8f0074",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/etc/traefik/dynamic/openclaw.yml": {
+      "sha256": "e8d310766563356e6c8cd9cbc11d0089fb0dea0f9a6a9862945bd19768a8429b",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/home/openclaw/site/.env": {
+      "sha256": "79dd6fd63bd98ca8ceb98a30c3949dd865e01d261a47fd88e020af316030791f",
+      "owner": "root",
+      "group": "root",
+      "mode": "0600"
+    },
+    "/home/openclaw/site/docker-compose.yml": {
+      "sha256": "8337b367aadc57b0440c2923a0d320c2c92fe56a24563cc28046a1785139a174",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/calendar_accounts.json": {
+      "sha256": "cafdf8e6186e57351aed2881893685391127388ce3039443d15199d18b43596e",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/calendar_health_state.json": {
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/homeassistant.json": {
+      "sha256": "b50849de786eacc295753107be6f54875b9b6e13b5611e4763b3a296a3c45543",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/imap_accounts.json": {
+      "sha256": "674749e38e7e6e2d5843f0268ad2f9419f7ea6fc6ee64ef5315c1b2386196f85",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/opsgate_submit.json": {
+      "sha256": "d14a671080d2d696f6badd5808df91c732c53e5c2d9ea731ef81924fa4ba6584",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/paperless.json": {
+      "sha256": "4d4deb72c74b1e57cfafdff3cc0ea37f3116ad7fc0004262e2169fd6858a4b57",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/paperless_health_state.json": {
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials/smtp_accounts.json": {
+      "sha256": "1b4626effb0629b9ef1a8db76ee40b0ba4da956956a27b8c0fd494184debb9d8",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0600"
+    },
+    "/mnt/cryptdata/openclaw/data/extensions/opsgate-submit/index.ts": {
+      "sha256": "7866fe141cfe504d19203fcdbe77146e0a5cdf25a678efe6921b294a5384bd41",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/extensions/opsgate-submit/openclaw.plugin.json": {
+      "sha256": "008ead7ce4c5ffa8d558aebe7e05f1309799bfe75f59c0ff96b6b86637089258",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/managed-skills-manifest.json": {
+      "sha256": "90ec02c8e56e53ddade04454c567380b8bf0c024c0e9e585e16e817af6f1b7c6",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0644"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/calendar-caldav/handler.py": {
+      "sha256": "0bd722d2beda2d78456e89e3791e75c1c5cab1701f6ea876b1af3fca6c9490d6",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/calendar-caldav/skill.json": {
+      "sha256": "0fc16d0c8cca95161b8effed3f1ce9972a631374f73b2aab47b60e518dbd575b",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/calendar/SKILL.md": {
+      "sha256": "e94cd67fbe152bfab3fe65cdb754ac7246ecc076100ee6d5da7d0d4415899057",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/homeassistant-read/handler.py": {
+      "sha256": "40307b73be6f4a6daebe651fc93feca46cfb88c7fa00165ada9e5a425a76c80b",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/homeassistant-read/skill.json": {
+      "sha256": "65c22bb4722c64c67daba7be009f05e6520d690766068a3db921869f53b683a3",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/homeassistant/SKILL.md": {
+      "sha256": "925408cc7bd40700f44b72456408fb9053b3c03c98308c6c2e08aa6823b9d6d2",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/mail-imap/handler.py": {
+      "sha256": "2bc995227d04e24cb3e15db3ce3d651fd74cb6b7961c66ff0fbe157ba5645ad0",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/mail-imap/skill.json": {
+      "sha256": "f7b3198ef9fe0ab956e12a5abfaf14f4563edc067da4e4b17cc412318b4c0c96",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/mail/SKILL.md": {
+      "sha256": "bbe81ca008ac482c001b47106fe6eac253ab10ca738104f31128d3fb38267d0c",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/note/SKILL.md": {
+      "sha256": "572fba2d2560cab0ea29df35d53c551154d5f242e27d6157390b4ee95fca2317",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/opsgate-submit/handler.py": {
+      "sha256": "6d69e26d9fa5e7c1e5611a3fc5be72d046573d9acc5d30e62108da231c660b70",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/opsgate-submit/skill.json": {
+      "sha256": "9c0b94ef087ade7f2bfaa560008acb9b7ccffad6dd194117657e6ef0c3417867",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/opsgate/SKILL.md": {
+      "sha256": "1568264b525d3b34e4d2f4abc09ea6a864cde07733def40fdeffe50ec24bb45e",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/paperless-read/handler.py": {
+      "sha256": "e5ff80bf8de1fa58e774c511a0787cad0e439163c84193ce30bcc4ef37ac9eec",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/paperless-read/skill.json": {
+      "sha256": "b393f5396dcc000a78ca3c60cddec978b9da0cbb2070f3164d0f515be51a4e59",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/paperless/SKILL.md": {
+      "sha256": "23fa4a1bfd54bdefbbdfe70ba8ce29d5035bc5dde699cad016a74a00c3ce9c8b",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/snooze/SKILL.md": {
+      "sha256": "e95ed4cdd868bbb834c601f7c3c1700b14e96efcfed7ce96a2e824101431f47a",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/todo/SKILL.md": {
+      "sha256": "228a62d0ed386bb0b4ab30172be2eb22842bbb7d6997c7f286c38c7a8dfa8304",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/weeknotes-md/handler.sh": {
+      "sha256": "d8af42dd68baf3f887684276ad74d745cd5cd1cb3b556abd1adcf160de361912",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/weeknotes-md/skill.json": {
+      "sha256": "066c8ae354e219bd18ae7879c9e5feafee096e2f5dccc21a1a8cb616b23a50de",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0640"
+    },
+    "/mnt/cryptdata/openclaw/data/workspace/SOUL.md": {
+      "sha256": "dbe29a1a470df4db09c2ff72d3fe2f4f120d8eb0d22a5651812c299701881fb6",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0644"
+    },
+    "/mnt/cryptdata/openclaw/data/workspace/USER.md": {
+      "sha256": "59df78b72df1a3bea967bd3ca510f40b5f5228caf7d6db1f9d4dee9a9c7252d2",
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0644"
+    },
+    "/usr/local/bin/openclaw_metrics_collector.py": {
+      "sha256": "b88998ebc5ec47dafc0fdc749242e745f82d49e0904e46055d9644ca76592049",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    "/usr/local/bin/openclaw_metrics_httpd.py": {
+      "sha256": "7e2546704308a4398a0dad17b63a5bc67103f0c62f928734a806bb186f72c7d2",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    }
+  },
+  "directories": {
+    "/etc/openclaw-metrics-endpoint": {
+      "owner": "root",
+      "group": "metrics",
+      "mode": "0750"
+    },
+    "/etc/traefik/dynamic": {
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    "/home/openclaw/build": {
+      "owner": "openclaw",
+      "group": "openclaw",
+      "mode": "0755"
+    },
+    "/home/openclaw/logs": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0700"
+    },
+    "/home/openclaw/site": {
+      "owner": "openclaw",
+      "group": "openclaw",
+      "mode": "0755"
+    },
+    "/mnt/cryptdata/openclaw/data": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0700"
+    },
+    "/mnt/cryptdata/openclaw/data/backups": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0700"
+    },
+    "/mnt/cryptdata/openclaw/data/credentials": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0700"
+    },
+    "/mnt/cryptdata/openclaw/data/extensions/opsgate-submit": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/calendar": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/calendar-caldav": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/homeassistant": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/homeassistant-read": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/mail": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/mail-imap": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/note": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/opsgate": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/opsgate-submit": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/paperless": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/paperless-read": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/snooze": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/todo": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/skills/weeknotes-md": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/weeknotes": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/weeknotes/.snapshots": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/mnt/cryptdata/openclaw/data/workspace": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0700"
+    },
+    "/mnt/cryptdata/openclaw/data/workspace/.paperless-downloads": {
+      "owner": "1000",
+      "group": "1000",
+      "mode": "0750"
+    },
+    "/var/lib/openclaw-metrics": {
+      "owner": "root",
+      "group": "metrics",
+      "mode": "0750"
+    }
+  },
+  "env": "# Generated by Ansible (openclaw_deploy). Do not edit on the host.\nOPENCLAW_GATEWAY_TOKEN=fixture-gateway-token-0123456789\nANTHROPIC_API_KEY=sk-ant-fixture-anthropic\nTELEGRAM_BOT_TOKEN=123456:fixture-telegram\nNODE_OPTIONS=--max-old-space-size=1536 --use-openssl-ca\nOPENAI_API_KEY=sk-fixture-openai\nOLLAMA_API_KEY=ollama-local\nOLLAMA_BASE_URL=http://192.0.2.10:11434\nTZ=Europe/Berlin\nOPENCLAW_WEEKNOTES_S3_ENDPOINT=https://s3.home.example.net\nOPENCLAW_WEEKNOTES_S3_REGION=us-east-1\nOPENCLAW_WEEKNOTES_S3_BUCKET=obsidian\nOPENCLAW_WEEKNOTES_S3_ACCESS_KEY=fixture-access\nOPENCLAW_WEEKNOTES_S3_SECRET_KEY=fixture-secret\nOPENCLAW_WEEKNOTES_S3_NOTE_KEY_FORMAT=%Y-%m-%d.md\nOPENCLAW_WEEKNOTES_S3_TODO_LIST_MODE=daily_notes\nOPENCLAW_WEEKNOTES_S3_TODO_LIST_KEY_REGEX=^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.md$\nOPENCLAW_WEEKNOTES_S3_TODO_CACHE_REFRESH_SECS=120\nOPENCLAW_WEEKNOTES_S3_MC_ALIAS=weeknotes\nOPENCLAW_WEEKNOTES_S3_MC_BIN=/usr/local/bin/mc\n",
+  "openclaw_json": "{\n  \"agents\": {\n    \"defaults\": {\n      \"model\": {\n        \"fallbacks\": [],\n        \"primary\": \"openai/gpt-6.1-sol\"\n      },\n      \"models\": {\n        \"anthropic/claude-opus-5-5\": {},\n        \"openai/gpt-6.1-sol\": {}\n      },\n      \"thinkingDefault\": \"low\",\n      \"workspace\": \"/home/node/.openclaw/workspace\"\n    }\n  },\n  \"auth\": {\n    \"order\": {\n      \"openai\": [\n        \"openai:default\"\n      ]\n    }\n  },\n  \"channels\": {\n    \"telegram\": {\n      \"accounts\": {\n        \"secondary\": {\n          \"streaming\": {\n            \"mode\": \"partial\",\n            \"block\": {\n              \"enabled\": true\n            }\n          }\n        }\n      },\n      \"allowFrom\": [\n        304012876\n      ],\n      \"dmPolicy\": \"allowlist\",\n      \"enabled\": true,\n      \"streaming\": {\n        \"mode\": \"partial\",\n        \"preview\": {\n          \"commandText\": \"status\",\n          \"toolProgress\": false,\n          \"chunk\": {\n            \"minChars\": 10\n          }\n        },\n        \"chunkMode\": \"newline\"\n      }\n    }\n  },\n  \"gateway\": {\n    \"allowRealIpFallback\": false,\n    \"auth\": {\n      \"mode\": \"token\",\n      \"rateLimit\": {\n        \"exemptLoopback\": true,\n        \"lockoutMs\": 300000,\n        \"maxAttempts\": 10,\n        \"windowMs\": 60000\n      }\n    },\n    \"bind\": \"loopback\",\n    \"controlUi\": {\n      \"allowedOrigins\": [\n        \"https://openclaw.home.example.net\"\n      ]\n    },\n    \"http\": {\n      \"endpoints\": {\n        \"chatCompletions\": {\n          \"enabled\": true\n        }\n      }\n    },\n    \"mode\": \"local\",\n    \"port\": 18789,\n    \"trustedProxies\": [\n      \"127.0.0.1\",\n      \"::1\"\n    ]\n  },\n  \"memory\": {\n    \"search\": {\n      \"enabled\": true\n    }\n  },\n  \"meta\": {\n    \"lastTouchedVersion\": \"2026.9.4\"\n  },\n  \"models\": {\n    \"providers\": {\n      \"senseaudio\": {\n        \"baseUrl\": \"http://old.example/v1\",\n        \"models\": [\n          {\n            \"id\": \"old\",\n            \"name\": \"old\"\n          }\n        ],\n        \"request\": {\n          \"allowPrivateNetwork\": false\n        }\n      }\n    }\n  },\n  \"plugins\": {\n    \"allow\": [\n      \"codex\",\n      \"opsgate-submit\"\n    ],\n    \"entries\": {\n      \"codex\": {\n        \"enabled\": true\n      },\n      \"opsgate-submit\": {\n        \"enabled\": true\n      },\n      \"telegram\": {\n        \"enabled\": true\n      },\n      \"whatsapp\": {\n        \"enabled\": false\n      }\n    },\n    \"load\": {\n      \"paths\": [\n        \"/home/node/.openclaw/extensions/opsgate-submit\"\n      ]\n    }\n  },\n  \"session\": {\n    \"dmScope\": \"per-channel-peer\"\n  },\n  \"tools\": {\n    \"media\": {\n      \"audio\": {\n        \"enabled\": false\n      },\n      \"models\": [\n        {\n          \"capabilities\": [\n            \"image\"\n          ],\n          \"model\": \"gpt-image\",\n          \"provider\": \"openai\"\n        },\n        {\n          \"model\": \"nocaps\",\n          \"provider\": \"legacy\"\n        },\n        {\n          \"model\": \"x\",\n          \"profile\": \"senseaudio:other\",\n          \"provider\": \"senseaudio\"\n        }\n      ]\n    }\n  },\n  \"wizard\": {\n    \"lastRunAt\": \"2026-02-01\",\n    \"note\": \"Gr\u00fc\u00dfe\"\n  }\n}\n"
+}

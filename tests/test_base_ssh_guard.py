@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 from pydantic import ValidationError
 
@@ -28,8 +27,9 @@ from ops_deploy.base.ssh_guard import (
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
+from tests.goldens import assert_golden
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
+GOLDEN = Path(__file__).parent / "golden" / "ssh_guard"
 DROPIN = "/etc/ssh/sshd_config.d/99-ssh-guard.conf"
 DEFAULT = SshGuardConfig()
 # A Debian 13 host: nftables bans, explicit journal match, ban only, /64 grouping.
@@ -71,19 +71,7 @@ OPENSSH_92 = "OpenSSH_9.2p1 Debian-2+deb12u10, OpenSSL 3.0.22 25 Aug 2026"
 SESSION_DAEMON = "_daemon = sshd(?:-session)?"
 
 
-def render_ansible(template: str, cfg: SshGuardConfig) -> str:
-    # ansible.builtin.template defaults: trim_blocks on, lstrip_blocks off.
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    variables = {f"ssh_guard_{key}": value for key, value in cfg.model_dump().items()}
-    return env.get_template(f"ssh_guard_deploy__{template}").render(**variables)
-
-
-PARITY = {
+CASES = {
     "defaults": DEFAULT,
     "no ignoreip, every sshd directive": SshGuardConfig(
         fail2ban_ignoreip="",
@@ -95,15 +83,18 @@ PARITY = {
     ),
     "no sshd directive": SshGuardConfig(per_source_max_startups=""),
     "other backend and port": SshGuardConfig(fail2ban_backend="auto", fail2ban_port="2222,ssh", fail2ban_bantime="-1"),
-    # The deploy's own fields change the host, not the role's two files.
     "filter fix off": SshGuardConfig(fail2ban_sshd_filter_fix="off"),
 }
 
 
-@pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
-def test_files_match_the_role(cfg: SshGuardConfig) -> None:
-    assert render_jail(cfg) == render_ansible("fail2ban-sshd.local.j2", cfg)
-    assert render_dropin(cfg) == render_ansible("sshd-guard.conf.j2", cfg)
+@pytest.mark.parametrize("name", CASES)
+def test_files_are_golden(name: str) -> None:
+    """The jail restarts fail2ban, the drop-in reloads sshd: both stay as the hosts have them."""
+
+    cfg = CASES[name]
+    case = name.replace(",", "").replace(" ", "-")
+    assert_golden(GOLDEN / case / "fail2ban-sshd.local", render_jail(cfg))
+    assert_golden(GOLDEN / case / "sshd-guard.conf", render_dropin(cfg))
 
 
 def test_default_files() -> None:
@@ -934,8 +925,8 @@ OPENSSH_96 = "OpenSSH_9.6p1 Ubuntu-3ubuntu13.20, OpenSSL 3.0.13 30 Jan 2024"
 
 @pytest.mark.parametrize(
     "cfg",
-    [DEFAULT, NFT_HOST, IPTABLES_HOST, *PARITY.values()],
-    ids=["defaults", "nftables host", "iptables host", *(f"parity {name}" for name in PARITY)],
+    [DEFAULT, NFT_HOST, IPTABLES_HOST, *CASES.values()],
+    ids=["defaults", "nftables host", "iptables host", *(f"case {name}" for name in CASES)],
 )
 def test_auth_directives_are_off_by_default_and_render_nothing(cfg: SshGuardConfig) -> None:
     assert cfg.password_authentication is None

@@ -1,0 +1,57 @@
+# Traefik static configuration
+# This file configures the core Traefik settings
+
+[global]
+  checkNewVersion = true
+  sendAnonymousUsage = false
+
+[api]
+  dashboard = true
+  debug = false
+
+[log]
+  level = "INFO"
+  filePath = "/var/log/traefik/traefik.log"
+  format = "json"
+
+[accessLog]
+  filePath = "/var/log/traefik/access.log"
+  format = "json"
+  bufferingSize = 100
+
+[providers.file]
+  directory = "/etc/traefik/dynamic"
+  watch = true
+
+[entryPoints]
+  [entryPoints.web]
+    http.aliasHeadersStrategy = "delete"
+    address = ":80"
+    [entryPoints.web.http.redirections.entryPoint]
+      to = "web-secure"
+      scheme = "https"
+      permanent = true
+
+  [entryPoints.web-secure]
+    http.aliasHeadersStrategy = "delete"
+    address = ":443"
+
+  # Dashboard/API entrypoint (moved from default 8080 to avoid UniFi conflict)
+  [entryPoints.traefik]
+    http.aliasHeadersStrategy = "delete"
+    address = ":8090"
+
+[certificatesResolvers.letsencrypt.acme]
+  email = "ops@example.org"
+  storage = "/etc/traefik/acme/acme.json"
+  keyType = "EC256"
+  [certificatesResolvers.letsencrypt.acme.httpChallenge]
+    entryPoint = "web"
+
+# Optional: Enable metrics
+[metrics]
+  [metrics.prometheus]
+    entryPoint = "traefik"
+    addEntryPointsLabels = true
+    addServicesLabels = true
+    buckets = [0.1,0.3,1.2,5.0]

@@ -36,13 +36,6 @@ command/model selection is opaque operator configuration and remains unchanged.
 Its original synthetic `Return exactly OK.` probe is an actual external command
 when enabled; rendering or metadata inspection never invokes that command.
 
-Run exact role-resource and guard checks with the paired collection available:
-
-```sh
-OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core pytest \
-  tests/test_daybook_sessions_resources.py tests/test_daybook_runtime_guards.py
-```
-
 No tests read personal sessions, photos, audio, transcripts or application record
 bodies. Synthetic fixtures use unusable credentials and explicit metadata.
 

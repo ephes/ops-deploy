@@ -1,0 +1,11 @@
+{
+    "ca_file": "",
+    "health_path": "/",
+    "health_status": 200,
+    "https_host": "backend.example.test",
+    "ignore_ssl_errors": false,
+    "label": "org.example.ssh-tunnel",
+    "local_port": 18443,
+    "plist": "/Users/operator/Library/LaunchAgents/org.example.ssh-tunnel.plist",
+    "stderr_log": "/Users/operator/Library/Logs/SSH Tunnel/stderr.log"
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=Archive enrichment worker
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=archive
+Group=archive
+WorkingDirectory=/home/archive/site/src/django
+EnvironmentFile=/home/archive/site/.env
+ExecStart=/home/archive/site/.venv/bin/python manage.py run_metadata_worker --limit 10 --interval 10 --timeout 15 --summary-timeout 60 --transcription-timeout 300
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/archive /home/archive/site
+
+[Install]
+WantedBy=multi-user.target

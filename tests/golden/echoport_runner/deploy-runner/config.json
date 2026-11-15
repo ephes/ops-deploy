@@ -1,0 +1,16 @@
+{
+    "deploy_script": "/usr/local/libexec/fastdeploy/homepage-staging-backup/backup.py",
+    "description": "homepage-staging-backup",
+    "name": "homepage-staging-backup",
+    "steps": [
+        {
+            "name": "init"
+        },
+        {
+            "name": "error"
+        },
+        {
+            "name": "result"
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+# Managed by Ansible - local.ops_library.ssh_authorized_keys_manage
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialForTestsOnly000000000000 operator
+command="/usr/local/sbin/x.sh",no-pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialForTestsOnly0000000000002 backup
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialForTestsOnly0000000000003

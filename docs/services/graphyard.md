@@ -36,9 +36,9 @@ and `deploy_graphyard_conditions(cfg)` (separate from the stack).
 The roles' dependencies are the ported [`docker_install`, `vector_apt_install`](../infra.md)
 and, on request, [`uv_install`](../base.md).
 
-Role templates are byte-identical to the originals (shipped unchanged,
-`tests/test_graphyard_parity.py` renders the vendored copies independently),
-so Ansible and ops-deploy can take turns on a host. Unlike the roles, steps
+Role templates are shipped unchanged, so the files are byte-identical to what
+the retired roles wrote (`tests/test_graphyard_golden.py` keeps them so,
+against goldens in `tests/golden/graphyard`). Unlike the roles, steps
 that would change nothing are skipped. The core, Vector, ingress and auth
 configuration paths retain their existing no-file-write/no-restart repeat proof.
 The separate conditions deployment below distinguishes zero managed changes
@@ -190,7 +190,7 @@ left as it is (a shared helper is a later decision).
 4. **Select.** `rust` writes
    `/etc/systemd/system/graphyard-agent.service.d/agent-impl.conf` (an
    `ExecStart=` override naming the versioned binary with `--db`; the role's
-   template shipped unchanged, see `tests/test_graphyard_parity.py`); `python`
+   template shipped unchanged, see `tests/test_graphyard_golden.py`); `python`
    removes it. The base unit (`User`, `EnvironmentFile`, `WorkingDirectory`,
    `Wants=`/`After=graphyard-runtime.service`) applies to both. The version is part
    of the file, so a switch or a version change reloads systemd and restarts
@@ -408,7 +408,7 @@ it survives; its owner becomes `graphyard` like the rest of the site.
 
 ## Tests
 
-`tests/test_graphyard_parity.py`, `tests/test_graphyard.py`,
+`tests/test_graphyard_golden.py`, `tests/test_graphyard.py`,
 `tests/test_graphyard_parts.py` (fake connector: first runs, converged
 no-ops, each kind of change and what it restarts, secrets never on a command
 line) and `tests/test_graphyard_scripts.py` (the probes and host scripts run

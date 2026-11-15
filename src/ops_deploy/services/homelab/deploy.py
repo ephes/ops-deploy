@@ -1,13 +1,12 @@
 """homelab: the home dashboard, a Django app on SQLite served by gunicorn behind Traefik.
 
 Port of the ``homelab_deploy`` Ansible role (with its ``homelab_shared``
-defaults) as ops-control's ``deploy-homelab.yml`` runs it. The role's
-templates are shipped unchanged and rendered the way Ansible's ``template``
-module renders them, so the ``.env``, the unit and the Traefik route are
-byte-identical to the role's (``tests/test_homelab_parity.py``) and Ansible and
-ops-deploy can take turns on a host without rewriting files or restarting
-anything. Like the role (since ops-library 2.49.1), the route keeps the
-deployed bcrypt hash while it still matches the password.
+defaults) as ops-control's ``deploy-homelab.yml`` runs it. The role's templates
+are shipped unchanged and rendered the way Ansible's ``template`` module
+renders them, so the ``.env``, the unit and the Traefik route are
+byte-identical to the retired role's (goldens:
+``tests/test_homelab_golden.py``). Like the role (since ops-library 2.49.1),
+the route keeps the deployed bcrypt hash while it still matches the password.
 
 Unlike the role, steps that would change nothing are skipped instead of run:
 ``uv sync``, ``migrate``, ``collectstatic``, ``add_default_services`` and the

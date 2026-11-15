@@ -1,0 +1,27 @@
+[Unit]
+Description=Home Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homeassistant
+Group=homeassistant
+WorkingDirectory=/home/homeassistant/site
+Environment="PATH=/home/homeassistant/site/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/homeassistant"
+ExecStart=/home/homeassistant/site/.venv/bin/hass --config /home/homeassistant/site/config --log-file /home/homeassistant/site/logs/homeassistant.log
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Basic security settings - removed strict hardening that may cause issues
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Allow access to USB devices for Zigbee/Matter integrations
+SupplementaryGroups=dialout
+DevicePolicy=auto
+
+[Install]
+WantedBy=multi-user.target

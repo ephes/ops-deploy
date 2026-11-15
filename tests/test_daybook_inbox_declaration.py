@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import os
 import plistlib
-from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from ops_deploy.core.secrets import SecretContent
-from ops_deploy.services.daybook_voice_memo_inbox.config import DEFAULTS, PACKAGE, DaybookInboxConfig
-from ops_deploy.services.daybook_voice_memo_inbox.render import SECRET_DEFAULTS, resources, role_values
+from ops_deploy.services.daybook_voice_memo_inbox.config import DaybookInboxConfig
+from ops_deploy.services.daybook_voice_memo_inbox.render import SECRET_DEFAULTS, resources
 
 
 def config(**values: Any) -> DaybookInboxConfig:
@@ -142,38 +138,3 @@ def test_original_credential_boundary_refuses_invalid_input_without_body_repr(ca
         values[field_name] = "CHANGEME" if case == "placeholder" else "UNUSABLE\x00OWNED"
     with pytest.raises(ValueError, match="Inbox"):
         resources(config(), values)
-
-
-def test_all_defaults_and_template_bytes_match_actual_original_role() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    import yaml
-    from jinja2 import Environment, StrictUndefined
-
-    role = Path(source) / "roles/daybook_voice_memo_inbox_deploy"
-    original = yaml.safe_load((role / "defaults/main.yml").read_text())
-    original.pop("ops_library_documentation_category")
-    assert original == {**DEFAULTS, **SECRET_DEFAULTS}
-    assert set(DaybookInboxConfig.model_fields) == set(DEFAULTS)
-    templates = files(PACKAGE).joinpath("templates")
-    assert {p.name for p in templates.iterdir()} == {p.name for p in (role / "templates").iterdir()}
-    for path in (role / "templates").iterdir():
-        assert templates.joinpath(path.name).read_bytes() == path.read_bytes()
-    env = Environment(undefined=StrictUndefined, trim_blocks=True, keep_trailing_newline=True)
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    cfg = config()
-    values = role_values(cfg, secrets())
-    for row, template in zip(
-        resources(cfg, secrets()),
-        [
-            "policy.json.j2",
-            "credentials.json.j2",
-            "voice-memo-inbox.launchd.plist.j2",
-            "voice-memo-inbox-long.launchd.plist.j2",
-        ],
-        strict=True,
-    ):
-        assert row.content.reveal().decode() == env.from_string((role / "templates" / template).read_text()).render(
-            values
-        )

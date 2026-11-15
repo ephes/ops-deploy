@@ -212,16 +212,14 @@ The check data travels only on the apply's stdin: service and check names
 and the database path are its only arguments, and nothing is put in the
 process environment (sudo and `/proc` can show both).
 
-## Parity with the roles and the play
+## The roles and the play
 
 The exporter, the HTTP server script and the three units are the roles'
-templates, shipped unchanged and rendered like Ansible's `template` module
-(`trim_blocks`, Ansible's `to_json`); `tests/test_thermal_monitoring.py`
-compares them with the vendored copies under `tests/parity/ansible`, which
-`test_traefik_parity.test_vendored_templates_match_ops_library` keeps equal
-to ops-library, and `tests/parity/ops_library_roles.json` records both
-roles' digests (`thermal_metrics_endpoint` with its metrics-httpd switch,
-ops-library `be348cdb`). Intended differences (for the HTTP server switch see
+templates (ops-library `be348cdb`, `thermal_metrics_endpoint` with its
+metrics-httpd switch), shipped unchanged and rendered like Ansible's `template`
+module (`trim_blocks`, Ansible's `to_json`); `tests/test_thermal_monitoring.py`
+pins the renders as golden files (`tests/golden/thermal_monitoring`), the bytes
+the hosts have. Intended differences (for the HTTP server switch see
 [metrics-httpd switch](metrics_httpd.md#differences-from-the-role)):
 
 - The password is checked against the bcrypt hash on the controller, so the
@@ -463,8 +461,8 @@ The emergency return of every position to auto is
 
 ## Tests
 
-- `tests/test_thermal_monitoring.py`: template parity for the role defaults,
-  the monitoring play and every field changed; the exporter reading back its
+- `tests/test_thermal_monitoring.py`: golden renders for the defaults, the
+  monitoring play and every field changed; the exporter reading back its
   sensor lists with their types; config refusals; plans on the fake
   connector: fresh host, converged host (read-only checks only, no uploads,
   no stdin), changed password (htpasswd and endpoint restart only), every

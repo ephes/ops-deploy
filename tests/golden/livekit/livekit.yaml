@@ -1,0 +1,19 @@
+# Managed by ops-deploy (compose_app). Local changes are overwritten by the next deploy.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  node_ip: 192.0.2.10
+redis:
+  address: 127.0.0.1:6379
+  password: fixture-redis-password-0123
+keys:
+  APIfixtureKey0123: fixture-api-secret-0123456789abcdef
+webhook:
+  api_key: APIfixtureKey0123
+  urls:
+  - https://recorder.example.invalid/api/livekit/webhook
+logging:
+  level: info

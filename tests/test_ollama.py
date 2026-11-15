@@ -1,4 +1,4 @@
-"""Role parity and retained-state/no-restart behavior for native macOS Ollama."""
+"""The launchd plist and retained-state/no-restart behavior for native macOS Ollama."""
 
 from __future__ import annotations
 
@@ -10,16 +10,16 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-import jinja2
 import pytest
 
 from ops_deploy.core.config import ConfigValidationError
 from ops_deploy.services.ollama import OllamaConfig, deploy_ollama
-from ops_deploy.services.ollama.deploy import render_plist, template_vars
+from ops_deploy.services.ollama.deploy import render_plist
 from ops_deploy.testing import run_deploy_fake
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
-TEMPLATE = ROOT / "tests/parity/ansible/ollama_install__ollama.launchd.plist.j2"
+GOLDEN = Path(__file__).parent / "golden" / "ollama"
 
 
 def host_script() -> Any:
@@ -34,7 +34,7 @@ def host_script() -> Any:
 
 
 @pytest.mark.parametrize("custom", [False, True])
-def test_exact_role_plist_parity(custom: bool) -> None:
+def test_plist_matches_golden(custom: bool) -> None:
     cfg = OllamaConfig(
         user="vibe" if custom else "ollama",
         group="vibe" if custom else "ollama",
@@ -43,18 +43,8 @@ def test_exact_role_plist_parity(custom: bool) -> None:
         log_dir=Path("/var/log/ollama") if custom else Path("/usr/local/var/ollama/logs"),
         launchd_command_args=("--fixture", "argument with spaces") if custom else (),
     )
-    environment = jinja2.Environment(trim_blocks=True, keep_trailing_newline=True)
-    expected = environment.from_string(TEMPLATE.read_text()).render(**template_vars(cfg, "/opt/homebrew/bin/ollama"))
-    assert render_plist(cfg, "/opt/homebrew/bin/ollama") == expected
-
-
-def test_vendored_role_template() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH not set; vendored template check only")
-    assert (
-        TEMPLATE.read_bytes() == (Path(source) / "roles/ollama_install/templates/ollama.launchd.plist.j2").read_bytes()
-    )
+    name = "custom.plist" if custom else "defaults.plist"
+    assert_golden(GOLDEN / name, render_plist(cfg, "/opt/homebrew/bin/ollama"))
 
 
 def test_xml_arguments_and_environment_are_valid_not_interpreted() -> None:

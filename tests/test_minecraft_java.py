@@ -18,7 +18,9 @@ from ops_deploy.services.minecraft_java import MinecraftJavaConfig, deploy_minec
 from ops_deploy.services.minecraft_java.deploy import guard_command, rendered, validate_secrets
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
+GOLDEN = Path(__file__).parent / "golden" / "minecraft_java"
 RCON_FIXTURE = "fixture-rcon-password"
 
 
@@ -239,9 +241,9 @@ def test_converged_forge_and_mods_have_no_mutations() -> None:
     ],
 )
 @pytest.mark.parametrize("mode", ["vanilla", "forge"])
-def test_templates_against_current_role_snapshot(template: str, mode: str) -> None:
-    import jinja2
-
+def test_templates_match_golden(template: str, mode: str) -> None:
+    # The files on the host: the role's renders (ops-library 3110a0f1) plus the deliberate
+    # JDK path, Forge exit status and MCRCON_PASS changes, as deployed.
     cfg = config(
         loader_mode=mode,
         forge_version="1.20.1-47.4.0",
@@ -250,24 +252,7 @@ def test_templates_against_current_role_snapshot(template: str, mode: str) -> No
         whitelist_players=["Player_1"],
         ops=["Player_2"],
     )
-    secrets = values(cfg)
-    source = Path(__file__).parent / "parity/minecraft_java_3110a0f1" / template
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined, keep_trailing_newline=True)
-    original = env.from_string(source.read_text()).render(**cfg.context(secrets))
-    # Deliberate: run the configured JDK, not the /usr/bin/java alternative.
-    original = original.replace("/usr/bin/java", cfg.java_bin)
-    if template == "minecraft-java.service.j2":
-        original = original.replace('-p "${RCON_PASSWORD}" "stop"', '"stop"')
-        original = original.replace(
-            "# Auto-restart on failure\n",
-            "# Forge exits 143 after a clean RCON stop.\nSuccessExitStatus=143\n\n# Auto-restart on failure\n",
-        )
-    if template == "minecraft-java.env.j2":
-        original = original.replace(
-            "RCON_PASSWORD=" + secrets["rcon_password"],
-            "RCON_PASSWORD=" + secrets["rcon_password"] + "\nMCRCON_PASS=" + secrets["rcon_password"],
-        )
-    assert rendered(cfg, template, secrets) == original
+    assert_golden(GOLDEN / mode / template.removesuffix(".j2"), rendered(cfg, template, values(cfg)))
 
 
 @pytest.mark.parametrize("valid", [True, False])

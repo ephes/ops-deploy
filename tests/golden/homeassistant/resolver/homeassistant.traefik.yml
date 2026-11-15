@@ -1,0 +1,45 @@
+http:
+  routers:
+    homeassistant:
+      rule: "Host(`homeassistant.owned.example`)"
+      service: homeassistant
+      tls:
+        certResolver: owned-resolver
+      middlewares:
+        - second
+        - first
+      entryPoints:
+        - owned-one
+        - owned-two
+
+    # Local access without HTTPS
+    homeassistant-local:
+      rule: "Host(`homeassistant.local`) || Host(`192.0.2.11`)"
+      service: homeassistant
+      middlewares:
+      entryPoints:
+        - web
+
+  services:
+    homeassistant:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8321"
+
+  middlewares:
+    homeassistant-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "homeassistant.owned.example"
+    homeassistant-websocket:
+      headers:
+        customRequestHeaders:
+          Connection: Upgrade
+          Upgrade: websocket

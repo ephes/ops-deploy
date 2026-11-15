@@ -1,14 +1,11 @@
-"""Source-bound trust writes/verify ordering on the fake SDK, no systemd calls."""
+"""Trust drop-in writes and verify ordering on the fake SDK, no systemd calls."""
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 import pytest
-import yaml
 from pyinfra.api import Config
 from pyinfra.operations import server
 
@@ -21,27 +18,6 @@ from ops_deploy.services.homeassistant.trust import (
 )
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
-
-
-def test_original_dropin_source_contract() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant/trust-write"
-    manifest = json.loads((fixture / "source.json").read_text())
-    for relative, row in manifest["files"].items():
-        assert hashlib.sha256((fixture / row["fixture"]).read_bytes()).hexdigest() == row["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            actual = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/homeassistant_deploy" / relative
-            assert hashlib.sha256(actual.read_bytes()).hexdigest() == row["sha256"]
-    original = yaml.safe_load((fixture / "dropin.yml").read_text())
-    assert original[0]["ansible.builtin.file"] == {
-        "path": "{{ homeassistant_uv_system_certs_dropin_path | dirname }}",
-        "state": "directory",
-        "owner": "root",
-        "group": "root",
-        "mode": "0755",
-    }
-    assert original[1]["ansible.builtin.template"]["mode"] == "0644"
-    assert original[1]["register"] == "_ha_uv_certs_dropin"
-    assert dropin_text() == (fixture / "dropin.j2").read_text()
 
 
 @pytest.mark.parametrize("current", [False, True])

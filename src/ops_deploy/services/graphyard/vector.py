@@ -1,13 +1,13 @@
 """graphyard vector: the host-metrics producer that pushes to Graphyard's ingest endpoint.
 
 Port of both ``graphyard_vector_deploy`` branches (apt/systemd and native
-Darwin Homebrew/launchd) and
-``playbooks/deploy-graphyard-vector.yml``. Vector comes from its apt channel
-(``vector_apt_install``), shares ``config.d``, the global ``data_dir`` fragment
-and ``/etc/default/vector`` with the Logyard producer, and the Graphyard
-fragment is validated together with the other fragments before it replaces the
-live one. The template is shipped unchanged, so the fragment is byte-identical
-to the role's (``tests/test_graphyard_parity.py``).
+Darwin Homebrew/launchd) and ``playbooks/deploy-graphyard-vector.yml``. Vector
+comes from its apt channel (``vector_apt_install``), shares ``config.d``, the
+global ``data_dir`` fragment and ``/etc/default/vector`` with the Logyard
+producer, and the Graphyard fragment is validated together with the other
+fragments before it replaces the live one. The template is shipped unchanged,
+so the fragment is byte-identical to the retired role's (goldens:
+``tests/test_graphyard_golden.py``).
 
 The fragment holds the ingest bearer token: it is written with
 ``secret_file`` and reaches the validation directory on stdin, never on a

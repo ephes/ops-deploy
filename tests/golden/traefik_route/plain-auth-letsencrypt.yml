@@ -1,0 +1,70 @@
+# Traefik configuration for Nyxmon
+# Managed by ops-deploy - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    nyxmon-int:
+      rule: "Host(`app.example.com`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - nyxmon-headers
+        - nyxmon-gzip
+        - ratelimit@file
+        - extra
+      service: nyxmon
+      tls:
+        certResolver: letsencrypt
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    nyxmon-ext:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - nyxmon-auth
+        - nyxmon-headers
+        - nyxmon-gzip
+        - ratelimit@file
+        - extra
+      service: nyxmon
+      tls:
+        certResolver: letsencrypt
+
+    # Plain HTTP; the static config redirects the web entrypoint to web-secure.
+    nyxmon-http:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web
+      service: nyxmon
+
+  middlewares:
+    nyxmon-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: true
+
+    nyxmon-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    nyxmon-gzip:
+      compress: {}
+
+  services:
+    nyxmon:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10017"

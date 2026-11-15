@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
 import io
 import json
-import os
 import plistlib
 import urllib.error
 from dataclasses import asdict
-from importlib.resources import files
-from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -20,7 +16,7 @@ from pydantic import ValidationError
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.daybook_operations_runtime import DaybookRuntimeConfig, RuntimeKind, RuntimeWorkers
 from ops_deploy.services.daybook_operations_runtime.decision import InstalledRuntime, normal_action
-from ops_deploy.services.daybook_operations_runtime.render import render_credential, render_resource, role_values
+from ops_deploy.services.daybook_operations_runtime.render import render_credential, render_resource
 from ops_deploy.services.daybook_operations_runtime.status import (
     MAX_STATUS_BYTES,
     STATUS_TIMEOUT,
@@ -116,34 +112,6 @@ def test_cutover_is_the_only_profile_enabled_renderer() -> None:
     for action in ("install", "replace", "cutover", "rollback", "closeout", "stop", "verify"):
         cfg = config(action=action, confirmed=True)
         assert json.loads(render_resource(cfg, "policy.json.j2"))["enabled"] == (action == "cutover")
-
-
-def test_paired_role_templates_are_exact() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Paired role oracle requires explicit OPS_LIBRARY_PATH; qualification runs it explicitly")
-    root = Path(source) / "roles/daybook_operations_runtime_deploy"
-    assert root.is_dir(), "set OPS_LIBRARY_PATH to the paired original role checkout"
-    package = files("ops_deploy.services.daybook_operations_runtime").joinpath("templates")
-    originals = sorted((root / "templates").glob("*.j2"))
-    assert {p.name for p in originals} == {p.name for p in package.iterdir()}
-    for path in originals:
-        assert package.joinpath(path.name).read_bytes() == path.read_bytes()
-    # Independently render the actual original resource with its native filters.
-    import jinja2
-
-    FilterModule = importlib.import_module("ansible.plugins.filter.core").FilterModule
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(root / "templates"),
-        trim_blocks=True,
-        undefined=jinja2.StrictUndefined,
-        keep_trailing_newline=True,
-    )
-    env.filters.update(FilterModule().filters())
-    for cfg in (config(), config(owner="user", mode="host", action="cutover", confirmed=True)):
-        for name in ("policy.json.j2", "runtime.plist.j2"):
-            assert render_resource(cfg, name) == env.get_template(name).render(role_values(cfg))
 
 
 def test_credential_never_enters_config_or_repr() -> None:

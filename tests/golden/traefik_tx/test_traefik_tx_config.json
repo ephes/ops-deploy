@@ -1,0 +1,400 @@
+{
+ "test_acme_preflight[absent target]": [
+  "ok",
+  [
+   {
+    "bytes": "{\n \"letsencrypt\": {\n  \"Account\": {\n   \"Email\": \"operator@example.invalid\"\n  },\n  \"Certificates\": [\n   {\n    \"domain\": {\n     \"main\": \"app.example.invalid\",\n     \"sans\": [\n      \"www.example.invalid\"\n     ]\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCmFwcC5leGFtcGxlLmludmFsaWQK\",\n    \"key\": \"fixture-private-key\"\n   },\n   {\n    \"domain\": {\n     \"main\": \"mail.example.invalid\"\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCm1haWwuZXhhbXBsZS5pbnZhbGlkCg==\",\n    \"key\": \"fixture-private-key\"\n   }\n  ]\n }\n}"
+   },
+   [
+    [
+     [
+      "app.example.invalid",
+      "www.example.invalid"
+     ],
+     "notAfter=d46ebfa6"
+    ],
+    [
+     [
+      "mail.example.invalid"
+     ],
+     "notAfter=db848559"
+    ]
+   ]
+  ]
+ ],
+ "test_acme_preflight[empty target]": [
+  "ok",
+  [
+   {
+    "bytes": "{\n \"letsencrypt\": {\n  \"Account\": {\n   \"Email\": \"operator@example.invalid\"\n  },\n  \"Certificates\": [\n   {\n    \"domain\": {\n     \"main\": \"app.example.invalid\",\n     \"sans\": [\n      \"www.example.invalid\"\n     ]\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCmFwcC5leGFtcGxlLmludmFsaWQK\",\n    \"key\": \"fixture-private-key\"\n   },\n   {\n    \"domain\": {\n     \"main\": \"mail.example.invalid\"\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCm1haWwuZXhhbXBsZS5pbnZhbGlkCg==\",\n    \"key\": \"fixture-private-key\"\n   }\n  ]\n }\n}"
+   },
+   [
+    [
+     [
+      "app.example.invalid",
+      "www.example.invalid"
+     ],
+     "notAfter=d46ebfa6"
+    ],
+    [
+     [
+      "mail.example.invalid"
+     ],
+     "notAfter=db848559"
+    ]
+   ]
+  ]
+ ],
+ "test_acme_preflight[exact copy]": [
+  "ok",
+  [
+   {
+    "bytes": "{\n \"letsencrypt\": {\n  \"Account\": {\n   \"Email\": \"operator@example.invalid\"\n  },\n  \"Certificates\": [\n   {\n    \"domain\": {\n     \"main\": \"app.example.invalid\",\n     \"sans\": [\n      \"www.example.invalid\"\n     ]\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCmFwcC5leGFtcGxlLmludmFsaWQK\",\n    \"key\": \"fixture-private-key\"\n   },\n   {\n    \"domain\": {\n     \"main\": \"mail.example.invalid\"\n    },\n    \"certificate\": \"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCm1haWwuZXhhbXBsZS5pbnZhbGlkCg==\",\n    \"key\": \"fixture-private-key\"\n   }\n  ]\n }\n}"
+   },
+   [
+    [
+     [
+      "app.example.invalid",
+      "www.example.invalid"
+     ],
+     "notAfter=d46ebfa6"
+    ],
+    [
+     [
+      "mail.example.invalid"
+     ],
+     "notAfter=db848559"
+    ]
+   ]
+  ]
+ ],
+ "test_acme_preflight[foreign target]": [
+  "Refused",
+  "ACME target must be absent, empty or an exact copy of the source"
+ ],
+ "test_acme_preflight[group-writable target directory]": [
+  "Refused",
+  "unsafe ACME parent directory"
+ ],
+ "test_acme_preflight[no source]": [
+  "FileNotFoundError",
+  "[Errno 2] No such file or directory: '<tmp>/host/acme.json'"
+ ],
+ "test_acme_preflight[no target directory]": [
+  "FileNotFoundError",
+  "[Errno 2] No such file or directory: '<tmp>/host/etc/acme'"
+ ],
+ "test_acme_preflight[source 0640]": [
+  "Refused",
+  "ACME source must be 0600"
+ ],
+ "test_acme_preflight[target directory is a symlink]": [
+  "Refused",
+  "unsafe ACME parent directory"
+ ],
+ "test_certificate_set[certificate not base64]": [
+  "Error",
+  "Only base64 data is allowed"
+ ],
+ "test_certificate_set[certificates not a list]": [
+  "Refused",
+  "empty certificate store"
+ ],
+ "test_certificate_set[empty domain]": [
+  "Refused",
+  "invalid certificate domains"
+ ],
+ "test_certificate_set[no certificates]": [
+  "Refused",
+  "empty certificate store"
+ ],
+ "test_certificate_set[no expiry]": [
+  "Refused",
+  "missing certificate expiry"
+ ],
+ "test_certificate_set[not JSON]": [
+  "JSONDecodeError",
+  "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+ ],
+ "test_certificate_set[one certificate]": [
+  "ok",
+  [
+   [
+    [
+     "app.example.invalid"
+    ],
+    "notAfter=d46ebfa6"
+   ]
+  ]
+ ],
+ "test_certificate_set[populated]": [
+  "ok",
+  [
+   [
+    [
+     "app.example.invalid",
+     "www.example.invalid"
+    ],
+    "notAfter=d46ebfa6"
+   ],
+   [
+    [
+     "mail.example.invalid"
+    ],
+    "notAfter=db848559"
+   ]
+  ]
+ ],
+ "test_certificate_set[two resolvers]": [
+  "Refused",
+  "expected one letsencrypt resolver"
+ ],
+ "test_tls_fingerprints[every name]": [
+  "ok",
+  [
+   {
+    "app.example.invalid": "91002d8c4c990ce3fc58ca1a50344df2fdd1719bae47fe220e828c7a9aa478bd",
+    "mail.example.invalid": "759b81a59176a5b007869ca8b4dc86caf7deba48c9edf77a22b0833e715315cb",
+    "www.example.invalid": "c66b959750bfec2c4bc7e65244c745263c86ccffb30637dbd080d22bbd503756"
+   },
+   [
+    [
+     "127.0.0.1",
+     443
+    ],
+    [
+     "127.0.0.1",
+     443
+    ],
+    [
+     "127.0.0.1",
+     443
+    ]
+   ]
+  ]
+ ],
+ "test_tls_fingerprints[nothing listens]": [
+  "ConnectionRefusedError",
+  ""
+ ],
+ "test_tls_fingerprints[one name without a certificate]": [
+  "Refused",
+  "missing served certificate"
+ ],
+ "test_validate_acme_storage[pair0]": [
+  "ok",
+  null
+ ],
+ "test_validate_acme_storage[pair10]": [
+  "Refused",
+  "ACME candidate changes unrelated configuration"
+ ],
+ "test_validate_acme_storage[pair11]": [
+  "Refused",
+  "ACME candidate changes unrelated configuration"
+ ],
+ "test_validate_acme_storage[pair1]": [
+  "Refused",
+  "unsupported ACME source"
+ ],
+ "test_validate_acme_storage[pair2]": [
+  "Refused",
+  "unsupported ACME target"
+ ],
+ "test_validate_acme_storage[pair3]": [
+  "Refused",
+  "unsupported ACME source"
+ ],
+ "test_validate_acme_storage[pair4]": [
+  "Refused",
+  "expected only misplaced email and storage"
+ ],
+ "test_validate_acme_storage[pair5]": [
+  "ok",
+  null
+ ],
+ "test_validate_acme_storage[pair6]": [
+  "Refused",
+  "ACME candidate changes unrelated configuration"
+ ],
+ "test_validate_acme_storage[pair7]": [
+  "Refused",
+  "email must be a string"
+ ],
+ "test_validate_acme_storage[pair8]": [
+  "Refused",
+  "expected only misplaced email and storage"
+ ],
+ "test_validate_acme_storage[pair9]": [
+  "Refused",
+  "resolver already has email or storage"
+ ],
+ "test_validate_alias[pair0]": [
+  "ok",
+  null
+ ],
+ "test_validate_alias[pair1]": [
+  "ok",
+  null
+ ],
+ "test_validate_alias[pair2]": [
+  "Refused",
+  "alias candidate changes unrelated configuration"
+ ],
+ "test_validate_alias[pair3]": [
+  "Refused",
+  "alias map must cover every entrypoint"
+ ],
+ "test_validate_alias[pair4]": [
+  "Refused",
+  "alias map must cover every entrypoint"
+ ],
+ "test_validate_alias[pair5]": [
+  "Refused",
+  "only the approved delete strategy is supported"
+ ],
+ "test_validate_alias[pair6]": [
+  "Refused",
+  "UDP requires a separately reviewed policy"
+ ],
+ "test_validate_alias[pair7]": [
+  "Refused",
+  "legacy underscore strategy needs separate reconciliation"
+ ],
+ "test_validate_alias[pair8]": [
+  "Refused",
+  "alias map must cover every entrypoint"
+ ],
+ "test_validate_alias[pair9]": [
+  "TOMLDecodeError",
+  "Invalid value (at line 1, column 8)"
+ ],
+ "test_validate_metrics_bind[pair0]": [
+  "ok",
+  null
+ ],
+ "test_validate_metrics_bind[pair10]": [
+  "Refused",
+  "entrypoints are required"
+ ],
+ "test_validate_metrics_bind[pair1]": [
+  "Refused",
+  "metrics entrypoint already exists"
+ ],
+ "test_validate_metrics_bind[pair2]": [
+  "Refused",
+  "metrics binding policy must cover every resulting entrypoint"
+ ],
+ "test_validate_metrics_bind[pair3]": [
+  "Refused",
+  "only the approved delete strategy is supported"
+ ],
+ "test_validate_metrics_bind[pair4]": [
+  "Refused",
+  "existing entrypoint alias policy is incomplete"
+ ],
+ "test_validate_metrics_bind[pair5]": [
+  "Refused",
+  "Prometheus metrics must already be enabled"
+ ],
+ "test_validate_metrics_bind[pair6]": [
+  "Refused",
+  "Prometheus must use the implicit entrypoint before repair"
+ ],
+ "test_validate_metrics_bind[pair7]": [
+  "Refused",
+  "metrics binding candidate changes unrelated static configuration"
+ ],
+ "test_validate_metrics_bind[pair8]": [
+  "Refused",
+  "entrypoints are required"
+ ],
+ "test_validate_metrics_bind[pair9]": [
+  "Refused",
+  "entrypoints are required"
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[oserror-0]": [
+  "ok",
+  [
+   "ok",
+   []
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[oserror-1]": [
+  "ok",
+  [
+   "ok",
+   [
+    2
+   ]
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[oserror-4]": [
+  "ok",
+  [
+   "ok",
+   [
+    2,
+    2,
+    2,
+    2
+   ]
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[oserror-5]": [
+  "ok",
+  [
+   "refused",
+   "TLS fingerprint verification failed",
+   "ConnectionResetError",
+   [
+    2,
+    2,
+    2,
+    2
+   ]
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[refused-0]": [
+  "ok",
+  [
+   "ok",
+   []
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[refused-1]": [
+  "ok",
+  [
+   "ok",
+   [
+    2
+   ]
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[refused-4]": [
+  "ok",
+  [
+   "ok",
+   [
+    2,
+    2,
+    2,
+    2
+   ]
+  ]
+ ],
+ "test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf[refused-5]": [
+  "ok",
+  [
+   "refused",
+   "TLS fingerprint verification failed",
+   "Refused",
+   [
+    2,
+    2,
+    2,
+    2
+   ]
+  ]
+ ]
+}

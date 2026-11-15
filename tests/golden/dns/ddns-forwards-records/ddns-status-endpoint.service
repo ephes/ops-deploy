@@ -1,0 +1,38 @@
+[Unit]
+Description=DDNS status HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ddns
+Group=ddns
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 /usr/local/bin/ddns_status_httpd.py \
+  --bind 100.64.0.1 \
+  --port 9112 \
+  --path /.well-known/ddns \
+  --json-path /var/lib/ddns/status.json \
+  --htpasswd-file /etc/ddns-status-endpoint/htpasswd
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+ReadOnlyPaths=/var/lib/ddns
+
+[Install]
+WantedBy=multi-user.target

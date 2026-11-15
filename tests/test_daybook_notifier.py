@@ -98,39 +98,6 @@ def test_real_sdk_status_and_managed_validation_repeat_no_app_call(
     assert KEY not in repr(result.ops)
 
 
-def test_original_role_paths_options_and_defaults() -> None:
-    import os
-
-    import yaml
-
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; paired original-role check is separate")
-    root = Path(source) / "roles/daybook_voice_memo_attention_notifier_deploy"
-    tasks = yaml.safe_load((root / "tasks/main.yml").read_text())
-    inspection = next(task for task in tasks if task["name"] == "Inspect notifier managed paths")
-    assert inspection["loop"] == [
-        "/usr/local",
-        "/usr/local/libexec",
-        "/usr/local/libexec/daybook-attention-notify.py",
-        "/etc/daybook-attention-notify.json",
-        "/root/.ssh",
-        "/root/.ssh/authorized_keys",
-    ]
-    defaults = yaml.safe_load((root / "defaults/main.yml").read_text())
-    assert (
-        defaults["daybook_voice_memo_attention_notifier_container"]
-        == DaybookVoiceMemoAttentionNotifierConfig(script_src="/owned/work_notify.py").container
-    )
-    authorization = next(
-        task for task in tasks if task["name"] == "Define the single restricted notifier authorization"
-    )
-    assert authorization["ansible.builtin.set_fact"]["daybook_voice_memo_attention_notifier_key_options"] == (
-        'restrict,command="/usr/bin/python3 -I /usr/local/libexec/daybook-attention-notify.py '
-        '--config /etc/daybook-attention-notify.json"'
-    )
-
-
 @pytest.mark.parametrize("kind", ["fifo", "directory", "symlink", "oversized"])
 def test_source_descriptor_refuses_nonregular_or_oversized_without_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str

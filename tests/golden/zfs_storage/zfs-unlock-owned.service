@@ -1,0 +1,23 @@
+# Ansible managed
+# Systemd service to load ZFS encryption key for pool owned
+# This service runs after root is remounted (where the key file resides)
+# and before zfs-mount.service attempts to mount ZFS datasets.
+
+[Unit]
+Description=Load ZFS encryption key for pool owned
+DefaultDependencies=no
+After=zfs-import.target
+After=systemd-remount-fs.service
+Before=zfs-mount.service
+Before=zfs.target
+ConditionPathExists=/root/.zfs-key-owned
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Load key if not already loaded (keystatus returns exactly 'available' when loaded)
+ExecStart=/bin/sh -c 'test "$(/sbin/zfs get -H -o value keystatus owned)" = "available" || /sbin/zfs load-key owned'
+ExecStop=/sbin/zfs unload-key owned
+
+[Install]
+WantedBy=zfs-mount.service

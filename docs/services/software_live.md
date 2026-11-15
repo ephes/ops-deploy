@@ -16,9 +16,7 @@ not uninstalled. A deploy on a host that still has the earlier layout removes th
 after the candidate validated and before the base units are rewritten, so the units
 switch over in one daemon reload and restart. The deployed `software_live.py` and its
 `__pycache__` are removed only after the running release is verified, before the pins
-move. Going back to Python means reverting the S12 change. The Python program stays in
-`tests/parity/software_live/software_live.py` as the policy-validation oracle of the
-tests, byte-identical with ops-library's copy.
+move. Going back to Python means reverting the S12 change.
 
 ```python
 from ops_deploy.services.software_live import SoftwareLiveConfig, deploy_software_live

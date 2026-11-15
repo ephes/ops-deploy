@@ -78,29 +78,13 @@ def test_apply_phrase_and_exact_private_intent_are_not_general_deploy_defaults()
     assert "from_title" not in repr(cfg())
 
 
-def test_render_mapping_needs_no_sessions_storage_credentials_and_pairs_actual_role() -> None:
+def test_render_mapping_needs_no_sessions_storage_credentials() -> None:
     selected = cfg()
     values = template_values(selected)
     assert values["daybook_weeknotes_reconcile_state_path"] == selected.runtime + "/state.json"
     assert not any("aws" in key or "token" in key for key in values)
     payload = operator_payload(selected, 501)
     assert set(payload["expected_code"]) == {"helper", "launcher"}
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Actual owned collection rendering is qualified separately")
-    import jinja2
-
-    role = Path(source) / "roles/daybook_sessions_deploy/templates"
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(role),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    for key, name in (("helper", "weeknotes-identity-ops.py.j2"), ("launcher", "weeknotes-identity-ops.sh.j2")):
-        body = env.get_template(name).render(values).encode()
-        assert payload["expected_code"][key] == {"size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
 
 
 @pytest.mark.parametrize("action", ["prepare", "dry-run", "apply", "verify", "status"])

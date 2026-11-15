@@ -1,15 +1,10 @@
-"""Bound original systemd source and actual SDK commands; no host service proof."""
+"""Service unit writes and actual SDK commands; no host service proof."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pyinfra.operations import server
 
 from ops_deploy.services.homeassistant.render import render_unit
@@ -17,23 +12,6 @@ from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntim
 from ops_deploy.services.homeassistant.services import ensure_service_states, flush_service_handlers, write_units
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
-
-
-def test_original_source_bindings_and_handler_semantics() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant"
-    manifest = json.loads((fixture / "service-source.json").read_text())
-    for relative, entry in manifest["files"].items():
-        assert hashlib.sha256((fixture / entry["fixture"]).read_bytes()).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            actual = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/homeassistant_deploy" / relative
-            assert hashlib.sha256(actual.read_bytes()).hexdigest() == entry["sha256"]
-    states = yaml.safe_load((fixture / "service.yml").read_text())
-    assert len(states) == 2
-    assert all(row["ansible.builtin.systemd"]["daemon_reload"] is True for row in states)
-    handlers = yaml.safe_load((fixture / "service-handlers.yml").read_text())
-    assert [row["name"] for row in handlers[:3]] == ["reload systemd", "restart homeassistant", "restart matter server"]
-    assert all(row["ansible.builtin.systemd"]["enabled"] is True for row in handlers[1:3])
-    assert all(row["ansible.builtin.systemd"]["state"] == "restarted" for row in handlers[1:3])
 
 
 def responses(cfg: HomeAssistantRuntimeConfig, *, current_units: bool, running: bool = True) -> dict[str, Any]:

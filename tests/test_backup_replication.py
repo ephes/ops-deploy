@@ -1,13 +1,11 @@
-"""Exact original backup resources, explicit policy and bounded trust/key admission."""
+"""Backup resources as hosts have them, explicit policy and bounded trust/key admission."""
 
 from __future__ import annotations
 
 import base64
-import hashlib
 import hmac
 import importlib.util
 import json
-import os
 import struct
 from pathlib import Path
 from types import ModuleType
@@ -27,8 +25,12 @@ from ops_deploy.infra.backup import (
 )
 from ops_deploy.infra.backup.config import BackupConfig
 from ops_deploy.infra.backup.render import render
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
+GOLDEN = Path(__file__).parent / "golden" / "backup"
+# Synthetic inputs of the replication roles and the backup source's inline files.
+INPUTS: dict[str, Any] = json.loads((Path(__file__).parent / "fixtures" / "backup" / "inputs.json").read_text())
 
 
 def helper(name: str) -> ModuleType:
@@ -197,56 +199,32 @@ def test_secret_path_symlink_refuses_before_content_read(tmp_path: Path) -> None
         module.admit(link)
 
 
-def test_every_typed_resource_matches_actual_original_ansible_rendering() -> None:
-    oracle = json.loads((Path(__file__).parent / "parity/backup_templates.json").read_text())
-    models: dict[str, type[BackupConfig]] = {
-        "zfs_syncoid_replication": SyncoidConfig,
-        "zfs_usb_replication": UsbReplicationConfig,
-        "minio_offsite_replication": MinioArchiveConfig,
-        "mail_offsite_replication": MailReplicationConfig,
-    }
-    for role, model in models.items():
-        cfg = model.model_validate(oracle["inputs"][role])
-        for relative, digest in oracle["source_sha256"].items():
-            if not relative.startswith("roles/" + role + "/"):
-                continue
-            path = Path(relative)
-            resource = path.name.removesuffix(".j2")
-            assert render(cfg, resource) == oracle["resources"][resource], resource
-            assert (
-                hashlib.sha256((ROOT / "src/ops_deploy/infra/backup/templates" / path.name).read_bytes()).hexdigest()
-                == digest
-            )
+MODELS: dict[str, type[BackupConfig]] = {
+    "zfs_syncoid_replication": SyncoidConfig,
+    "zfs_usb_replication": UsbReplicationConfig,
+    "minio_offsite_replication": MinioArchiveConfig,
+    "mail_offsite_replication": MailReplicationConfig,
+}
 
 
-def test_selected_backup_sources_match_cf3_without_rebaselining_global_parity() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if not library:
-        pytest.skip("explicit selected-role cf3 proof requires paired OPS_LIBRARY_PATH")
-    oracle = json.loads((Path(__file__).parent / "parity/backup_sources.json").read_text())
-    for relative, digest in oracle["resources"].items():
-        assert hashlib.sha256((Path(library) / relative).read_bytes()).hexdigest() == digest, relative
-        if "/files/" in relative:
-            assert (ROOT / "src/ops_deploy/infra/files" / Path(relative).name).read_bytes() == (
-                Path(library) / relative
-            ).read_bytes()
+@pytest.mark.parametrize("kind", sorted(MODELS))
+def test_every_typed_resource_is_the_recorded_render(kind: str) -> None:
+    case = INPUTS["replication"][kind]
+    cfg = MODELS[kind].model_validate(case["inputs"])
+    for resource in case["resources"]:
+        assert_golden(GOLDEN / resource, render(cfg, resource))
 
 
-def test_source_inline_resources_match_actual_original_ansible_rendering() -> None:
+def test_source_inline_resources_are_the_recorded_render() -> None:
     from ops_deploy.infra.backup.render import ENV
     from ops_deploy.infra.backup.source import BackupSourceConfig, source_render
 
-    oracle = json.loads((Path(__file__).parent / "parity/backup_source_templates.json").read_text())
-    cfg = BackupSourceConfig.model_validate(oracle["inputs"])
-    for name, expected in oracle["resources"].items():
+    cfg = BackupSourceConfig.model_validate(INPUTS["source"]["inputs"])
+    for name in INPUTS["source"]["resources"]:
         actual = (
             ENV.get_template(name + ".j2").render() if name == "mail-restore-allow.sh" else source_render(cfg, name)
         )
-        assert actual == expected, name
-        assert (
-            hashlib.sha256((ROOT / "src/ops_deploy/infra/backup/templates" / (name + ".j2")).read_bytes()).hexdigest()
-            == oracle["source_sha256"][name]
-        )
+        assert_golden(GOLDEN / "source" / name, actual)
 
 
 def test_original_USB_by_id_colon_paths_are_valid_operational_devices() -> None:
@@ -339,14 +317,14 @@ def test_restore_authorization_updates_only_selected_key_and_retains_unowned_byt
     assert module.candidate(updated, request) == updated
 
 
-def test_original_mail_key_filter_matches_actual_ansible_nonsecret_oracle() -> None:
+def test_mail_key_filter_appends_exactly_one_newline() -> None:
+    # What the role's regex_replace made of non-secret synthetic text.
     from pydantic import SecretStr
 
     from ops_deploy.infra.backup.common import mail_key_input
 
-    oracle = json.loads((Path(__file__).parent / "parity/mail_key_format.json").read_text())
-    for source, expected in oracle["results"].items():
-        assert mail_key_input(SecretStr(source)).get_secret_value() == expected
+    for source in ("public-synthetic-source", "public-synthetic-source\n", "public-synthetic-source\n\n"):
+        assert mail_key_input(SecretStr(source)).get_secret_value() == source + "\n"
 
 
 def test_mail_private_key_filter_is_applied_by_actual_callers_only(monkeypatch: pytest.MonkeyPatch) -> None:

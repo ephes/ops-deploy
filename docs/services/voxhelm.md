@@ -196,7 +196,6 @@ The worker-internal path is blocked by default. Enabling it requires explicit
 role's disabled-policy default. Ordinary producer ingress does not implicitly
 open the worker control plane.
 
-Focused role parity is exercised against the current absolute library checkout.
 The owned Linux workflow tests real Traefik routing, conditional reload/restart,
 transaction-lock failure preservation and zero-change repeats; qualification of
 this additive ingress path is pending its recorded workflow result.

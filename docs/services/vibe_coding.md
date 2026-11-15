@@ -189,7 +189,6 @@ step run every time with both tools.
   rules, the user module's commands, the controller bundle with real git,
   a converged host (no command, no upload, the token in no log), the plan of
   a fresh arm64 host in the role's order, drift, refusals. With
-  `OPS_LIBRARY_PATH`, the shipped templates must equal the role's. With
   `chezmoi` and `bash` on PATH (skipped otherwise), the real chezmoi runs the
   probe and the apply step against a temporary home with a git-repo external
   nobody can fetch: the apply succeeds and the probe then reports `current`.
@@ -205,13 +204,11 @@ step run every time with both tools.
   new upstream commit, a changed chezmoi config, local modifications
   (refused), another origin (re-cloned), ownership, the GitHub login off,
   private keys, a candidate `sshd -t` rejects (nothing changed) and a failing
-  reload (old file restored, ssh active). With `OPS_LIBRARY_PATH`, the role
-  runs first with Ansible in the container and the deploy then changes
-  nothing (the file tree's owners, modes and sizes are identical).
+  reload (old file restored, ssh active).
 
 ```bash
 docker build -t ops-deploy-vibe-coding-port:local tests/integration/vibe_coding
-VIBE_CODING_DOCKER_IMAGE=ops-deploy-vibe-coding-port:local OPS_LIBRARY_PATH=/abs/ops-library \
+VIBE_CODING_DOCKER_IMAGE=ops-deploy-vibe-coding-port:local \
   uv run --locked pytest tests/test_vibe_coding_docker.py
 ```
 

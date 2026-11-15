@@ -1,0 +1,68 @@
+# Traefik configuration for Homelab
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    homelab-int:
+      rule: "Host(`home.example.com`) && (ClientIP(`10.0.0.0/8`) || ClientIP(`fd00:1234:5678::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - homelab-headers
+        - homelab-gzip
+      service: homelab
+      tls:
+        certResolver: letsencrypt
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    homelab-ext:
+      rule: "Host(`home.example.com`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - homelab-auth
+        - homelab-headers
+        - homelab-gzip
+      service: homelab
+      tls:
+        certResolver: letsencrypt
+
+    # HTTP redirect
+    homelab-http:
+      rule: "Host(`home.example.com`)"
+      entryPoints:
+        - web
+      service: homelab
+
+  middlewares:
+    homelab-auth:
+      basicAuth:
+        users:
+          - "ops:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: true
+
+    homelab-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    homelab-gzip:
+      compress: {}
+
+  services:
+    homelab:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10010"

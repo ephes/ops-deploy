@@ -36,18 +36,6 @@ test-changed *args:
     # One repo-relative path per line, none with spaces: split on purpose.
     exec {{pycache}} uv run --locked pytest -n {{jobs}} --dist worksteal $selected {{args}}
 
-# Run the suite with the ops-library parity and role-oracle tests (OPS_LIBRARY_PATH, default ../ops-library).
-# Uses its own .venv-parity: the locked environment plus ansible-core, which the oracle tests import.
-test-parity *args:
-    #!/usr/bin/env sh
-    set -eu
-    library=$(cd "${OPS_LIBRARY_PATH:-../ops-library}" && pwd -P)
-    echo "OPS_LIBRARY_PATH=$library ($(git -C "$library" rev-parse --short HEAD)$(test -z "$(git -C "$library" status --porcelain)" || echo ', dirty'))"
-    # UV_PROJECT_ENVIRONMENT only for the sync: tests that run uv themselves must not inherit it.
-    UV_PROJECT_ENVIRONMENT=.venv-parity uv sync --locked --inexact --quiet
-    uv pip install --quiet --python .venv-parity/bin/python 'ansible-core==2.21.5'
-    OPS_LIBRARY_PATH="$library" exec {{pycache}} .venv-parity/bin/python -m pytest -n {{jobs}} --dist worksteal {{args}}
-
 # Run mypy (strict)
 typecheck:
     uv run --locked mypy

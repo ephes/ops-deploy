@@ -1,9 +1,7 @@
-"""The hdparm_tune boot oneshot: role-byte parity, enable-only rollout, removal."""
+"""The hdparm_tune boot oneshot: golden host files, enable-only rollout, removal."""
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import shutil
 import stat
@@ -18,9 +16,23 @@ from ops_deploy.infra.hdparm_tune import HdparmDevice, HdparmTuneConfig, deploy_
 from ops_deploy.infra.hdparm_tune.render import render_block, render_boot
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
-ORACLE = json.loads((Path(__file__).parent / "parity/hdparm_boot_apply.json").read_text())
-TEMPLATES = Path(__file__).parents[1] / "src/ops_deploy/infra/hdparm_tune/templates"
+GOLDEN = Path(__file__).parent / "golden" / "hdparm_tune"
+GOLDEN_CASES: dict[str, dict[str, Any]] = {
+    "three-disks": {
+        "devices": [
+            {"device": "/dev/disk/by-id/owned-a", "apm": 127, "spindown_time": 241},
+            {"device": "/dev/disk/by-id/owned-b", "apm": 127, "acoustic_management": 128, "spindown_time": 241},
+            {"device": "/dev/disk/by-id/owned-c", "spindown_time": 0},
+        ]
+    },
+    "custom-path": {
+        "devices": [{"device": "/dev/disk/by-id/owned+x", "acoustic_management": 254}],
+        "boot_device_wait_sec": 5,
+        "boot_script_path": "/opt/owned/apply",
+    },
+}
 SCRIPT = "/usr/local/sbin/hdparm-tune-apply"
 UNIT = "/etc/systemd/system/hdparm-tune.service"
 SERVICE = "hdparm-tune.service"
@@ -58,25 +70,16 @@ def never_wakes_a_disk(commands: list[str]) -> None:
         assert not any(f"systemctl {verb}" in command for verb in ("start", "restart", "reload-or", "try-restart"))
 
 
-@pytest.mark.parametrize("case", ORACLE["cases"])
-def test_boot_resources_match_the_actual_ansible_rendering(case: dict[str, Any]) -> None:
-    cfg = HdparmTuneConfig.model_validate(case["inputs"])
-    assert render_boot(cfg, "script") == case["outputs"]["script"]
-    assert render_boot(cfg, "unit") == case["outputs"]["unit"]
+@pytest.mark.parametrize("name", GOLDEN_CASES)
+def test_boot_resources_are_golden(name: str) -> None:
+    """The boot script and unit, as the hosts have them (first recorded from the role's own render)."""
+
+    cfg = HdparmTuneConfig.model_validate(GOLDEN_CASES[name])
+    assert_golden(GOLDEN / name / "hdparm-tune-apply", render_boot(cfg, "script"))
+    assert_golden(GOLDEN / name / "hdparm-tune.service", render_boot(cfg, "unit"))
 
 
-def test_vendored_templates_match_the_reviewed_role() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if library is None:
-        pytest.skip("OPS_LIBRARY_PATH not set")
-    source = Path(library) / "roles/hdparm_tune/templates"
-    templates = sorted(source.glob("hdparm-tune*.j2"))
-    assert templates, f"no hdparm-tune*.j2 below {source}"
-    for path in templates:
-        assert (TEMPLATES / path.name).read_bytes() == path.read_bytes()
-
-
-def test_role_defaults() -> None:
+def test_defaults() -> None:
     cfg = HdparmTuneConfig()
     assert (cfg.apply_on_boot, cfg.boot_service_name, cfg.boot_script_path, cfg.boot_device_wait_sec) == (
         True,

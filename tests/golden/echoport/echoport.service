@@ -1,0 +1,36 @@
+[Unit]
+Description=Echoport Backup Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=echoport
+Group=echoport
+WorkingDirectory=/home/echoport/site
+EnvironmentFile=/home/echoport/site/.env
+
+ExecStart=/home/echoport/site/.venv/bin/granian \
+    --workers 2 \
+    --interface wsgi \
+    --host 127.0.0.1 \
+    --port 10018 \
+    --access-log \
+    config.wsgi:application
+
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Need access to /home/echoport
+ProtectHome=false
+ReadWritePaths=/home/echoport /home/echoport/site/cache
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

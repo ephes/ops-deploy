@@ -330,21 +330,6 @@ def test_renewal_and_edge_reload_use_original_argv_and_propagate_failures(
     assert calls == [["certbot", "renew", "--dry-run"], ["systemctl", "reload", "postfix"]]
 
 
-def test_vendored_original_validator_and_preserver_are_exact() -> None:
-    import hashlib
-
-    snapshots = Path(__file__).parent / "parity/certbot_lifecycle"
-    manifest = json.loads((snapshots / "provenance.json").read_text())
-    for original, installed in [
-        ("archive_members.py", "certbot_archive_members.py"),
-        ("preserve.py", "certbot_preserve.py"),
-    ]:
-        name = "roles__restore_preserve_internal__files__" + original + ".txt"
-        expected = manifest["files"][name]["sha256"]
-        assert hashlib.sha256((lifecycle.FILES / installed).read_bytes()).hexdigest() == expected
-        assert (lifecycle.FILES / installed).read_bytes() == (snapshots / name).read_bytes()
-
-
 def test_reading_a_retained_source_does_not_mutate_or_prune_it(tmp_path: Path) -> None:
     host, backup, _restore, source = payloads(tmp_path)
     saved = source.with_name(source.name + ".pre-restore-original")

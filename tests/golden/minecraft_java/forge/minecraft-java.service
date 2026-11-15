@@ -1,0 +1,47 @@
+[Unit]
+Description=Minecraft Java Edition Server
+Documentation=https://minecraft.net
+After=network.target
+
+[Service]
+Type=simple
+User=minecraft
+Group=minecraft
+WorkingDirectory=/opt/minecraft/server
+EnvironmentFile=/opt/minecraft/.env
+
+
+# Forge runtime wrapper (execs java directly)
+ExecStart=/opt/minecraft/server/start-forge.sh
+
+
+# Graceful shutdown via RCON
+ExecStop=/usr/local/bin/mcrcon -H 127.0.0.1 -P 25575 "stop"
+
+# Forge exits 143 after a clean RCON stop.
+SuccessExitStatus=143
+
+# Auto-restart on failure
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minecraft-java
+
+# Resource limits
+LimitNOFILE=65535
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Note: ProtectHome disabled because server lives in /home/minecraft and needs write access
+ProtectHome=false
+ReadWritePaths=/opt/minecraft
+
+[Install]
+WantedBy=multi-user.target

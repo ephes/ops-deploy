@@ -127,14 +127,13 @@ Defaults follow the role's `defaults/main.yml`.
 
 ## Parity with the role and playbook
 
-`tests/test_weeknotes_home_parity.py` renders the vendored role templates
-(`tests/parity/ansible/weeknotes_home_deploy__*`) the way Ansible does and
-requires **byte-identical** env file, unit and Traefik route (which is why the
-route says "Managed by Ansible" and `removeHeader: True`; the vendored
-templates are compared with ops-library by `test_traefik_parity`). The
-`DATABASE_URL` expression of the role defaults is evaluated by Jinja and
-compared too. With the route hash reused, Ansible and ops-deploy take turns
-on a host without rewriting files or restarting weeknotes-home or Traefik.
+The env file, unit and Traefik route are **byte-identical** to the retired
+role's output (which is why the route says "Managed by Ansible" and
+`removeHeader: True`), and `DATABASE_URL` quotes the password as the role's
+default did. With the route hash reused, hosts the role set up were taken
+over without rewriting files or restarting weeknotes-home or Traefik.
+`tests/test_weeknotes_home_golden.py` keeps the files so, against goldens in
+`tests/golden/weeknotes_home`.
 
 Differences:
 

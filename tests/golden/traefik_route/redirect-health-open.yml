@@ -1,0 +1,54 @@
+# Traefik configuration for FastDeploy
+# Managed by ops-deploy - do not edit manually
+
+http:
+  routers:
+    fastdeploy-secure:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - fastdeploy-redirect
+        - fastdeploy-headers
+        - fastdeploy-gzip
+      service: fastdeploy
+      tls: {}
+
+    # Plain HTTP; the static config redirects the web entrypoint to web-secure.
+    fastdeploy-http:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web
+      service: fastdeploy
+
+  middlewares:
+
+    fastdeploy-redirect:
+      redirectRegex:
+        regex: "^(https?://[^/]+)/$"
+        replacement: "${1}/static/index.html"
+        permanent: false
+
+    fastdeploy-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    fastdeploy-gzip:
+      compress: {}
+
+  services:
+    fastdeploy:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9999"
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 3s

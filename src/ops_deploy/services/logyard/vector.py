@@ -4,9 +4,10 @@ Port of the ``logyard_vector_deploy`` role (with ``vector_apt_install``) and
 ``playbooks/deploy-logyard-vector.yml``. Vector is installed from its apt
 channel, the shared global fragment and the Logyard fragment are written into
 ``config.d``, and the whole directory is validated with ``vector validate``
-before either live file is replaced. The fragment template is shipped
-unchanged and rendered like Ansible's ``template`` module renders it, so the
-files are byte-identical to the role's (``tests/test_logyard_parity.py``).
+before either live file is replaced. The fragment template is shipped unchanged
+and rendered like Ansible's ``template`` module renders it, so the files are
+byte-identical to the retired role's (goldens:
+``tests/test_logyard_golden.py``).
 
 The role reads ``vector --version`` after installing the package to decide
 whether to emit the template-confinement opt-out (Vector 0.57 and newer).

@@ -13,9 +13,7 @@ refused, removing the keys removes the key file, a missed reload is noticed
 even in the second named last loaded its configuration, only the run holding
 the lock removes staged files, a symlinked directory in the configuration
 directory is never written, a clock behind named's last load is refused
-before any change, a secondary validates, and
-(with ``OPS_LIBRARY_PATH``) the role and this deploy take turns without a
-change or a reload.
+before any change, and a secondary validates.
 """
 
 from __future__ import annotations
@@ -210,45 +208,6 @@ class Fixture:
             f'update add _acme-challenge.home.example.test. 60 TXT "{token}"\nsend\n'
         )
         self.sh(f"nsupdate -y hmac-sha256:acme:{secret}", stdin=script)
-
-    def ansible(self, cfg: BindConfig, zones_dir: Path) -> str:
-        """The role from ``OPS_LIBRARY_PATH`` with Ansible inside the container, on the same inputs."""
-
-        role = Path(os.environ["OPS_LIBRARY_PATH"], "roles", "bind_authoritative_deploy")
-        assert role.is_dir()
-        base = "/opt/bind-role"
-        self.sh(f"rm -rf {base} && mkdir -p {base}/roles {base}/files")
-        self.docker("cp", str(role), f"{self.identifier}:{base}/roles/bind_authoritative_deploy")
-        self.docker("cp", f"{zones_dir}/.", f"{self.identifier}:{base}/files/bind")
-        zones = [
-            {key: list(value) if isinstance(value, tuple) else value for key, value in zone.items()}
-            for zone in cfg.model_dump(exclude_none=True)["zones"]
-        ]
-        variables = {
-            # Installed in the image; without a network the role's apt refresh cannot run.
-            "bind_packages": [],
-            "bind_zone_files_dir": f"{base}/files/bind",
-            "bind_zones": zones,
-            "bind_tsig_keys": [
-                {"name": key.name, "algorithm": key.algorithm, "secret": SECRETS[key.name].get_secret_value()}
-                for key in cfg.tsig_keys
-            ],
-            "bind_verify_delay": 1,
-        }
-        self.sh(f"cat > {base}/vars.json", stdin=json.dumps(variables))
-        play = "- hosts: localhost\n  roles:\n    - role: bind_authoritative_deploy\n"
-        self.sh(f"cat > {base}/play.yml", stdin=play)
-        result = self.docker(
-            "exec",
-            "-i",
-            self.identifier,
-            "sh",
-            "-c",
-            f"cd {base} && ANSIBLE_ROLES_PATH=roles ansible-playbook -c local -i localhost, play.yml -e @vars.json",
-            check=False,
-        )
-        assert result.returncode == 0, result.stdout[-4000:]
-        return result.stdout
 
 
 def mutating(ops: list[OpResult]) -> list[str]:
@@ -566,24 +525,3 @@ def test_a_secondary_validates_and_converges(fixture: Fixture, zones_dir: Path) 
     assert "allow-recursion { none; };" in fixture.sh("cat /etc/bind/named.conf.options")
     assert fixture.sh("named-checkconf /etc/bind/named.conf && echo ok") == "ok"
     assert mutating(fixture.deploy(cfg, secrets)) == []
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_role_and_deploy_take_turns_without_a_change(fixture: Fixture, zones_dir: Path) -> None:
-    cfg = primary(zones_dir)
-    recap = fixture.ansible(cfg, zones_dir)
-    assert re.search(r"localhost\s+: ok=\d+\s+changed=[1-9]\d*\s+unreachable=0\s+failed=0", recap), recap
-    fixture.nsupdate("token-4")
-    configured = fixture.configured()
-    snapshot = fixture.files(f"{MANAGED} {DYNAMIC} {DYNAMIC}.jnl")
-
-    # pyinfra over the role: nothing to do, no reload.
-    assert mutating(fixture.deploy(cfg)) == []
-    assert fixture.files(f"{MANAGED} {DYNAMIC} {DYNAMIC}.jnl") == snapshot
-    assert fixture.configured() == configured
-
-    # The role over pyinfra: nothing changed either.
-    recap = fixture.ansible(cfg, zones_dir)
-    assert re.search(r"localhost\s+: ok=\d+\s+changed=0\s+unreachable=0\s+failed=0", recap), recap
-    assert fixture.files(f"{MANAGED} {DYNAMIC} {DYNAMIC}.jnl") == snapshot
-    assert fixture.configured() == configured

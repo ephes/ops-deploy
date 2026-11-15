@@ -1,9 +1,7 @@
 """services._metrics_httpd: the pyinfra side of ops-library's metrics_httpd_switch (PLAN.md 7.2, 7.4; S5e).
 
-- the drop-in template and the argv/sandbox/probe rules are ops-library's
-  (vendored byte for byte; with ``OPS_LIBRARY_PATH`` the drift tests compare
-  them, and the renders of the three ports must equal the role's goldens and
-  the inputs the roles hand to the switch);
+- the drop-in each port writes stays byte for byte what the hosts have
+  (``tests/golden/metrics_httpd``, see ``tests/goldens.py``);
 - the plans of select/verify against the fake connector, for both
   implementations and the failure paths;
 - the per-service inputs (argv, sandbox, probe) and their place in each deploy;
@@ -16,7 +14,6 @@ from __future__ import annotations
 import http.server
 import json
 import os
-import re
 import shlex
 import subprocess
 import sys
@@ -25,9 +22,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
-import jinja2
 import pytest
-import yaml
 from pyinfra.api import DeployError, deploy
 
 from ops_deploy.core import ConfigValidationError
@@ -41,6 +36,7 @@ from ops_deploy.services.static_site import deploy as static_site
 from ops_deploy.services.thermal_monitoring import deploy as thermal
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost, stubs
+from tests.goldens import assert_golden
 from tests.logyard_fixtures import core_config, make_source
 from tests.metrics_httpd_fixtures import BINARY, ROOT, SHA, VERSION, installed, verify_op
 from tests.static_site_fixtures import make_source as make_site
@@ -55,10 +51,8 @@ from tests.test_thermal_monitoring import converged as thermal_converged
 from tests.test_thermal_monitoring import make_cfg as thermal_make_cfg
 from tests.test_thermal_monitoring import run as thermal_run
 
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
 PACKAGE = Path(__file__).parents[1] / "src/ops_deploy"
-VENDORED = Path(__file__).parent / "parity" / "ansible" / "metrics_httpd_switch__metrics-httpd-impl.conf.j2"
+GOLDEN = Path(__file__).parent / "golden" / "metrics_httpd"
 PY = "/usr/bin/python3 -I -"
 P = "Switch | "
 UNIT = "demo-endpoint"
@@ -87,14 +81,6 @@ PIN_CHECK = f"pin --name metrics-httpd --root {ROOT} --consumer {UNIT}"
 LIVE = f"systemctl show --property=MainPID --value {UNIT}"
 
 
-def render_ansible(binary: str, argv: list[str]) -> str:
-    """The vendored role template as Ansible's ``template`` module renders it."""
-
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined, trim_blocks=True, keep_trailing_newline=True)
-    template = env.from_string(VENDORED.read_text())
-    return template.render(metrics_httpd_impl_binary=binary, metrics_httpd_impl_argv=argv)
-
-
 def run(fields: HttpdSwitchFields, responses: dict[str, Any] | None = None, endpoint: Endpoint = ENDPOINT) -> FakeRun:
     @deploy("Switch")
     def body() -> None:
@@ -112,12 +98,7 @@ def ran(result: FakeRun, marker: str) -> bool:
     return any(marker in c for c in result.executed_commands)
 
 
-# -- vendored template and rules ---------------------------------------------------------
-
-
-def test_packaged_template_is_the_vendored_role_template() -> None:
-    packaged = PACKAGE / "services/_metrics_httpd/templates/metrics-httpd-impl.conf.j2"
-    assert packaged.read_bytes() == VENDORED.read_bytes()
+# -- the drop-in and the rules ------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -130,8 +111,9 @@ def test_packaged_template_is_the_vendored_role_template() -> None:
     ],
     ids=lambda argv: argv[0] + str(len(argv)),
 )
-def test_drop_in_is_rendered_as_the_role_renders_it(argv: list[str]) -> None:
-    assert switch.render_dropin(BINARY, tuple(argv)) == render_ansible(BINARY, argv)
+def test_drop_in_is_golden(argv: list[str], request: pytest.FixtureRequest) -> None:
+    case = request.node.callspec.id
+    assert_golden(GOLDEN / f"argv-{case}.conf", switch.render_dropin(BINARY, tuple(argv)))
 
 
 def test_drop_in_quotes_words_with_spaces_quotes_or_semicolons() -> None:
@@ -651,153 +633,23 @@ def test_logyard_switch_to_rust_checks_the_health_endpoint_in_its_environment(tm
     assert verify[verify.index("--expect") :][:4] == ["--expect", "logyard-health", "--timeout", "35"]
 
 
-# -- against ops-library ------------------------------------------------------------------
+# -- the ports' drop-ins -----------------------------------------------------------------
 
 
-def golden(role: str) -> str:
-    assert OPS_LIBRARY is not None
-    return Path(OPS_LIBRARY, "tests/fixtures/metrics_httpd_switch", role, "metrics-httpd-impl.conf").read_text()
+def test_the_ports_drop_ins_are_golden(tmp_path: Path) -> None:
+    """A changed drop-in restarts the port's endpoint on every host."""
 
-
-@needs_ops_library
-def test_drop_ins_are_the_roles_goldens(tmp_path: Path) -> None:
-    assert switch.render_dropin(BINARY, thermal.httpd_endpoint(thermal_cfg(), TS).argv) == golden(
-        "thermal_metrics_endpoint"
+    assert_golden(
+        GOLDEN / "thermal_monitoring.conf", switch.render_dropin(BINARY, thermal.httpd_endpoint(thermal_cfg(), TS).argv)
     )
-    assert switch.render_dropin(BINARY, static_site.httpd_endpoint(static_cfg(tmp_path)).argv) == golden(
-        "static_site_deploy"
+    assert_golden(
+        GOLDEN / "static_site.conf", switch.render_dropin(BINARY, static_site.httpd_endpoint(static_cfg(tmp_path)).argv)
     )
     cfg = core_config(make_source(tmp_path))
     assert cfg.health is not None
-    assert switch.render_dropin(BINARY, logyard_core.health_httpd_endpoint(cfg, cfg.health).argv) == golden(
-        "logyard_deploy"
+    assert_golden(
+        GOLDEN / "logyard.conf", switch.render_dropin(BINARY, logyard_core.health_httpd_endpoint(cfg, cfg.health).argv)
     )
-
-
-def role_switch_inputs(role: str, tasks: str, context: dict[str, Any]) -> dict[str, Any]:
-    """The ``metrics_httpd_switch_*`` vars a role's switch block sets, rendered with ``context``."""
-
-    assert OPS_LIBRARY is not None
-    library = Path(OPS_LIBRARY)
-    defaults = yaml.safe_load((library / "roles/metrics_httpd_switch/defaults/main.yml").read_text())
-    (block,) = [
-        task
-        for task in yaml.safe_load((library / "roles" / role / "tasks" / tasks).read_text())
-        if "metrics_httpd_switch_impl" in (task.get("vars") or {})
-    ]
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    env.filters["string"] = str
-
-    def render(value: Any) -> Any:
-        if isinstance(value, list):
-            return [render(item) for item in value]
-        if not isinstance(value, str):
-            return value
-        bare = re.fullmatch(r"\{\{\s*(\w+)\s*\}\}", value.strip())
-        if bare and isinstance(context.get(bare.group(1)), list):
-            return context[bare.group(1)]
-        return env.from_string(value).render(**context)
-
-    names = (
-        "argv",
-        "unit_sandbox",
-        "validate_user",
-        "validate_group",
-        "service_name",
-        "python_script",
-        "probe_bind",
-        "probe_port",
-        "probe_path",
-        "probe_expect",
-        "probe_realm",
-        "probe_timeout",
-        "ip_address_allow",
-    )
-    found = {}
-    for name in names:
-        key = f"metrics_httpd_switch_{name}"
-        found[name] = render(block["vars"].get(key, defaults.get(key)))
-    return found
-
-
-def endpoint_inputs(endpoint: Endpoint) -> dict[str, Any]:
-    return {
-        "argv": list(endpoint.argv),
-        "unit_sandbox": list(endpoint.sandbox),
-        "validate_user": endpoint.user,
-        "validate_group": endpoint.group,
-        "service_name": endpoint.service_name,
-        "python_script": endpoint.python_script,
-        "probe_bind": endpoint.probe_bind,
-        "probe_port": str(endpoint.probe_port),
-        "probe_path": endpoint.probe_path,
-        "probe_expect": endpoint.probe_expect,
-        "probe_realm": endpoint.probe_realm,
-        "probe_timeout": str(endpoint.probe_timeout),
-        "ip_address_allow": list(endpoint.ip_address_allow),
-    }
-
-
-def normalised(inputs: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {
-        key: [str(v) for v in value] if isinstance(value, list) else str(value or "").strip()
-        for key, value in inputs.items()
-    }
-    out["probe_timeout"] = str(int(float(out["probe_timeout"])))
-    return out
-
-
-@needs_ops_library
-def test_thermal_inputs_are_the_roles() -> None:
-    cfg = thermal_cfg()
-    context = {
-        **thermal.role_vars(cfg, TS),
-        "thermal_metrics_endpoint_impl": "python",
-        "thermal_metrics_endpoint_service_name": cfg.service_name,
-    }
-    role = role_switch_inputs("thermal_metrics_endpoint", "main.yml", context)
-    assert normalised(role) == normalised(endpoint_inputs(thermal.httpd_endpoint(cfg, TS)))
-
-
-@needs_ops_library
-def test_static_site_inputs_are_the_roles(tmp_path: Path) -> None:
-    cfg = static_cfg(tmp_path, service_name="benchmarks-static", site_path="/srv/benchmarks-static/site")
-    context = {
-        "static_site_impl": "python",
-        "static_site_systemd_unit_name": cfg.service_name,
-        "static_site_user": cfg.user,
-        "static_site_group": cfg.group_name,
-        "static_site_bind_host": cfg.bind_host,
-        "static_site_port": cfg.port,
-        "static_site_path": str(cfg.site_path),
-        "static_site_server_path": str(cfg.server_path),
-    }
-    role = role_switch_inputs("static_site_deploy", "main.yml", context)
-    assert normalised(role) == normalised(endpoint_inputs(static_site.httpd_endpoint(cfg)))
-
-
-@needs_ops_library
-def test_logyard_inputs_are_the_roles(tmp_path: Path) -> None:
-    health = HealthEndpoint(units=({"id": "vector", "unit": "vector.service"},))
-    cfg = core_config(make_source(tmp_path)).model_copy(update={"health": health})
-    endpoint = logyard_core.health_httpd_endpoint(cfg, health)
-    variables = logyard_core.role_vars(cfg)
-    context = {
-        **variables,
-        "logyard_health_impl": "python",
-        "logyard_health_service_name": health.service_name,
-        "logyard_user": cfg.user,
-        "logyard_group": cfg.group,
-        # The role reads these lines from its rendered unit (set_fact before select).
-        "_logyard_health_unit_environment": re.findall(r"(?m)^Environment=.*$", logyard_core.render_health_unit(cfg)),
-    }
-    role = role_switch_inputs("logyard_deploy", "health_endpoint.yml", context)
-    assert normalised(role) == normalised(endpoint_inputs(endpoint))
-    # The role reads that fact with the same expression from the same unit template.
-    assert OPS_LIBRARY is not None
-    tasks = Path(OPS_LIBRARY, "roles/logyard_deploy/tasks/health_endpoint.yml").read_text()
-    assert "lookup('ansible.builtin.template', 'logyard-health-endpoint.service.j2')" in tasks
-    assert "regex_findall('(?m)^Environment=.*$')" in tasks
 
 
 # -- files/verify_host.py ----------------------------------------------------------------

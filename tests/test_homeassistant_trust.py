@@ -1,8 +1,7 @@
-"""Unchanged original trust program on owned systemctl/proc fixtures only."""
+"""The trust program on owned systemctl/proc fixtures only."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
@@ -148,16 +147,6 @@ def test_running_status_field_matches_actual_original_shape(monkeypatch: pytest.
     monkeypatch.setattr(trust, "probe", lambda *args, **kwargs: json.dumps(value))
     with pytest.raises(DeployError, match="invalid status"):
         trust.inspect_trust(HomeAssistantRuntimeConfig(), "preflight")
-
-
-def test_template_and_host_program_are_exact_original_sources() -> None:
-    root = Path(__file__).parents[1] / "src/ops_deploy/services/homeassistant"
-    manifest = json.loads((Path(__file__).parent / "parity/homeassistant_trust_sources.json").read_text())
-    for source, digest in manifest["files"].items():
-        assert hashlib.sha256((root / source).read_bytes()).hexdigest() == digest
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            original = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/homeassistant_deploy" / source
-            assert hashlib.sha256(original.read_bytes()).hexdigest() == digest
 
 
 @pytest.mark.parametrize(

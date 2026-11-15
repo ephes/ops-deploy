@@ -52,6 +52,4 @@ Every run, including an already retired repeat, executes the sequence (the
 role disables on every run), so a repeat is a managed operation, not a
 read-only check. `tests/test_daybook_voice_memo_work.py` runs the shell against
 shadowed `id`/`launchctl` for every branch and failure, checks the SDK
-connection, and with `OPS_LIBRARY_PATH` compares the role's disabled-branch task
-order and conditions; `tests/parity/ops_library_roles.json` records the role's
-digest.
+connection.

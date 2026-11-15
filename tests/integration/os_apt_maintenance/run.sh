@@ -52,10 +52,5 @@ PY
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends fish apache2-utils python3 python3-apt sudo util-linux ca-certificates git
-"$UV_BIN" pip install --python "$CONTROLLER_PYTHON" ansible==14.5.0
 install -d -m 0755 /opt/os-apt-fixture
-# Actual immutable role and dependencies for Ansible coexistence.
-install -d /opt/os-apt-fixture/collections/ansible_collections/local
-git clone https://github.com/ephes/ops-library.git /opt/os-apt-fixture/collections/ansible_collections/local/ops_library
-git -C /opt/os-apt-fixture/collections/ansible_collections/local/ops_library checkout --detach cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641
 "$CONTROLLER_PYTHON" "$HERE/harness.py" "$EVIDENCE"

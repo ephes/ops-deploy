@@ -1,0 +1,73 @@
+# Traefik configuration for the work app
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    work-app-int:
+      rule: "Host(`work.example.org`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+      tls: {}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    work-app-ext:
+      rule: "Host(`work.example.org`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - work-app-auth
+        - work-app-headers
+        - work-app-gzip
+      service: work-app
+      tls: {}
+
+    # HTTP -> HTTPS redirect
+    work-app-http:
+      rule: "Host(`work.example.org`)"
+      entryPoints:
+        - web
+      middlewares:
+        - work-app-redirect
+      service: work-app
+
+  middlewares:
+    work-app-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: true
+
+    work-app-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    work-app-gzip:
+      compress: {}
+
+    work-app-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    work-app:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10011"

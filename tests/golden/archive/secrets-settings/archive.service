@@ -1,0 +1,22 @@
+[Unit]
+Description=Archive Django application
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=archive
+Group=archive
+WorkingDirectory=/home/archive/site/src/django
+EnvironmentFile=/home/archive/site/.env
+ExecStart=/home/archive/site/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:10041 --workers 2
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/archive /home/archive/site
+
+[Install]
+WantedBy=multi-user.target

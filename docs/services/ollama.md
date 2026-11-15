@@ -75,10 +75,10 @@ mutating operation; its launchd/optional HTTP checks are recorded as read-only.
 
 ## Qualification
 
-`tests/test_ollama.py` checks role rendering, XML validity, disabled/no-op/error
-paths, nonrecursive retained-directory repairs, installation and restart
-selection. `OPS_LIBRARY_PATH` enables the explicit source-template comparison;
-that comparison is skipped when the source checkout is absent.
+`tests/test_ollama.py` checks the rendered plist against the golden copies in
+`tests/golden/ollama` (recorded when it equalled the role's render), XML
+validity, disabled/no-op/error paths, nonrecursive retained-directory repairs,
+installation and restart selection.
 
 The `Ollama native macOS integration` workflow builds and installs a wheel from
 the exact PR head SHA for Ollama changes, or the selected immutable
@@ -108,8 +108,7 @@ binary hash and operation outcomes; source code alone is not execution evidence.
 ## Removal
 
 `remove_ollama(OllamaRemoveConfig(confirm=True, ...))` ports the macOS
-`ollama_remove` role at ops-library `44a532ba` (recorded under
-`tests/parity/ollama/remove`). The role has no confirmation flag; this port
+`ollama_remove` role at ops-library `44a532ba`. The role has no confirmation flag; this port
 requires `confirm` before any host probe. The defaults are the role's:
 `com.ollama.ollama` and its plist under `/Library/LaunchDaemons`, user and
 group `ollama`, `/usr/local/var/ollama/{models,logs}`, Homebrew package

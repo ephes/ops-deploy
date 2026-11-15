@@ -2,12 +2,12 @@
 
 The five templates (``bind_macros.j2`` included) are shipped unchanged, so
 ``named.conf``, ``named.conf.options``, ``named.conf.local`` and
-``named.conf.keys`` are byte-identical to the role's for the same inputs
-(``tests/test_infra_bind_parity.py`` compares them with files Ansible itself
-rendered); the builtin-zones include follows the role's rule except on Ubuntu
-26.04 and later, which the role predates (:func:`builtin_zones_file`). Ansible
-renders with ``trim_blocks``, strips the final newline like
-Jinja2 does by default and restores one when the template ended in a newline.
+``named.conf.keys`` stay byte-identical to what nameservers have
+(``tests/test_infra_bind_golden.py`` pins the renders); the builtin-zones
+include follows the role's rule except on Ubuntu 26.04 and later, which the
+role predates (:func:`builtin_zones_file`). Ansible renders with
+``trim_blocks``, strips the final newline like Jinja2 does by default and
+restores one when the template ended in a newline.
 The only Ansible filter the templates use is ``bool``.
 """
 

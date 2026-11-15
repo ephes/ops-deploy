@@ -1,0 +1,36 @@
+# Opaq app - managed by Ansible, do not edit.
+# The tailnet allowlist is the first barrier, the Django login the second.
+http:
+  routers:
+    opaq-app-secure:
+      rule: "Host(`opaq.example.com`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - opaq-app-allowlist
+      service: opaq-app
+      tls: {}
+    opaq-app-http:
+      rule: "Host(`opaq.example.com`)"
+      entryPoints:
+        - http
+      middlewares:
+        - opaq-app-allowlist
+        - opaq-app-redirect
+      service: noop@internal
+
+  middlewares:
+    opaq-app-allowlist:
+      ipAllowList:
+        sourceRange: ["10.0.0.0/8"]
+    opaq-app-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    opaq-app:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:10065"

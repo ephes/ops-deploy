@@ -4,8 +4,10 @@
 agent, optional web and USB-rule workflow. Supply the existing RCP device and
 infra interface; no radio firmware, Thread dataset or new network policy is
 invented. The original templates, including their provenance comment, are
-packaged byte for byte. Public source and owned synthetic fixtures are distinct
-from a real radio or application qualification.
+packaged byte for byte, and `tests/test_otbr.py` pins both rendered files
+literally, so a template change shows up as a host-file change. Public source
+and owned synthetic fixtures are distinct from a real radio or application
+qualification.
 
 ```python
 from ops_deploy.infra import OtbrConfig, deploy_otbr

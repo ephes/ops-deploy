@@ -1,0 +1,25 @@
+[Unit]
+# Managed by local.ops_library.netplan_config
+Description=Recover missing IPv4 default routes on networkd interfaces
+After=systemd-networkd.service
+Wants=systemd-networkd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/netplan-route-guard
+User=root
+Group=root
+RuntimeDirectory=netplan-route-guard
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+TimeoutStartSec=75s
+
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+LockPersonality=true

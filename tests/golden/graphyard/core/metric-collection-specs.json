@@ -1,0 +1,42 @@
+{
+    "metric_collection_specs": [
+        {
+            "config": {
+                "access_token": "graphyard-fixture-homeassistant-token",
+                "base_url": "http://homeassistant.invalid:10020",
+                "host_id": "homeassistant"
+            },
+            "enabled": true,
+            "interval_seconds": 60,
+            "name": "Home Assistant Environment Scan",
+            "spec_type": "home_assistant_env_scan"
+        },
+        {
+            "config": {
+                "basic_password": "graphyard-fixture-nyxmon-password",
+                "basic_username": "nyxmon",
+                "scale": 0.001,
+                "url": "http://fractal.invalid:9101/metrics"
+            },
+            "name": "Fractal backup metrics",
+            "spec_type": "http_json_metric"
+        },
+        {
+            "config": {
+                "password": "graphyard-fixture-unifi-password",
+                "url": "https://unifi.invalid"
+            },
+            "interval_seconds": 300,
+            "name": "UniFi switch traffic",
+            "spec_type": "unifi_device_traffic"
+        },
+        {
+            "config": {
+                "url": "https://x.invalid"
+            },
+            "enabled": false,
+            "name": "Plain page probe",
+            "spec_type": "http_page_probe"
+        }
+    ]
+}

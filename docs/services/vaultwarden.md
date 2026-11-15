@@ -38,9 +38,8 @@ keys, never values. `/etc/vaultwarden.env` reaches the host only on stdin
 
 ## Configuration (`VaultwardenConfig`)
 
-Defaults follow `vaultwarden_deploy/defaults/main.yml`
-(`tests/test_vaultwarden_parity.py` compares them with the role when
-`OPS_LIBRARY_PATH` is set).
+Defaults follow `vaultwarden_deploy/defaults/main.yml` (ops-library
+`540ede2b`).
 
 | Field | Default | Notes |
 |---|---|---|
@@ -126,22 +125,16 @@ A config.json check that fails (rather than answering) does not stop
 planning: the merge runs, and the check runs again as a read-only operation
 that fails the deploy unless it then answers `current`.
 
-## Parity with the role and playbook
+## Rendered files and the role
 
-`tests/test_vaultwarden_parity.py` renders the vendored role templates
-(`tests/parity/ansible/vaultwarden_deploy__*`, checked against ops-library
-main `540ede2b`, 2.56.0) the way Ansible does and requires **byte-identical**
-`/etc/vaultwarden.env`, drop-in and route; the templates the deploy ships are
-the same files. The route's `traefik_ip_allowlist` blocks are the role's
-`vaultwarden_traefik_ip_allowlist` (ops-library da310974), so an Ansible
-rollback run with the same allowlist writes the same route; a run without it
-(or a restore of an archive taken before the allowlist) writes the route
-without it until the next ops-deploy run. With `OPS_LIBRARY_PATH` it also compares the defaults, the
-paths, owners and modes, the packages, the repository line and the
-config.json settings with the role's tasks.
+The deploy ships the role's templates (ops-library `540ede2b`, 2.56.0; the
+route's `traefik_ip_allowlist` blocks from da310974).
+`tests/test_vaultwarden_golden.py` compares `/etc/vaultwarden.env`, the
+drop-in and the route for three cases with `tests/golden/vaultwarden`,
+recorded when they were byte-identical with the role's renders, so a deploy
+rewrites none of them on a converged host.
 `tests/test_vaultwarden_smtp_sync.py` runs the config.json script as the
-deploy does. `tests/parity/ops_library_roles.json` records
-`vaultwarden_deploy`.
+deploy does.
 
 Differences:
 
@@ -236,7 +229,7 @@ throwaway age key; both scripts end to end with stubbed `systemctl`).
 
 `remove_vaultwarden(VaultwardenRemoveConfig(confirm=True))` ports the
 `vaultwarden_remove` role as `playbooks/remove-vaultwarden.yml` runs it
-(ops-library `44a532b`, role files under `tests/parity/vaultwarden/remove`).
+(ops-library `44a532b`).
 Without `confirm` it fails before any host probe. In the role's order: stop
 and disable `vaultwarden` (failures ignored) when one of its unit files
 exists; purge both packages (any dpkg state but not-installed;

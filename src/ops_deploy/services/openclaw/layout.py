@@ -1,8 +1,8 @@
 """Every file and directory the role writes, per step: path, bytes, owner, group, mode.
 
 Pure functions of the resolved variables; :mod:`.deploy` writes them in the
-role's order and ``tests/test_openclaw_parity.py`` compares them with what
-ansible-core computed (``tests/parity/openclaw_deploy``).
+role's order and ``tests/test_openclaw_golden.py`` compares them with the
+recorded host state (``tests/golden/openclaw``).
 """
 
 from __future__ import annotations

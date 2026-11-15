@@ -89,11 +89,12 @@ Removal follows `openclaw_remove`: `confirm` is required; data, image and the
 account stay unless their toggles are set; the route goes by default. Like the
 role it leaves the metrics endpoint in place.
 
-## Parity
+## Rendered files
 
-`tests/parity/openclaw_deploy/` holds three cases (the playbook's values with
+`tests/fixtures/openclaw/` holds three cases (production-shaped values with
 synthetic secrets and a legacy gateway config, managed audio switched off, a
-seeding first deploy) and what ansible-core 2.21 computed for them with the
-role's own task files (`generate.py`): each file's sha256, owner, group and
-mode, the directories, the patched `openclaw.json` and the `.env`.
-`tests/test_ops_library_drift.py` records both roles' digests.
+seeding first deploy); `tests/golden/openclaw/<case>.json` records what the
+deploy writes for them: each file's sha256, owner, group and mode, the
+directories, the patched `openclaw.json` and the `.env`. They were first
+recorded when they equalled what ansible-core computed from the
+`openclaw_deploy` role's task files.

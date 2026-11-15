@@ -1,0 +1,21 @@
+# Environment configuration for the work app
+# This file is managed by Ansible - do not edit manually
+
+DJANGO_SETTINGS_MODULE=config.settings.production
+DJANGO_SECRET_KEY=k-0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=
+DJANGO_ADMIN_URL=admin/
+
+# Database (SQLite)
+DATABASE_URL=sqlite:////home/work/site/db.sqlite3
+
+# Static files (served by WhiteNoise)
+DJANGO_STATIC_ROOT=/home/work/site/staticfiles
+
+# Traefik terminates TLS; disable the redirect so local health checks work
+DJANGO_SECURE_SSL_REDIRECT=False
+
+# Relative evidence paths from the YAML ledger become links here
+LEDGER_EVIDENCE_BASE_URL=https://example.com/blob/main/

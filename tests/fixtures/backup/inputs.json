@@ -1,0 +1,323 @@
+{
+  "replication": {
+    "zfs_syncoid_replication": {
+      "inputs": {
+        "enabled": true,
+        "packages": [
+          "sanoid"
+        ],
+        "service_name": "zfs-syncoid-replication",
+        "timer_name": "zfs-syncoid-replication",
+        "on_calendar": "02:00",
+        "randomized_delay_sec": "10m",
+        "timeout_sec": "6h",
+        "alert_enabled": true,
+        "alert_email": "root",
+        "alert_subject_prefix": "[zfs-syncoid]",
+        "alert_script_path": "/usr/local/bin/zfs-syncoid-alert.sh",
+        "spindown_enabled": true,
+        "spindown_pool": "tank",
+        "spindown_devices": [
+          "/dev/disk/by-id/owned"
+        ],
+        "spindown_script_path": "/usr/local/bin/zfs-syncoid-spindown.sh",
+        "syncoid_path": "/usr/sbin/syncoid",
+        "default_args": [
+          "--no-rollback"
+        ],
+        "jobs": [
+          {
+            "source": "fast/owned",
+            "target": "tank/owned",
+            "recursive": true,
+            "readonly": true,
+            "force_delete": true,
+            "no_rollback": false,
+            "prune_conflicting_snapshots": true,
+            "prune_target_only_snapshots": true,
+            "abort_partial_receive": true,
+            "extra_args": [
+              "--no-sync-snap"
+            ]
+          },
+          {
+            "source": "fast/second",
+            "target": "tank/second",
+            "recursive": false,
+            "readonly": false,
+            "force_delete": false,
+            "prune_conflicting_snapshots": false,
+            "prune_target_only_snapshots": false,
+            "abort_partial_receive": false,
+            "extra_args": []
+          }
+        ],
+        "spindown_retries": 10,
+        "spindown_sleep_sec": 60,
+        "prune_script_path": "/usr/local/bin/zfs-syncoid-prune-conflicts.sh",
+        "abort_partial_receive_script_path": "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh"
+      },
+      "resources": [
+        "zfs-syncoid-abort-partial-receive.sh",
+        "zfs-syncoid-alert.sh",
+        "zfs-syncoid-prune-conflicts.sh",
+        "zfs-syncoid-replication-failure@.service",
+        "zfs-syncoid-replication.service",
+        "zfs-syncoid-replication.timer",
+        "zfs-syncoid-spindown.sh"
+      ]
+    },
+    "zfs_usb_replication": {
+      "inputs": {
+        "enabled": true,
+        "packages": [
+          "sanoid"
+        ],
+        "service_name": "zfs-usb-replication",
+        "timer_name": "zfs-usb-replication",
+        "on_calendar": "Sun 04:00",
+        "randomized_delay_sec": "30m",
+        "timeout_sec": "8h",
+        "alert_enabled": true,
+        "alert_email": "root",
+        "alert_subject_prefix": "[zfs-usb]",
+        "alert_script_path": "/usr/local/bin/zfs-usb-alert.sh",
+        "spindown_enabled": true,
+        "spindown_pool": "tank",
+        "spindown_devices": [
+          "/dev/disk/by-id/owned"
+        ],
+        "spindown_script_path": "/usr/local/bin/zfs-usb-spindown.sh",
+        "syncoid_path": "/usr/sbin/syncoid",
+        "state_dir": "/var/lib/zfs-usb-replication",
+        "state_writer_path": "/usr/local/bin/zfs_usb_replication_state.py",
+        "attestation_helper_path": "/usr/local/sbin/zfs-snapshot-file-attestation",
+        "snapshot_retention": [
+          {
+            "source": "tank/owned",
+            "target": "vault/owned",
+            "keep_days": 60,
+            "prefixes": [
+              "autosnap_",
+              "syncoid_"
+            ]
+          }
+        ],
+        "retention_script_path": "/usr/local/bin/zfs_usb_snapshot_retention.py",
+        "wait_for_async_destroy": true,
+        "device": "",
+        "pool": "vault",
+        "devices": [
+          {
+            "name": "owned-a",
+            "device": "/dev/disk/by-id/owned-a",
+            "pool_guid": "1234"
+          },
+          {
+            "name": "owned-b",
+            "device": "/dev/disk/by-id/owned-b"
+          }
+        ],
+        "anchor_mode": "bookmark",
+        "anchor_helper_path": "/usr/local/bin/zfs_usb_bookmark_anchors.py",
+        "bookmark_prune": true,
+        "bookmark_prune_prefixes": [
+          "autosnap_",
+          "syncoid_"
+        ],
+        "identifier": "",
+        "force_export": false,
+        "exportfs_lock_dir": "/etc/exports.d",
+        "set_canmount_off_for_readonly_recursive_targets": true,
+        "key_manage": true,
+        "key_path": "/root/.zfs-key-vault",
+        "default_args": [
+          "--no-rollback"
+        ],
+        "abort_partial_receive_script_path": "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh",
+        "jobs": [
+          {
+            "source": "fast/owned",
+            "target": "tank/owned",
+            "recursive": true,
+            "readonly": true,
+            "force_delete": true,
+            "no_rollback": false,
+            "prune_conflicting_snapshots": true,
+            "prune_target_only_snapshots": true,
+            "abort_partial_receive": true,
+            "extra_args": [
+              "--no-sync-snap"
+            ]
+          },
+          {
+            "source": "fast/second",
+            "target": "tank/second",
+            "recursive": false,
+            "readonly": false,
+            "force_delete": false,
+            "prune_conflicting_snapshots": false,
+            "prune_target_only_snapshots": false,
+            "abort_partial_receive": false,
+            "extra_args": []
+          }
+        ]
+      },
+      "resources": [
+        "zfs-usb-alert.sh",
+        "zfs-usb-replication-failure@.service",
+        "zfs-usb-replication.service",
+        "zfs-usb-replication.sh",
+        "zfs-usb-replication.timer",
+        "zfs-usb-spindown.sh"
+      ]
+    },
+    "minio_offsite_replication": {
+      "inputs": {
+        "enabled": true,
+        "packages": [
+          "rsync",
+          "openssh-client"
+        ],
+        "service_name": "minio-offsite-replication",
+        "timer_name": "minio-offsite-replication",
+        "on_calendar": "05:00",
+        "randomized_delay_sec": "15m",
+        "timeout_sec": "4h",
+        "alert_enabled": true,
+        "alert_email": "root",
+        "alert_subject_prefix": "[minio-offsite]",
+        "alert_script_path": "/usr/local/bin/minio-offsite-alert.sh",
+        "spindown_enabled": true,
+        "spindown_pool": "",
+        "spindown_devices": [],
+        "spindown_script_path": "/usr/local/bin/owned-spindown.sh",
+        "source_host": "owned.example",
+        "source_user": "root",
+        "ssh_key_manage": true,
+        "ssh_key_path": "/root/.ssh/minio-offsite-replication-ed25519",
+        "ssh_known_hosts_path": "/root/.ssh/known_hosts",
+        "ssh_connect_timeout": 30,
+        "manage_known_hosts": true,
+        "ssh_keyscan_type": "ed25519",
+        "destination_path": "/tank/backups/minio",
+        "destination_owner": "root",
+        "destination_group": "backup-metrics",
+        "destination_mode": "0750",
+        "status_dir": "/var/lib/minio-offsite-replication",
+        "status_owner": "root",
+        "status_group": "backup-metrics",
+        "status_mode": "0750",
+        "script_path": "/usr/local/bin/minio-offsite-replication.sh",
+        "source_path": "/opt/backups/minio",
+        "archive_patterns": [
+          "*.tar.gz",
+          "*.tar.zst"
+        ],
+        "rsync_extra_args": [
+          "--archive",
+          "--hard-links",
+          "--numeric-ids",
+          "--partial-dir=.rsync-partial"
+        ],
+        "rsync_delete": false,
+        "require_archives": false
+      },
+      "resources": [
+        "minio-offsite-alert.sh",
+        "minio-offsite-replication-failure@.service",
+        "minio-offsite-replication.service",
+        "minio-offsite-replication.sh",
+        "minio-offsite-replication.timer"
+      ]
+    },
+    "mail_offsite_replication": {
+      "inputs": {
+        "enabled": true,
+        "packages": [
+          "rsync",
+          "openssh-client"
+        ],
+        "service_name": "mail-offsite-replication",
+        "timer_name": "mail-offsite-replication",
+        "on_calendar": "04:00",
+        "randomized_delay_sec": "15m",
+        "timeout_sec": "4h",
+        "alert_enabled": true,
+        "alert_email": "root",
+        "alert_subject_prefix": "[mail-offsite]",
+        "alert_script_path": "/usr/local/bin/mail-offsite-alert.sh",
+        "spindown_enabled": true,
+        "spindown_pool": "",
+        "spindown_devices": [],
+        "spindown_script_path": "/usr/local/bin/owned-spindown.sh",
+        "source_host": "owned.example",
+        "source_user": "root",
+        "ssh_key_manage": true,
+        "ssh_key_path": "/root/.ssh/mail-offsite-replication-ed25519",
+        "ssh_known_hosts_path": "/root/.ssh/known_hosts",
+        "ssh_connect_timeout": 30,
+        "manage_known_hosts": true,
+        "ssh_keyscan_type": "ed25519",
+        "destination_path": "/tank/backups/mail",
+        "destination_owner": "root",
+        "destination_group": "backup-metrics",
+        "destination_mode": "0750",
+        "status_dir": "/var/lib/mail-offsite-replication",
+        "status_owner": "root",
+        "status_group": "backup-metrics",
+        "status_mode": "0750",
+        "script_path": "/usr/local/bin/mail-offsite-replication.sh",
+        "source_vmail_path": "/mnt/cryptdata/vmail",
+        "source_stage_path": "/mnt/cryptdata/mail-backup-stage",
+        "source_stage_command": "/usr/local/sbin/mail-backup-stage.sh",
+        "destination_vmail_subdir": "vmail",
+        "destination_stage_subdir": "stage",
+        "vmail_rsync_extra_args": [
+          "--archive",
+          "--hard-links",
+          "--numeric-ids",
+          "--partial-dir=.rsync-partial",
+          "--delete"
+        ],
+        "stage_rsync_extra_args": [
+          "--archive",
+          "--numeric-ids"
+        ],
+        "snapshot_enabled": true,
+        "snapshot_dataset": "tank/backups/mail",
+        "snapshot_prefix": "mail-sync",
+        "snapshot_keep": 30
+      },
+      "resources": [
+        "mail-offsite-alert.sh",
+        "mail-offsite-replication-failure@.service",
+        "mail-offsite-replication.service",
+        "mail-offsite-replication.sh",
+        "mail-offsite-replication.timer"
+      ]
+    }
+  },
+  "source": {
+    "inputs": {
+      "minio_enabled": true,
+      "mail_enabled": true,
+      "minio_source_path": "/owned/archive///",
+      "minio_command_path": "/usr/local/sbin/minio-offsite-rsync-allow.sh",
+      "mail_stage_path": "/owned/stage/",
+      "mail_vmail_path": "/owned/vmail/",
+      "mail_stage_command": "/usr/local/sbin/mail-backup-stage.sh",
+      "mail_command_path": "/usr/local/sbin/mail-offsite-allow.sh",
+      "mail_restore_key_path": "/root/.ssh/mail-offsite-replication-ed25519",
+      "mail_restore_host": "owned.example",
+      "ssh_dir": "/root/.ssh",
+      "known_hosts_path": "/root/.ssh/known_hosts"
+    },
+    "resources": [
+      "mail-backup-stage.sh",
+      "mail-offsite-allow.sh",
+      "mail-restore-allow.sh",
+      "minio-offsite-rsync-allow.sh"
+    ]
+  }
+}

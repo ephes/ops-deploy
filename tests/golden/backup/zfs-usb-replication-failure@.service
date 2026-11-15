@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on ZFS USB replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/zfs-usb-alert.sh "%i"

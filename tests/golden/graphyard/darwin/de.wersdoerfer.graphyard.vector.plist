@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>de.wersdoerfer.graphyard.vector</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>__GRAPHYARD_VECTOR_BINARY__</string>
+      <string>--config-dir</string>
+      <string>/etc/vector/config.d</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+    <key>WorkingDirectory</key>
+    <string>/var/lib/vector</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/vector/graphyard-vector.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/vector/graphyard-vector.err.log</string>
+  </dict>
+</plist>

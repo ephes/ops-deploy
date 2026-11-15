@@ -1,11 +1,10 @@
-"""``journald_config``: byte parity with the role's template, handler gating and validation."""
+"""``journald_config``: the drop-in's exact bytes, handler gating and validation."""
 
 import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 from pydantic import ValidationError
 
@@ -13,45 +12,21 @@ from ops_deploy.base import JournaldConfig, deploy_journald_config, journald_con
 from ops_deploy.base.journald_config import (
     ACTIVE_CHECK,
     DEFAULT_DROPIN,
-    MANAGED_KEYS,
     STAT_KIND,
     render_journald_dropin,
 )
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 from tests.test_base_headless_mode import SYSTEMD
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
+GOLDEN = Path(__file__).parent / "golden" / "journald_config"
 DIR = "/etc/systemd/journald.conf.d"
 RESTART = "systemctl restart systemd-journald"
 FLUSH = "journalctl --flush"
 CHECK = "journald config | Check systemd-journald is running"
 
 
-def render_ansible(role_vars: dict[str, Any]) -> str:
-    """The role's template, rendered as Ansible's ``template`` module does.
-
-    ``journald_config_managed_settings`` is the role's ``vars/main.yml`` map,
-    built from the same role variables in the same order.
-    """
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    defaults = {f"journald_config_{name}": "" for name in MANAGED_KEYS} | {"journald_config_storage": "persistent"}
-    merged = defaults | role_vars
-    managed = {key: merged[f"journald_config_{name}"] for name, key in MANAGED_KEYS.items()}
-    template = env.get_template("journald_config__journald.conf.j2")
-    return template.render(
-        journald_config_managed_settings=managed,
-        journald_config_extra_settings=merged.get("journald_config_extra_settings", {}),
-    )
-
-
-# Role variables (without the ``journald_config_`` prefix), as an inventory would pass them.
 CASES: dict[str, dict[str, Any]] = {
     "defaults": {},
     "retention limits, integer file count": {
@@ -75,11 +50,13 @@ CASES: dict[str, dict[str, Any]] = {
 }
 
 
-@pytest.mark.parametrize("role_vars", CASES.values(), ids=CASES.keys())
-def test_drop_in_matches_the_role_template(role_vars: dict[str, Any]) -> None:
-    cfg = JournaldConfig(**role_vars)
+@pytest.mark.parametrize("name", CASES)
+def test_drop_in_is_golden(name: str) -> None:
+    """A changed drop-in restarts systemd-journald on every host."""
 
-    assert render_journald_dropin(cfg) == render_ansible({f"journald_config_{k}": v for k, v in role_vars.items()})
+    cfg = JournaldConfig(**CASES[name])
+
+    assert_golden(GOLDEN / (name.replace(",", "").replace(" ", "-") + ".conf"), render_journald_dropin(cfg))
 
 
 def test_retention_drop_in_lines() -> None:

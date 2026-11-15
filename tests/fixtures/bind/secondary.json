@@ -1,0 +1,45 @@
+{
+  "distribution": "Debian",
+  "major_version": 12,
+  "config": {
+    "recursion": false,
+    "allow_transfer": [
+      "none"
+    ],
+    "allow_query": [
+      "any"
+    ],
+    "tsig_keys": [
+      {
+        "name": "xfer-key",
+        "algorithm": "hmac-sha256",
+        "secret": "Zml4dHVyZS10cmFuc2Zlci1rZXk="
+      }
+    ],
+    "zones": [
+      {
+        "name": "example.org",
+        "file": "db.example.org",
+        "type": "secondary",
+        "primaries": [
+          "192.0.2.1 key \"xfer-key\"",
+          "2001:db8::1 key \"xfer-key\""
+        ]
+      },
+      {
+        "name": "home.example.org",
+        "file": "db.home.example.org",
+        "type": "slave",
+        "primaries": "192.0.2.1 key \"xfer-key\""
+      },
+      {
+        "name": "absolute.example.org",
+        "file": "/var/cache/bind/sec/db.absolute",
+        "type": "secondary",
+        "primaries": [
+          "192.0.2.1"
+        ]
+      }
+    ]
+  }
+}

@@ -673,9 +673,7 @@ def moved_archive(tmp_path: Path, name: Callable[[str], str] | None = None) -> d
     host = ArchivingHost(engine, tmp_path / "host")
     host.install()
     step = history(host)
-    from tests.traefik_tx_fixtures import reference
-
-    step(reference, "enroll")
+    step(engine, "enroll")
     directory = Path(step(engine, "binary")["state"]["transaction"])
     target = tmp_path / "disk" / ((name or (lambda tx: f"{tx}.tar.gz"))(directory.name))
     target.parent.mkdir()

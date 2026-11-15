@@ -30,7 +30,7 @@ from unittest.mock import patch
 import pytest
 
 from ops_deploy.infra.traefik_tx import engine, runner
-from tests.traefik_tx_fixtures import NEW, OLD, FakeHost, Setup, base_setup, fake_traefik, reference, sha256
+from tests.traefik_tx_fixtures import NEW, OLD, FakeHost, Setup, base_setup, fake_traefik, sha256
 
 TX = "6f1c2c1e-0a3b-4c5d-8e9f-0123456789ab"
 TX2 = "0b7e4f7a-1c2d-4e3f-9a4b-5c6d7e8f9a0b"
@@ -814,20 +814,20 @@ def test_safe_restore_then_a_second_run_refuses(box: Box) -> None:
     assert box.host.binary.read_bytes() == box.host.running == fake_traefik(OLD)
 
 
-def test_the_reference_engine_takes_the_safe_restore_record(box: Box) -> None:
-    """ops-library's engine loads it, refuses a binary update on it and resumes from it."""
+def test_the_engine_takes_the_safe_restore_record(box: Box) -> None:
+    """A fresh engine run loads it, refuses a binary update on it and resumes from it."""
 
     run_killed(box, kill_engine(box))
     recovery = runner.safe_restore(TX)["state"]
-    other = FakeHost(reference, box.host.root, running=box.host.running)
+    other = FakeHost(engine, box.host.root, running=box.host.running)
 
     with other.patched():
-        assert reference.load_state(other.state_root / "state.json") == recovery
+        assert engine.load_state(other.state_root / "state.json") == recovery
         binary = {**box.setup.request, "controller_state": recovery}
         with pytest.raises(RuntimeError, match=r"^active recovery or unreviewed baseline drift$"):
-            reference.execute(binary)
+            engine.execute(binary)
         resume = {**binary, "action": "resume", "recovery_review_reference": "reviewed"}
-        resumed = reference.execute(resume)["state"]
+        resumed = engine.execute(resume)["state"]
 
     assert (resumed["phase"], resumed["resumed_from"]) == ("clear", recovery["revision"])
 

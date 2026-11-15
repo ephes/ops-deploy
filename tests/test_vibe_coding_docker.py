@@ -10,14 +10,11 @@ package), and removes it at the end. The Docker CLI is wrapped so that pyinfra
 can only inspect, exec into and copy into that container.
 
 The dotfiles are a synthetic chezmoi repository in a bare repo on the
-controller (``file://`` URL), copied to the same path inside the container
-for the Ansible run. ``test_switch_from_the_role_changes_nothing`` needs
-``OPS_LIBRARY_PATH`` (the role and shell_basics_deploy are copied in).
+controller (``file://`` URL).
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import secrets
@@ -436,66 +433,3 @@ def test_drift_dotfiles_github_and_sshd_failures(box: Box, dotfiles: Dotfiles, t
     ]
     assert box.read("/etc/ssh/sshd_config") == marked
     assert box.deploy(cfg, github()).mutating_changed_ops == []
-
-
-ROLE_PLAY = """\
-- hosts: localhost
-  become: true
-  roles:
-    - role: local.ops_library.vibe_coding_deploy
-      vars:
-        vibe_coding_user_home: "{home}"
-        vibe_coding_ssh_authorized_keys:
-          - "{key}"
-        vibe_coding_dotfiles_repo: "{repo}"
-        vibe_coding_github_cli_auth_enabled: true
-        vibe_coding_github_username: "{username}"
-        vibe_coding_github_token: "{token}"
-        vibe_coding_npm_tools: ["{tool}"]
-        vibe_coding_install_rust: false
-        shell_basics_fix_resolv_conf: false
-"""
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_switch_from_the_role_changes_nothing(box: Box, dotfiles: Dotfiles, tmp_path: Path) -> None:
-    library = Path(os.environ["OPS_LIBRARY_PATH"])
-    roles = "/opt/role-run/ansible_collections/local/ops_library/roles"
-    box.sh(f"mkdir -p {roles} {shlex.quote(str(dotfiles.bare.parent))}")
-    for role in ("vibe_coding_deploy", "shell_basics_deploy"):
-        box.docker("cp", str(library / "roles" / role), f"{box.identifier}:{roles}/{role}")
-    box.docker("cp", str(dotfiles.bare), f"{box.identifier}:{dotfiles.bare}")
-    box.sh(f"chown -R root:root {shlex.quote(str(dotfiles.bare))}")
-    _, vibe_public = keypair(tmp_path, "vibe-login")
-    play = ROLE_PLAY.format(
-        home=HOME, key=vibe_public, repo=dotfiles.url, username=GH_USER, token=GH_TOKEN, tool=NPM_TOOL
-    )
-    box.sh(f"printf %s {shlex.quote(play)} > /opt/role-run/play.yml")
-    play_command = (
-        "cd /opt/role-run && ANSIBLE_COLLECTIONS_PATH=/opt/role-run ANSIBLE_NOCOLOR=1 "
-        "ansible-playbook -c local -i localhost, play.yml"
-    )
-    # The role cannot finish a first run: npm 10 fails `npm list -g` on the
-    # empty per-user prefix (no lib directory yet). The host it serves has one.
-    first = box.sh(play_command, check=False, timeout=1800)
-    assert first.returncode != 0
-    assert "coding_tools | Check installed npm global packages (JSON)] ***\nfatal" in first.stdout
-    box.sh(f"runuser -u vibe -- mkdir {HOME}/.npm-global/lib")
-    recap = box.sh(play_command, check=False, timeout=1800)
-    assert recap.returncode == 0, recap.stdout[-4000:] + recap.stderr[-2000:]
-    assert re.search(r"localhost\s+: ok=\d+\s+changed=[1-9]\d*\s+unreachable=0\s+failed=0", recap.stdout)
-    snapshot = box.out(
-        f"find {HOME} /etc/ssh/sshd_config /root/.ssh/known_hosts /usr/local/bin /etc/apt/sources.list.d "
-        "-xdev -printf '%p %u:%g %m %s\\n' | sort | grep -v '/.npm/_' | sha256sum"
-    )
-
-    cfg = config(dotfiles.prepare(), vibe_public, install_rust=False)
-    run = box.deploy(cfg, github())
-    assert run.succeeded, run.error
-    assert run.mutating_changed_ops == []
-    after = box.out(
-        f"find {HOME} /etc/ssh/sshd_config /root/.ssh/known_hosts /usr/local/bin /etc/apt/sources.list.d "
-        "-xdev -printf '%p %u:%g %m %s\\n' | sort | grep -v '/.npm/_' | sha256sum"
-    )
-    assert after == snapshot
-    assert json.loads(box.out(f"runuser -u vibe -- env HOME={HOME} npm list -g --depth=0 --json"))["dependencies"]

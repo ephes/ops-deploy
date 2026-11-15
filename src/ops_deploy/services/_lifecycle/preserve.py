@@ -1,7 +1,7 @@
 """ops-library's ``restore_preserve_internal`` helper for the restore ports.
 
-``files/preserve.py`` is the role's ``files/preserve.py`` byte for byte
-(``tests/test_ops_library_drift.py`` checks it). Host scripts run it as
+``files/preserve.py`` is the role's ``files/preserve.py``, vendored byte for
+byte (ops-deploy owns it now). Host scripts run it as
 ``python3 -I -c "$PRESERVE_PY" <args>`` (``-I``: nothing from the
 working directory or the environment is imported):
 

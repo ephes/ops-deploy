@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import pwd
@@ -19,6 +18,7 @@ from ops_deploy.infra.tailscale import TailscaleConfig, TailscaleMetricsConfig
 from ops_deploy.infra.tailscale.metrics import schema
 from ops_deploy.infra.tailscale.nyxmon import TailscaleNyxmonTarget, check_row
 from ops_deploy.infra.tailscale.render import render
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
 
@@ -175,21 +175,21 @@ def test_sql_missing_and_corrupt_are_distinct_without_creation(tmp_path: Path) -
     assert "synthetic-only" not in result.stdout + result.stderr
 
 
-def test_vendored_tailscale_resource_hashes() -> None:
-    receipt = json.loads((ROOT / "tests/parity/tailscale_sources.json").read_text())
-    for name, expected in receipt["resources"].items():
-        path = ROOT / "src/ops_deploy/infra/tailscale/templates" / name
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
+GOLDEN = Path(__file__).parent / "golden" / "tailscale_metrics"
+METRICS_FILES = (
+    "tailscale-metrics-collector.service",
+    "tailscale-metrics-collector.timer",
+    "tailscale-metrics-endpoint.service",
+    "tailscale_metrics_exporter.py",
+    "tailscale_metrics_httpd.py",
+)
 
 
-def test_paired_tailscale_role_resource_hashes() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if not library:
-        pytest.skip("Explicit paired ops-library checkout required for selected original-role provenance")
-    receipt = json.loads((ROOT / "tests/parity/tailscale_sources.json").read_text())
-    for name, expected in receipt["resources"].items():
-        path = Path(library) / "roles/tailscale_metrics_endpoint/templates" / name
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
+@pytest.mark.parametrize("name", METRICS_FILES)
+def test_metrics_endpoint_files_are_golden(name: str) -> None:
+    """The endpoint's units and programs: a changed byte restarts the collector or the endpoint."""
+
+    assert_golden(GOLDEN / name, render(TailscaleMetricsConfig(), name))
 
 
 def test_missing_binary_defers_preferences_until_native_prerequisites(monkeypatch: pytest.MonkeyPatch) -> None:

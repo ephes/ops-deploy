@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 import plistlib
-from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from ops_deploy.services.daybook_photos_offload import DaybookPhotosOffloadConfig
-from ops_deploy.services.daybook_photos_offload.config import DEFAULTS, PACKAGE
-from ops_deploy.services.daybook_photos_offload.render import render_template, resources
+from ops_deploy.services.daybook_photos_offload.render import resources
 
 
 def config(**overrides: Any) -> DaybookPhotosOffloadConfig:
@@ -84,38 +79,3 @@ def test_disabled_role_does_not_require_live_account_source_or_rendering() -> No
 def test_original_closed_paths_account_schedule_and_source_contracts(key: str, value: Any) -> None:
     with pytest.raises(ValidationError):
         config(**{"daybook_photos_offload_" + key: value})
-
-
-def test_package_and_rendering_match_actual_original_role_with_real_ansible_filters() -> None:
-    import jinja2
-    import yaml
-
-    root = os.environ.get("OPS_LIBRARY_PATH")
-    if not root:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    role = Path(root) / "roles/daybook_photos_offload_deploy"
-    assert yaml.safe_load((role / "defaults/main.yml").read_text()) == DEFAULTS
-    assert set(DaybookPhotosOffloadConfig.model_fields) == set(DEFAULTS)
-    packaged = files(PACKAGE).joinpath("templates")
-    templates = sorted((role / "templates").glob("*.j2"))
-    assert {item.name for item in templates} == {item.name for item in packaged.iterdir()}
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(role / "templates"),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    for cfg in (
-        config(),
-        config(daybook_photos_offload_launchd_enabled=True),
-        config(
-            daybook_photos_offload_service_home="/Users/fixture space & pair",
-            daybook_photos_offload_start_calendar=[{"Hour": 0, "Minute": 59}],
-        ),
-    ):
-        for template in templates:
-            assert packaged.joinpath(template.name).read_bytes() == template.read_bytes()
-            assert render_template(template.name, cfg) == env.get_template(template.name).render(
-                cfg.model_dump(mode="json")
-            )

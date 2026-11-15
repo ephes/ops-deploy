@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import jinja2
 import pytest
 from pydantic import ValidationError
 
@@ -9,8 +8,9 @@ from ops_deploy.base.ssh_authorized_keys import render_authorized_keys
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
+from tests.goldens import assert_golden
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
+GOLDEN = Path(__file__).parent / "golden" / "ssh_authorized_keys"
 KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialForTestsOnly000000000000"
 ENTRIES = (
     AuthorizedKey(key=KEY, comment="operator"),
@@ -19,17 +19,12 @@ ENTRIES = (
 )
 
 
-def render_ansible(entries: list[dict[str, str]]) -> str:
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(VENDORED), trim_blocks=True, keep_trailing_newline=True)
-    template = env.get_template("ssh_authorized_keys_manage__authorized_keys.j2")
-    return template.render(ssh_authorized_keys_manage_entries=entries)
+def test_rendering_is_golden() -> None:
+    """``authorized_keys`` decides who logs in; it stays byte for byte as the hosts have it."""
 
-
-def test_rendering_matches_the_role() -> None:
     cfg = SshAuthorizedKeysConfig(entries=ENTRIES)
-    as_role = [entry.model_dump() for entry in ENTRIES]
 
-    assert render_authorized_keys(cfg) == render_ansible(as_role)
+    assert_golden(GOLDEN / "authorized_keys", render_authorized_keys(cfg))
     assert render_authorized_keys(cfg).splitlines()[1:] == [
         f"{KEY} operator",
         f'command="/usr/local/sbin/x.sh",no-pty {KEY}2 backup',

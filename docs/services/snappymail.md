@@ -151,8 +151,8 @@ scripts end to end with stubbed `systemctl` and the real `preserve.py`).
 ## Removal
 
 `remove_snappymail(SnappyMailRemoveConfig(confirm=True))` ports the
-`snappymail_remove` role at ops-library `44a532b` (role and
-`snappymail_shared` files under `tests/parity/snappymail/remove`). Without
+`snappymail_remove` role at ops-library `44a532b` with `snappymail_shared`'s
+defaults. Without
 `confirm` it fails before any host probe. In the role's order it removes the
 nginx site files, the Traefik route (behind the transaction guard), every
 regular file named `snappymail.conf` below `/etc/php` (the role's `find`), the

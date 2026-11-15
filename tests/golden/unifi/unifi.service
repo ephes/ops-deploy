@@ -1,0 +1,66 @@
+[Unit]
+Description=UniFi Network Application
+After=network-online.target mongod.service
+Wants=network-online.target
+Requires=mongod.service
+
+[Service]
+Type=simple
+User=unifi
+Group=unifi
+# server.log carries the MongoDB URI with its password: new logs 0640, dirs 0750.
+UMask=0027
+WorkingDirectory=/usr/lib/unifi
+
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="JVM_INIT_HEAP_SIZE=1024M"
+Environment="JVM_MAX_HEAP_SIZE=2048M"
+Environment="UNIFI_JVM_OPTS=-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dunifi.core.enabled=false -Dunifi.mongodb.service.enabled=false -Dlog4j2.formatMsgNoLookups=true"
+
+# The Mongo URI (with credentials) is read from a root:unifi 0640
+# Java @argfile so it stays out of this world-readable unit, `systemctl show`
+# and the process command line.
+ExecStart=/usr/bin/java \
+    @/etc/unifi-secrets/mongodb.jvmargs \
+    --add-opens java.base/java.time=ALL-UNNAMED \
+    --add-opens java.base/java.lang=ALL-UNNAMED \
+    -Xms1024M \
+    -Xmx2048M \
+    -Djava.awt.headless=true \
+    -Dfile.encoding=UTF-8 \
+    -Dunifi.core.enabled=false \
+    -Dunifi.mongodb.service.enabled=false \
+    -Dlog4j2.formatMsgNoLookups=true \
+    -Ddb.mongo.local=false \
+    -Dunifi.db.name=unifi \
+    -jar /usr/lib/unifi/lib/ace.jar start
+
+ExecStop=/usr/bin/java -jar /usr/lib/unifi/lib/ace.jar stop
+
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+StandardOutput=journal
+StandardError=journal
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

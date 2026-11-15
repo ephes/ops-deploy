@@ -73,13 +73,7 @@ read. Current shared-source security fixes and production file preservation
 require separate source and protected inventory qualification; this public
 component alone does not claim those outcomes.
 
-Paired original-role controls evaluate the actual Ansible Templar validation and
-key-conflict expressions and execute the actual `ansible.posix.authorized_key`
-module transition algorithm against owned temporary files. They compare fresh,
-existing administrator and current dedicated-key semantics plus conflict
-refusals. Existing JSON formatting and whole-file authorization bytes are
-intentionally preserved more strictly; this is not a claim of universal original
-byte equality. Run the optional oracle with `OPS_LIBRARY_PATH` and
-`ANSIBLE_POSIX_MODULE` pointing to the owned original collection module, with
-`ansible-core` available in that same test interpreter. These are test tools, not
-product dependencies.
+Existing JSON formatting and whole-file authorization bytes are preserved
+strictly; fresh, existing administrator and current dedicated-key states and
+conflict refusals are tested against owned temporary files
+(`tests/test_daybook_notifier_host.py`).

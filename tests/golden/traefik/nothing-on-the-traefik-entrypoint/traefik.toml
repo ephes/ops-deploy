@@ -1,0 +1,41 @@
+# Traefik static configuration
+# This file configures the core Traefik settings
+
+[global]
+  checkNewVersion = true
+  sendAnonymousUsage = false
+
+
+[log]
+  level = "DEBUG"
+  filePath = "/srv/log/traefik.log"
+  format = "common"
+
+[accessLog]
+  filePath = "/srv/log/access.log"
+  format = "common"
+  bufferingSize = 100
+
+[providers.file]
+  directory = "/srv/traefik/dynamic"
+  watch = true
+
+[entryPoints]
+  [entryPoints.web]
+    address = ":8000"
+    [entryPoints.web.http.redirections.entryPoint]
+      to = "web-secure"
+      scheme = "https"
+      permanent = true
+
+  [entryPoints.web-secure]
+    address = ":8443"
+
+
+[certificatesResolvers.letsencrypt.acme]
+  email = "ops@example.org"
+  storage = "/srv/traefik/acme/acme.json"
+  keyType = "EC256"
+  [certificatesResolvers.letsencrypt.acme.httpChallenge]
+    entryPoint = "web"
+

@@ -139,17 +139,16 @@ file changes with it). The media directory and the profile are never removed.
    the host (`curl --resolve <traefik_host>:443:127.0.0.1`, TLS verified):
    the playbook's post-deploy smoke gate ran this from the controller.
 
-The unit, env and route files are byte-identical to the role's, including its
-`# Managed by Ansible (delve_deploy)` header (`tests/test_delve_parity.py`), so
-switching between the tools rewrites nothing and restarts nothing. Neither
-tool touches the database.
+The unit, env and route files are byte-identical to the retired role's,
+including its `# Managed by Ansible (delve_deploy)` header, so hosts the role
+set up were taken over without a rewrite or restart; `tests/test_delve_golden.py`
+keeps them so. The deploy never touches the database.
 
 ## Tests
 
-- `tests/test_delve_parity.py`: rendered files against the vendored role
-  templates for the role defaults, the ops-control playbook's settings,
-  every optional branch, and the server ad analysis (production settings,
-  Delve's defaults, every branch, and settings without the switch).
+- `tests/test_delve_golden.py`: the units, env file and route against their
+  goldens (`tests/golden/delve`) for the defaults, the ops-control
+  playbook's settings and every optional branch.
 - `tests/test_delve.py`: fake connector runs (first run, converged no-op,
   binary/PEM/secret/unit/collector/route changes, staged binary rename,
   secrets never recorded, the role's validations, the build command; the

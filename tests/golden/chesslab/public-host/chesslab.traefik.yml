@@ -1,0 +1,69 @@
+# Managed by Ansible - Chesslab Traefik configuration
+
+http:
+  routers:
+    chesslab-int:
+      rule: "Host(`chess.example.org`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`192.168.0.0/16`) || ClientIP(`100.64.0.0/10`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - chesslab-headers
+        - chesslab-gzip
+      service: chesslab
+      tls: {}
+
+    chesslab-ext:
+      rule: "Host(`chess.example.org`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - chesslab-auth
+        - chesslab-headers
+        - chesslab-gzip
+      service: chesslab
+      tls: {}
+
+    chesslab-http:
+      rule: "Host(`chess.example.org`)"
+      entryPoints:
+        - web
+      middlewares:
+        - chesslab-redirect
+      service: chesslab
+
+  middlewares:
+    chesslab-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: true
+
+    chesslab-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "chess.example.org"
+
+    chesslab-gzip:
+      compress: {}
+
+    chesslab-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    chesslab:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10019"

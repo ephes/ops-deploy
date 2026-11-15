@@ -35,7 +35,6 @@ from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost, stubs
 from tests.lifecycle_scripts import assignments, calls, repack, run_script
 
-SHARED = Path(__file__).parent / "parity/mastodon/remove/shared-defaults.yml"
 STAMP = "20261104T120000"
 LATER = "20261104T130000"
 # A fixture password with the characters the passfile escapes.
@@ -66,56 +65,6 @@ def restore(cfg: MastodonRestoreConfig, secrets: SecretValues | None = SECRETS) 
 
 
 # -- defaults and validation ------------------------------------------------------
-
-
-def test_defaults_are_the_shared_roles() -> None:
-    shared = yaml.safe_load(SHARED.read_text())
-    b = MastodonBackupConfig()
-    r = MastodonRestoreConfig()
-    assert b.root == r.root == shared["mastodon_backup_root"] == "/opt/backups/mastodon"
-    assert b.prefix == shared["mastodon_backup_prefix"]
-    assert b.retain == shared["mastodon_backup_retain"]
-    assert b.retain_all_prefixes is shared["mastodon_backup_retain_all_prefixes"]
-    assert b.media_rsync_excludes == tuple(shared["mastodon_backup_media_rsync_excludes"])
-    assert (b.dir_mode, b.file_mode) == (shared["mastodon_backup_dir_mode"], shared["mastodon_backup_file_mode"])
-    assert (b.backup_owner, b.backup_group) == (shared["mastodon_backup_owner"], shared["mastodon_backup_group"])
-    assert b.postgres_compress == shared["mastodon_backup_postgres_compress"]
-    assert b.postgres_format == shared["mastodon_backup_postgres_format"]
-    for flag in ("stop_services", "include_media", "include_env", "include_systemd", "include_traefik"):
-        assert getattr(b, flag) is shared[f"mastodon_backup_{flag}"]
-    assert b.include_nginx is shared["mastodon_backup_include_nginx"]
-    assert b.generate_manifest is shared["mastodon_backup_generate_manifest"]
-    assert b.use_delete is shared["mastodon_backup_use_delete"]
-    assert b.create_archive is shared["mastodon_backup_create_archive"]
-    assert b.fetch_local is shared["mastodon_backup_fetch_local"]
-    assert r.archive == shared["mastodon_restore_archive"]
-    assert r.staging_dir == shared["mastodon_restore_staging_dir"]
-    for flag in ("cleanup", "restart", "stop_services", "run_migrations"):
-        assert getattr(r, flag) is shared[f"mastodon_restore_{flag}"]
-    # The empty-media guard is on by default.
-    assert r.empty_media_confirmed is False
-    assert r.postgres_become_user == shared["mastodon_postgres_become_user"] == "postgres"
-    assert (r.postgres_host, r.postgres_port) == (shared["mastodon_postgres_host"], shared["mastodon_postgres_port"])
-    assert r.postgres_database == shared["mastodon_postgres_database"]
-    assert r.postgres_user == shared["mastodon_postgres_user"]
-    # mastodon_restore's own defaults.
-    assert r.safety_root == "/var/backups/mastodon-pre-restore"
-    assert r.media_safety == "/home/mastodon/media-pre-restore"
-    assert r.rbenv == shared["mastodon_rbenv_root"].replace("{{ mastodon_home_path }}", "/home/mastodon")
-    assert list(r.services) == SERVICES
-    assert r.systemd_unit_dir == shared["mastodon_systemd_unit_dir"]
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_restore_defaults_are_the_role_file() -> None:
-    role = Path(os.environ["OPS_LIBRARY_PATH"], "roles/mastodon_restore/defaults/main.yml")
-    defaults = yaml.safe_load(role.read_text())
-    r = MastodonRestoreConfig()
-    assert defaults["mastodon_restore_safety_root"] == r.safety_root
-    assert defaults["mastodon_restore_media_safety_root"] == "{{ mastodon_home_path }}/media-pre-restore"
-    assert defaults["mastodon_restore_postgres_dump_binary"] == r.postgres_dump_binary
-    assert defaults["mastodon_restore_postgres_psql_binary"] == r.postgres_psql_binary
-    assert defaults["mastodon_restore_empty_media_confirmed"] is r.empty_media_confirmed
 
 
 def test_connection_flags_follow_the_role() -> None:

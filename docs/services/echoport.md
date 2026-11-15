@@ -164,16 +164,16 @@ credentials never leave the controller) and its ops-library version assert.
     script as JSON on stdin in both passes, never on the command line.
     Without the database it warns and skips, like the playbook.
 
-## Parity with the role
+## Rendered files
 
 The deploy ships the role's four templates unchanged and renders them with
 Ansible's template options (including its `quote` filter), so `.env`, the
-unit, the Traefik route (given the same hash) and `staging-db-refresh.sh` are
-**byte-identical** to what Ansible writes (`tests/test_echoport_parity.py`,
-against the vendored copies in `tests/parity/ansible/echoport_deploy__*`). The
+unit, the Traefik route (given the same hash) and `staging-db-refresh.sh`
+stayed **byte-identical** to what Ansible wrote when the hosts moved over. The
 MinIO account's policy file is `minio_deploy`'s
-`backup-account-policy.json.j2`, shipped unchanged and byte-identical too
-(`tests/parity/ansible/minio_deploy__backup-account-policy.json.j2`).
+`backup-account-policy.json.j2`, shipped unchanged too.
+`tests/test_echoport_golden.py` keeps these files as hosts have them
+(`tests/golden/echoport`, see [Testing](../concepts/testing.md)).
 
 ### Other S3 stores
 
@@ -263,7 +263,8 @@ Differences, all on the "change only what differs" side:
   failed verification, the derived user name and secret rules), pending migrations, missing static manifest, a venv on
   the wrong Python, foreign-owned files, the Nyxmon check (differs, missing
   database, payload), a listener failure, validation, leak checks.
-- `tests/test_echoport_parity.py`: byte parity with the role's templates.
+- `tests/test_echoport_golden.py`: the env file, unit, staging script, route
+  and account policy against the recorded renders, and what the policy grants.
 - `tests/test_echoport_scripts.py`: the host scripts run against a stand-in
   `crontab`, a stand-in `mc` and a real SQLite file (Ansible's header format,
   adoption, removal, the Nyxmon upsert and its dry run, the MinIO account

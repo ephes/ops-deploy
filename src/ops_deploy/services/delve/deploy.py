@@ -3,8 +3,8 @@
 Port of the ``delve_deploy`` Ansible role. The binary is cross-compiled on the
 controller (:func:`build_delved`, the playbook's pre-task) and uploaded; state
 is one SQLite database under ``data_dir`` that no step here touches. The files
-it writes are byte-identical to the role's (``tests/test_delve_parity.py``),
-so Ansible and ops-deploy can take turns on one host without churn.
+it writes are byte-identical to the retired role's (goldens:
+``tests/test_delve_golden.py``).
 """
 
 from __future__ import annotations

@@ -1,0 +1,26 @@
+[Unit]
+Description=Collect backup metrics and write to JSON file
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/usr/bin/python3 /usr/local/bin/backup_metrics_exporter.py > /var/lib/backup-metrics/backup.json.tmp && mv /var/lib/backup-metrics/backup.json.tmp /var/lib/backup-metrics/backup.json'
+
+# Run as root to access systemd and ZFS metadata.
+User=root
+Group=root
+
+# Minimal hardening that keeps required root-level reads working.
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+PrivateTmp=true
+
+# Ensure directory exists and has correct permissions
+ExecStartPre=/bin/mkdir -p /var/lib/backup-metrics
+ExecStartPre=/bin/chown root:metrics /var/lib/backup-metrics
+ExecStartPre=/bin/chmod 0750 /var/lib/backup-metrics
+
+# After writing, ensure the metrics user can read the file
+ExecStartPost=/bin/chown root:metrics /var/lib/backup-metrics/backup.json
+ExecStartPost=/bin/chmod 0640 /var/lib/backup-metrics/backup.json

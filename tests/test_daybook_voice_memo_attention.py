@@ -4,23 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import plistlib
 import shlex
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 import pyinfra.api.facts as sdk_facts
 import pytest
-import yaml
 from pydantic import ValidationError
 from pyinfra.api.util import get_file_sha1
 from pyinfra.facts.files import Directory, File, Sha1File
 
 from ops_deploy.services.daybook_voice_memo_attention import DaybookVoiceMemoAttentionConfig
 from ops_deploy.services.daybook_voice_memo_attention import deploy as api
-from ops_deploy.services.daybook_voice_memo_attention.config import DEFAULTS, PACKAGE
 from ops_deploy.services.daybook_voice_memo_attention.render import render_plist
 from ops_deploy.testing import run_deploy_fake
 
@@ -178,16 +174,3 @@ def test_status_command_binds_original_disabled_payload(wheel: Path) -> None:
         api.component_command("activate")
     assert "daybook_voice_memo_attention_config=" not in repr(config(wheel))
     assert json.loads(json.dumps(data))["wheel_name"] == wheel.name
-
-
-def test_paired_role_defaults_and_template_bytes_match() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    role = Path(source) / "roles/daybook_voice_memo_attention_deploy"
-    original = yaml.safe_load((role / "defaults/main.yml").read_text())
-    original.pop("ops_library_documentation_category")
-    assert original == DEFAULTS
-    assert (role / "templates/attention.launchd.plist.j2").read_bytes() == files(PACKAGE).joinpath(
-        "templates/attention.launchd.plist.j2"
-    ).read_bytes()

@@ -157,14 +157,10 @@ status codes is not needed.
 
 ## Parity with the role
 
-`tests/test_fastdeploy_parity.py` renders the vendored role templates
-(`tests/parity/ansible/fastdeploy_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, `.env.shell` and unit files, so Ansible and
-ops-deploy can take turns without rewriting them. With `OPS_LIBRARY_PATH` set,
-`tests/test_ops_library_drift.py` also checks the vendored
-`ensure_token_user.py` and `sudoers_blanket_check.py` and the digests of the
-`fastdeploy_*` roles against ops-library (see
-[Testing](../concepts/testing.md#drift-from-ops-library)). The
+The `.env`, `.env.shell` and unit files are **byte-identical** to the
+retired role's output, so hosts the role set up were taken over without
+rewriting them; `tests/test_fastdeploy_golden.py` keeps them so (goldens
+recorded while they equalled the role's, `tests/golden/fastdeploy`). The
 Traefik route differs in comments only (see
 [helpers](../concepts/helpers.md#parity-differences-from-the-ansible-roles)).
 

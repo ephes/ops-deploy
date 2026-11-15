@@ -1,0 +1,18 @@
+[Unit]
+Description=Run DDNS update every 5min
+Requires=ddns-update.service
+
+[Timer]
+# Run 1 minute after boot and 1 minute after every timer (re)start
+OnBootSec=1min
+OnActiveSec=1min
+# Then at configured interval
+OnUnitActiveSec=5min
+# Wall-clock backstop: OnBootSec/OnUnitActiveSec alone stall at NEXT n/a when
+# the timer starts after OnBootSec and the last run predates the boot
+OnCalendar=*:0/5
+# Run even if the system was powered down when it should have run
+Persistent=true
+
+[Install]
+WantedBy=timers.target

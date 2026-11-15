@@ -1,0 +1,21 @@
+Host managed-tunnel
+    HostName relay.example.test
+    User operator
+    IdentityFile "/Users/operator/.ssh/tunnel_ed25519"
+    UserKnownHostsFile "/Users/operator/.ssh/known_hosts"
+    IdentityAgent none
+    IdentitiesOnly yes
+    BatchMode yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ForwardAgent no
+    RequestTTY no
+    StrictHostKeyChecking yes
+    LocalForward 127.0.0.1:18443 backend.example.test:443
+    ExitOnForwardFailure yes
+    ConnectTimeout 10
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    ControlMaster no
+    ForkAfterAuthentication no
+    LogLevel ERROR

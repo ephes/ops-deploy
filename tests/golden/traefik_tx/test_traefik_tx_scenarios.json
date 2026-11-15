@@ -1,0 +1,624 @@
+{
+ "test_backup_set[{'acme_paths': ['/acme.json'], 'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', '/acme.json']}-set()]": [
+  [
+   "ok",
+   null
+  ],
+  [
+   [
+    "backup.json",
+    {
+     "bytes": "{\n  \"paths\": [\n    \"/usr/local/bin/traefik\",\n    \"/etc/traefik\",\n    \"/etc/systemd/system/traefik.service\",\n    \"/acme.json\"\n  ],\n  \"sha256\": \"e3ea54744dcb385995998e367a598930ec59d6309338f05f7a4eb76ec9e50590\"\n}\n"
+    }
+   ],
+   [
+    "prechange.tar.gz",
+    {
+     "bytes": "/usr/local/bin/traefik\n/etc/traefik\n/etc/systemd/system/traefik.service\n/acme.json"
+    }
+   ]
+  ]
+ ],
+ "test_backup_set[{'acme_paths': ['/acme.json']}-set()]": [
+  [
+   "Refused",
+   "backup set omits approved active ACME stores"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/etc/traefik', '/etc/systemd/system/traefik.service']}-set()]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/systemd/system/traefik.service']}-set()]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', '/etc/../root']}-set()]": [
+  [
+   "Refused",
+   "invalid backup path"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', '/etc/letsencrypt']}-{'/etc/letsencrypt'}]": [
+  [
+   "ok",
+   null
+  ],
+  [
+   [
+    "backup.json",
+    {
+     "bytes": "{\n  \"paths\": [\n    \"/usr/local/bin/traefik\",\n    \"/etc/traefik\",\n    \"/etc/systemd/system/traefik.service\",\n    \"/etc/letsencrypt\"\n  ],\n  \"sha256\": \"a50cbb0168e23235b59c9de7c47b2a983150dd39337cba16f87cefd2916d4b1f\"\n}\n"
+    }
+   ],
+   [
+    "prechange.tar.gz",
+    {
+     "bytes": "/usr/local/bin/traefik\n/etc/traefik\n/etc/systemd/system/traefik.service\n/etc/letsencrypt"
+    }
+   ]
+  ]
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', '/etc/traefik/acme/acme.json'], 'acme_target': '/etc/traefik/acme/acme.json'}-set()]": [
+  [
+   "ok",
+   null
+  ],
+  [
+   [
+    "backup.json",
+    {
+     "bytes": "{\n  \"paths\": [\n    \"/usr/local/bin/traefik\",\n    \"/etc/traefik\",\n    \"/etc/systemd/system/traefik.service\"\n  ],\n  \"sha256\": \"b0752e7a8301056aba08369823e6a2ede4027e8e6e6ba0d2333c6c49905cfb91\"\n}\n"
+    }
+   ],
+   [
+    "prechange.tar.gz",
+    {
+     "bytes": "/usr/local/bin/traefik\n/etc/traefik\n/etc/systemd/system/traefik.service"
+    }
+   ]
+  ]
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', '/etc/traefik/acme/acme.json']}-set()]": [
+  [
+   "Refused",
+   "required backup path absent"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik', '/etc/systemd/system/traefik.service', 'relative/path']}-set()]": [
+  [
+   "Refused",
+   "invalid backup path"
+  ],
+  []
+ ],
+ "test_backup_set[{'backup_paths': ['/usr/local/bin/traefik', '/etc/traefik']}-set()]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_backup_set[{'binary_path': '/usr/bin/traefik'}-{'/usr/bin/traefik'}]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_backup_set[{}-set()]": [
+  [
+   "ok",
+   null
+  ],
+  [
+   [
+    "backup.json",
+    {
+     "bytes": "{\n  \"paths\": [\n    \"/usr/local/bin/traefik\",\n    \"/etc/traefik\",\n    \"/etc/systemd/system/traefik.service\"\n  ],\n  \"sha256\": \"b0752e7a8301056aba08369823e6a2ede4027e8e6e6ba0d2333c6c49905cfb91\"\n}\n"
+    }
+   ],
+   [
+    "prechange.tar.gz",
+    {
+     "bytes": "/usr/local/bin/traefik\n/etc/traefik\n/etc/systemd/system/traefik.service"
+    }
+   ]
+  ]
+ ],
+ "test_backup_set[{}-{'/etc/letsencrypt'}]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_backup_set[{}-{'/etc/systemd/system/traefik.service.d'}]": [
+  [
+   "Refused",
+   "backup set omits binary, config, unit or external certificates"
+  ],
+  []
+ ],
+ "test_command_line['[]']": [
+  2,
+  "{\"failed\": true, \"error\": \"list indices must be integers or slices, not str\"}\n"
+ ],
+ "test_command_line['{\"action\": \"binary\"}']": [
+  2,
+  "{\"failed\": true, \"error\": \"'policy'\"}\n"
+ ],
+ "test_command_line['{\"action\": \"inspect\", \"policy\": {\"host\": \"Bad\", \"binary_path\": \"/usr/local/bin/traefik\", \"config_path\": \"/etc/traefik/traefik.toml\", \"dynamic_path\": \"/etc/traefik/dynamic\"}}']": [
+  2,
+  "{\"failed\": true, \"error\": \"invalid canonical host\"}\n"
+ ],
+ "test_command_line['{\"action\": \"rollback\", \"policy\": {\"host\": \"canary-1\", \"binary_path\": \"/usr/local/bin/traefik\", \"config_path\": \"/etc/traefik/traefik.toml\", \"dynamic_path\": \"/etc/traefik/dynamic\"}}']": [
+  2,
+  "{\"failed\": true, \"error\": \"unknown action\"}\n"
+ ],
+ "test_command_line['{']": [
+  2,
+  "{\"failed\": true, \"error\": \"Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\"}\n"
+ ],
+ "test_command_line['{}']": [
+  2,
+  "{\"failed\": true, \"error\": \"'policy'\"}\n"
+ ],
+ "test_command_line[None]": [
+  2,
+  "{\"failed\": true, \"error\": \"[Errno 2] No such file or directory: '<tmp>/request.json'\"}\n"
+ ],
+ "test_dangling_record_symlink_is_refused": [
+  "Refused",
+  "dangling state symlink"
+ ],
+ "test_evidence[{'baseline': None}]": [
+  "KeyError",
+  "'baseline'"
+ ],
+ "test_evidence[{'baseline': {'version': '3.7.16'}}]": [
+  "Refused",
+  "reviewed baseline does not match live state"
+ ],
+ "test_evidence[{'independent_observer': ['controller']}]": [
+  "Refused",
+  "missing evidence: independent_observer"
+ ],
+ "test_evidence[{'observer_delivery_test': '   '}]": [
+  "Refused",
+  "missing evidence: observer_delivery_test"
+ ],
+ "test_evidence[{'observer_watch_active': 1}]": [
+  "Refused",
+  "independent observer must be watching"
+ ],
+ "test_evidence[{'observer_watch_active': None}]": [
+  "Refused",
+  "independent observer must be watching"
+ ],
+ "test_evidence[{'owner': 'CHANGEME'}]": [
+  "Refused",
+  "missing evidence: owner"
+ ],
+ "test_evidence[{'owner': None}]": [
+  "Refused",
+  "missing evidence: owner"
+ ],
+ "test_evidence[{'recovery_access': 1}]": [
+  "Refused",
+  "missing evidence: recovery_access"
+ ],
+ "test_evidence[{'recovery_access': None, 'console_recovery': 'CHANGEME later'}]": [
+  "Refused",
+  "missing evidence: recovery_access"
+ ],
+ "test_evidence[{'recovery_access': None, 'console_recovery': 'console'}]": [
+  "ok",
+  null
+ ],
+ "test_evidence[{'recovery_access': None}]": [
+  "Refused",
+  "missing evidence: recovery_access"
+ ],
+ "test_evidence[{'review_reference': ''}]": [
+  "Refused",
+  "missing evidence: review_reference"
+ ],
+ "test_evidence[{'verified_at': 'now'}]": [
+  "TypeError",
+  "unsupported operand type(s) for -: 'float' and 'str'"
+ ],
+ "test_evidence[{'verified_at': 1799996399}]": [
+  "Refused",
+  "preflight evidence must be at most one hour old"
+ ],
+ "test_evidence[{'verified_at': 1799996400}]": [
+  "ok",
+  null
+ ],
+ "test_evidence[{'verified_at': 1800000001}]": [
+  "Refused",
+  "preflight evidence must be at most one hour old"
+ ],
+ "test_evidence[{}]": [
+  "ok",
+  null
+ ],
+ "test_host_records_load[clear]": [
+  "ok",
+  {
+   "host": "fixture",
+   "identity": {
+    "version": "3.7.14"
+   },
+   "owner": "operator",
+   "phase": "clear",
+   "revision": "11111111-2222-4333-8444-555555555555",
+   "schema": 1,
+   "updated_at": 1799913600
+  }
+ ],
+ "test_host_records_load[degraded]": [
+  "ok",
+  {
+   "host": "fixture",
+   "identity": {},
+   "owner": "operator",
+   "phase": "degraded",
+   "recovery_error": "Refused",
+   "revision": "11111111-2222-4333-8444-555555555555",
+   "schema": 1,
+   "updated_at": 1799913600
+  }
+ ],
+ "test_host_records_load[empty]": [
+  "JSONDecodeError",
+  "Expecting value: line 1 column 1 (char 0)"
+ ],
+ "test_host_records_load[invalid JSON]": [
+  "JSONDecodeError",
+  "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+ ],
+ "test_host_records_load[missing]": [
+  "ok",
+  null
+ ],
+ "test_host_records_load[no phase]": [
+  "Refused",
+  "invalid recovery state"
+ ],
+ "test_host_records_load[schema 2]": [
+  "Refused",
+  "invalid recovery state"
+ ],
+ "test_host_records_load[unknown phase]": [
+  "Refused",
+  "invalid recovery state"
+ ],
+ "test_policy[{'binary_path': '/opt/traefik'}]": [
+  "Refused",
+  "unsupported binary location"
+ ],
+ "test_policy[{'binary_path': '/usr/bin/traefik'}]": [
+  "ok",
+  null
+ ],
+ "test_policy[{'binary_path': '/usr/local/bin/../bin/traefik'}]": [
+  "Refused",
+  "invalid binary_path"
+ ],
+ "test_policy[{'binary_path': '/usr/local/bin//traefik'}]": [
+  "Refused",
+  "invalid binary_path"
+ ],
+ "test_policy[{'binary_path': 'usr/local/bin/traefik'}]": [
+  "Refused",
+  "invalid binary_path"
+ ],
+ "test_policy[{'config_path': '/etc/traefik/traefik.yml'}]": [
+  "Refused",
+  "unsupported static config source"
+ ],
+ "test_policy[{'dynamic_path': '/etc/traefik/dynamic/'}]": [
+  "Refused",
+  "invalid dynamic_path"
+ ],
+ "test_policy[{'dynamic_path': '/etc/traefik/routes'}]": [
+  "Refused",
+  "unsupported dynamic provider directory"
+ ],
+ "test_policy[{'host': '-x'}]": [
+  "Refused",
+  "invalid canonical host"
+ ],
+ "test_policy[{'host': 'Canary'}]": [
+  "Refused",
+  "invalid canonical host"
+ ],
+ "test_policy[{'host': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}]": [
+  "Refused",
+  "invalid canonical host"
+ ],
+ "test_policy[{'host': 7}]": [
+  "TypeError",
+  "expected string or bytes-like object, got 'int'"
+ ],
+ "test_policy[{'host': None}]": [
+  "KeyError",
+  "'host'"
+ ],
+ "test_policy[{}]": [
+  "ok",
+  null
+ ],
+ "test_probe_programs[{'argv': '/bin/true'}]": [
+  "Refused",
+  "invalid probe command"
+ ],
+ "test_probe_programs[{'argv': ['/bin/true', 1]}]": [
+  "Refused",
+  "invalid probe command"
+ ],
+ "test_probe_programs[{'argv': []}]": [
+  "Refused",
+  "invalid probe command"
+ ],
+ "test_probe_programs[{'no_sha': True}]": [
+  "KeyError",
+  "'sha256'"
+ ],
+ "test_probe_programs[{'relative': True}]": [
+  "Refused",
+  "probe executable must be absolute"
+ ],
+ "test_probe_programs[{'script': 'exit 3\\\\n'}]": [
+  "Refused",
+  "command failed: probe (exit 3)"
+ ],
+ "test_probe_programs[{'sha256': '0000000000000000000000000000000000000000000000000000000000000000'}]": [
+  "Refused",
+  "probe program identity changed"
+ ],
+ "test_probe_programs[{}]": [
+  "ok",
+  null
+ ],
+ "test_records_are_built": [
+  "ok",
+  {
+   "host": "canary",
+   "identity": {
+    "version": "3.7.14"
+   },
+   "operation": "binary",
+   "owner": "o",
+   "phase": "pending",
+   "revision": "00000000-0000-0000-0000-000000000001",
+   "schema": 1,
+   "updated_at": 1800000000
+  }
+ ],
+ "test_release_archives[directory-exact]": [
+  "Refused",
+  "archive must contain one bounded regular traefik executable",
+  null
+ ],
+ "test_release_archives[directory-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[directory-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[empty-exact]": [
+  "Refused",
+  "archive must contain one bounded regular traefik executable",
+  null
+ ],
+ "test_release_archives[empty-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[empty-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[failing binary-exact]": [
+  "Refused",
+  "command failed: candidate (exit 3)",
+  [
+   493,
+   {
+    "bytes": "#!/bin/sh\nexit 3\n"
+   }
+  ]
+ ],
+ "test_release_archives[failing binary-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[failing binary-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[next major-exact]": [
+  "Refused",
+  "unsupported release",
+  null
+ ],
+ "test_release_archives[next major-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[next major-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[no traefik-exact]": [
+  "Refused",
+  "archive must contain one bounded regular traefik executable",
+  null
+ ],
+ "test_release_archives[no traefik-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[no traefik-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[no version-exact]": [
+  "Refused",
+  "unparseable Traefik version",
+  [
+   493,
+   {
+    "bytes": "#!/bin/sh\necho nothing\n"
+   }
+  ]
+ ],
+ "test_release_archives[no version-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[no version-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[other version-exact]": [
+  "Refused",
+  "candidate version mismatch",
+  [
+   493,
+   {
+    "bytes": "#!/bin/sh\necho 'Version:      3.7.15'\necho 'Codename:     fixture'\n"
+   }
+  ]
+ ],
+ "test_release_archives[other version-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[other version-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[release-exact]": [
+  "ok",
+  "candidate",
+  [
+   493,
+   {
+    "bytes": "#!/bin/sh\necho 'Version:      3.7.16'\necho 'Codename:     fixture'\n"
+   }
+  ]
+ ],
+ "test_release_archives[release-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[release-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[traefik below a directory-exact]": [
+  "Refused",
+  "archive must contain one bounded regular traefik executable",
+  null
+ ],
+ "test_release_archives[traefik below a directory-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[traefik below a directory-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_release_archives[two traefik-exact]": [
+  "Refused",
+  "archive must contain one bounded regular traefik executable",
+  null
+ ],
+ "test_release_archives[two traefik-other]": [
+  "Refused",
+  "release archive checksum mismatch",
+  null
+ ],
+ "test_release_archives[two traefik-upper]": [
+  "Refused",
+  "exact SHA256 is required",
+  null
+ ],
+ "test_route_tree_digest": [
+  "ok",
+  "ed7d946b7be38b70079b375f3c7ba8ea7bfe46f6a4110427e89a3817c3016b5a"
+ ],
+ "test_route_tree_digest#1": [
+  "Refused",
+  "expected ordinary directory: <tmp>/dynamic/a.yml"
+ ],
+ "test_route_tree_digest#2": [
+  "Refused",
+  "symlink in managed configuration: <tmp>/dynamic/nested/link.yml"
+ ],
+ "test_startup_arguments[[b'/usr/bin/traefik', b'--configFile=/etc/traefik/traefik.toml']]": [
+  "Refused",
+  "unsupported effective startup arguments"
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--CONFIGFILE=/etc/traefik/traefik.toml']]": [
+  "ok",
+  null
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--configFile', b'/etc/traefik/traefik.toml']]": [
+  "Refused",
+  "unsupported effective startup arguments"
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--configFile=/etc/traefik/other.toml']]": [
+  "Refused",
+  "unsupported effective startup arguments"
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--configFile=/etc/traefik/traefik.toml', b'--api.insecure=true']]": [
+  "Refused",
+  "unsupported effective startup arguments"
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--configFile=/etc/traefik/traefik.toml']]": [
+  "ok",
+  null
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik', b'--configfile=/etc/traefik/traefik.toml']]": [
+  "ok",
+  null
+ ],
+ "test_startup_arguments[[b'/usr/local/bin/traefik']]": [
+  "Refused",
+  "unsupported effective startup arguments"
+ ]
+}

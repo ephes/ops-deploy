@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import plistlib
 import shlex
 import subprocess
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -223,52 +221,6 @@ def test_source_blob_preservation_is_exact_revision_and_clean_tree_only(tmp_path
     git("add", "README.md")
     git("-c", "user.name=Owned Fixture", "-c", "user.email=fixture@example.test", "commit", "-m", "owned update")
     assert source_overrides(cfg) == {}
-
-
-# Separately maintained trust-refresh inputs of the role; this port does not run that maintenance.
-ROLE_ONLY_TRUST_FIELDS = {"voxhelm_trust_idle_database", "voxhelm_trust_idle_host", "voxhelm_trust_refresh_units"}
-
-
-@pytest.mark.parametrize(
-    ("service", "role", "omitted"),
-    [
-        ("voxhelm", "voxhelm_deploy", ROLE_ONLY_TRUST_FIELDS),
-        ("voxhelm_remote_worker", "voxhelm_remote_worker_deploy", set()),
-    ],
-)
-def test_templates_and_defaults_are_the_authoritative_role_resources(
-    service: str, role: str, omitted: set[str]
-) -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; paired role oracle parity is run explicitly")
-    import yaml
-
-    oracle = Path(source) / "roles" / role
-    packaged = files("ops_deploy.services." + service)
-    # Daemon and ingress resources share a package, but retain their own
-    # authoritative roles. Enumerate both so neither role loses byte coverage.
-    template_roles = {
-        "voxhelm": (role, "voxhelm_ingress_deploy"),
-        "voxhelm_remote_worker": (role,),
-    }[service]
-    templates = {}
-    for template_role in template_roles:
-        for path in sorted((Path(source) / "roles" / template_role / "templates").iterdir()):
-            assert path.name not in templates, f"Role template name collision: {path.name}"
-            templates[path.name] = path
-    assert sorted(templates) == sorted(
-        path.name for path in packaged.joinpath("templates").iterdir() if path.name.endswith(".j2")
-    )
-    for name, path in templates.items():
-        assert packaged.joinpath("templates", name).read_bytes() == path.read_bytes()
-    expected = {key: value for key, value in yaml.safe_load((oracle / "defaults/main.yml").read_text()).items()}
-    assert omitted <= set(expected)
-    ported = {
-        **json.loads(packaged.joinpath("defaults.json").read_text()),
-        **json.loads(packaged.joinpath("secret_defaults.json").read_text()),
-    }
-    assert ported == {key: value for key, value in expected.items() if key not in omitted}
 
 
 def test_source_sync_protects_rendered_launchers_from_delete(tmp_path: Path) -> None:

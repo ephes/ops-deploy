@@ -22,6 +22,7 @@ from ops_deploy.services.samba_share import SambaShare, SambaSharesConfig
 from ops_deploy.services.samba_timemachine import SambaTimeMachineConfig
 from ops_deploy.services.sanoid import SanoidConfig, SanoidDataset
 from ops_deploy.services.sanoid.render import render
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1] / "src/ops_deploy"
 
@@ -233,39 +234,34 @@ def test_unix_names_and_metadata_options_refuse_injection() -> None:
         SambaSharesConfig(shares=(SambaShare(name="same", path="/owned"), SambaShare(name="same", path="/other")))
 
 
-def test_actual_ansible_template_oracle() -> None:
+GOLDEN = Path(__file__).parent / "golden" / "fractal_services"
+
+
+def test_host_files_are_golden() -> None:
+    """hdparm.conf's block, sanoid's config and units, the Samba configs: as the storage host has them.
+
+    The inputs are synthetic (``tests/fixtures/fractal_services/inputs.json``); a changed
+    byte restarts smbd or sanoid's timer, or rewrites hdparm.conf.
+    """
+
     from ops_deploy.services.samba_share.render import render as share_render
-    from ops_deploy.services.samba_timemachine.render import fruit_block
+    from ops_deploy.services.samba_timemachine.render import fruit_block, snippet
     from ops_deploy.services.samba_timemachine.render import render as tm_render
 
-    oracle = json.loads((Path(__file__).parent / "parity/fractal_services.json").read_text())
-    inputs, expected = oracle["inputs"], oracle["outputs"]
-    assert render_block(HdparmTuneConfig.model_validate(inputs["hdparm"])) == expected["hdparm"]
+    inputs = json.loads((Path(__file__).parent / "fixtures" / "fractal_services" / "inputs.json").read_text())
+    assert_golden(GOLDEN / "hdparm.conf-block", render_block(HdparmTuneConfig.model_validate(inputs["hdparm"])))
     cfg = SanoidConfig.model_validate(inputs["sanoid"])
     for resource in ("sanoid.conf", "sanoid-ops-library.service", "sanoid-ops-library.timer"):
-        assert render(cfg, resource) == expected[resource]
+        assert_golden(GOLDEN / resource, render(cfg, resource))
     tm = SambaTimeMachineConfig.model_validate(inputs["tm"])
     for resource in ("smb.conf", "smb-timemachine.conf"):
-        assert tm_render(tm, resource) == expected["tm/" + resource]
-    # The oracle's single global fruit block is split (docs/services/
-    # fractal_storage_services.md, "Global section repair"): the global-only
-    # options stay in [global], the share options join the Time Machine
-    # snippet. Together they carry exactly the oracle's settings.
-    from ops_deploy.services.samba_timemachine.render import snippet
-
-    def settings(text: str) -> set[str]:
-        return {" ".join(line.split()) for line in text.splitlines() if line.strip() and line.strip()[0] not in "#;"}
-
-    template = tm_render(tm, "smb-timemachine.conf")
-    assert snippet(tm).startswith(template)
-    global_part, share_part = settings(fruit_block(tm)), settings(snippet(tm)) - settings(template)
-    assert global_part == {"fruit:model = MacSamba", "fruit:nfs_aces = no"}
-    assert global_part | share_part | {"vfs objects = fruit streams_xattr"} == settings(expected["fruit"])
-    assert "vfs objects = fruit streams_xattr" in settings(template)
+        assert_golden(GOLDEN / "timemachine" / resource, tm_render(tm, resource))
+    assert_golden(GOLDEN / "timemachine" / "fruit-global", fruit_block(tm))
+    assert_golden(GOLDEN / "timemachine" / "snippet", snippet(tm))
     shares = SambaSharesConfig.model_validate(inputs["shares"])
     for index, row in enumerate(shares.shares):
-        assert share_render(shares, row, "smb-share.conf") == expected["share" + str(index)]
-    assert share_render(shares, shares.shares[0], "smb.conf") == expected["share-base"]
+        assert_golden(GOLDEN / "shares" / f"share{index}.conf", share_render(shares, row, "smb-share.conf"))
+    assert_golden(GOLDEN / "shares" / "smb.conf", share_render(shares, shares.shares[0], "smb.conf"))
 
 
 def test_tm_primary_group_membership_does_not_reassert_usermod() -> None:
@@ -789,18 +785,6 @@ def test_samba_roles_send_restrict_anonymous_and_refuse_guest_shares_with_it() -
 def test_unsupported_or_invalid_sanoid_native_policy_refuses(options: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         SanoidConfig(templates={"owned": options}, datasets=(SanoidDataset(name="owned/data", template="owned"),))
-
-
-@pytest.mark.parametrize("role", ["sanoid", "samba_timemachine", "samba_share"])
-def test_vendored_source_resources_match_the_reviewed_role(role: str) -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if library is None:
-        pytest.skip("OPS_LIBRARY_PATH not set")
-    source = Path(library) / "roles" / role / "templates"
-    templates = sorted(source.glob("*.j2"))
-    assert templates, f"no *.j2 below {source}"
-    for path in templates:
-        assert (ROOT / "services" / role / "templates" / path.name).read_bytes() == path.read_bytes()
 
 
 @pytest.mark.parametrize("broken", [None, b"invalid", bytes(68)])

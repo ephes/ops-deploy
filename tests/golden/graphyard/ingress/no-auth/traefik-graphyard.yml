@@ -1,0 +1,94 @@
+# Traefik configuration for Graphyard + Grafana
+# Managed by Ansible - do not edit manually
+# Dual-router pattern: LAN/Tailscale bypass basic auth, public requires basic auth
+
+http:
+  routers:
+    # Graphyard secure router (no auth)
+    graphyard-secure:
+      rule: "Host(`graphyard.example.invalid`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - graphyard-headers
+        - graphyard-gzip
+      service: graphyard
+      tls: {}
+
+    # Grafana secure router (no auth)
+    grafana-secure:
+      rule: "Host(`grafana.example.invalid`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - grafana-headers
+        - grafana-gzip
+      service: grafana
+      tls: {}
+
+    # HTTP routers (HTTPS redirect handled by Traefik static entrypoint config)
+    graphyard-http:
+      rule: "Host(`graphyard.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: graphyard
+
+    grafana-http:
+      rule: "Host(`grafana.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: grafana
+
+  middlewares:
+
+    graphyard-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    graphyard-gzip:
+      compress: {}
+
+    grafana-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    grafana-gzip:
+      compress: {}
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    graphyard:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:8051"
+
+    grafana:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:3300"

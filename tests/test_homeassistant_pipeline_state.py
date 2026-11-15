@@ -1,4 +1,4 @@
-"""Owned named-storage selection, with captured original expression controls."""
+"""Owned named-storage selection for Assist pipelines; prepared definitions are golden."""
 
 from __future__ import annotations
 
@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
-from jinja2.nativetypes import NativeEnvironment
 
 from tests.fakehost import command_host
+from tests.goldens import assert_golden
 
 SPEC = importlib.util.spec_from_file_location(
     "ha_owned_pipeline_state", str(files("ops_deploy.services.homeassistant").joinpath("files/pipeline_state.py"))
@@ -24,7 +23,7 @@ assert SPEC is not None
 assert SPEC.loader is not None
 state = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(state)
-ORIGINAL = Path(__file__).parent / "parity/homeassistant/pipelines/original.yml"
+GOLDEN = Path(__file__).parent / "golden" / "homeassistant"
 
 
 def store(root: Path, name: str, data: Any) -> Path:
@@ -97,7 +96,7 @@ def test_automatic_first_exact_entry_entity_and_no_storage_writes(tmp_path: Path
         ("invalid", False),
     ],
 )
-def test_original_boolean_field_coercion(tmp_path: Path, value: Any, expected: bool) -> None:
+def test_boolean_field_coercion(tmp_path: Path, value: Any, expected: bool) -> None:
     config = options(tmp_path)
     config["pipelines"][0].update(preferred=value, prefer_local_intents=value)
     result = state.prepare_list(config)[0]
@@ -123,32 +122,18 @@ def test_original_boolean_field_coercion(tmp_path: Path, value: Any, expected: b
         },
     ],
 )
-def test_actual_original_definition_expression(tmp_path: Path, item: dict[str, Any]) -> None:
-    tasks = yaml.safe_load(ORIGINAL.read_text())
-    expression = next(
-        task["vars"]["_ha_assist_pipeline_definition"]
-        for task in tasks
-        if task["name"] == "Build desired Assist pipeline definitions"
-    )
-    env = NativeEnvironment()
-    env.filters["bool"] = bool  # these expression controls use only actual boolean inputs
-    env.filters["combine"] = lambda a, b, **_: {**a, **b}
-    original = env.from_string(expression).render(
-        item=item,
-        _ha_custom_conversation_entity_id="conversation.custom",
-        _ha_llama_cpp_entity_id="conversation.llama",
-        _ha_assist_default_stt_engine_id="stt.first",
-        _ha_assist_default_tts_engine_id="tts.first",
-    )
+def test_prepared_definition_is_golden(tmp_path: Path, item: dict[str, Any]) -> None:
     config = options(tmp_path)
     # A second undefined STT declaration enables default discovery even when the
-    # first item explicitly supplies an empty engine (original list-level rule).
+    # first item explicitly supplies an empty engine (list-level rule).
     config.update(
         pipelines=[item, {"name": "Second", "language": "en"}],
         custom_conversation_entity_id="conversation.custom",
         llama_cpp_entity_id="conversation.llama",
     )
-    assert state.prepare_list(config)[0] == original
+    prepared = json.dumps(state.prepare_list(config)[0], indent=1, sort_keys=True) + "\n"
+    engine = str(item.get("conversation_engine", "none")).replace(":", "-")
+    assert_golden(GOLDEN / "pipelines" / f"definition-{len(item)}-{engine}.json", prepared)
 
 
 def test_explicit_empty_does_not_invent_automatic_discovery(tmp_path: Path) -> None:
@@ -229,17 +214,11 @@ def test_voice_required_storage_even_with_explicit_engine(tmp_path: Path, missin
         state.prepare_voice(config)
 
 
-def test_voice_original_target_expression_and_no_modification(tmp_path: Path) -> None:
+def test_voice_target_is_the_preferred_pipeline_and_store_is_unmodified(tmp_path: Path) -> None:
     config = voice_options(tmp_path)
     data = json.loads((tmp_path / ".storage/assist_pipeline.pipelines").read_bytes())["data"]
-    tasks = yaml.safe_load(ORIGINAL.with_name("voice.yml").read_text())
-    facts = next(t["ansible.builtin.set_fact"] for t in tasks if t["name"] == "Resolve Assist pipeline target")
-    env = NativeEnvironment()
     before = copy.deepcopy(data)
-    selected = env.from_string(facts["_ha_assist_pipeline_target_id"]).render(
-        homeassistant_assist_pipeline_id="", _ha_assist_pipeline_store=data
-    )
-    assert state.prepare_voice(config)["pipeline_id"] == selected
+    assert state.prepare_voice(config)["pipeline_id"] == "selected"
     assert data == before
 
 
@@ -319,29 +298,11 @@ def test_controller_error_does_not_export_selected_or_error_bodies(raw: str, suc
 
 
 @pytest.mark.parametrize("invalid_data", [None, [], "host port", 17, {}])
-def test_original_undefined_host_port_filters_non_mapping_data(tmp_path: Path, invalid_data: Any) -> None:
-    import base64
-
-    from jinja2 import ChainableUndefined
-
+def test_undefined_host_port_filters_non_mapping_data(tmp_path: Path, invalid_data: Any) -> None:
     config = options(tmp_path)
     path = tmp_path / ".storage/core.config_entries"
     document = json.loads(path.read_bytes())
     document["data"]["entries"].insert(0, {"domain": "wyoming", "data": invalid_data})
     path.write_text(json.dumps(document))
-    task = next(
-        item
-        for item in yaml.safe_load(ORIGINAL.read_text())
-        if item["name"] == "Resolve Wyoming config entry for Assist pipeline auto-detection"
-    )
-    env = NativeEnvironment(undefined=ChainableUndefined)
-    env.filters["b64decode"] = lambda value: base64.b64decode(value).decode()
-    env.filters["from_json"] = json.loads
-    actual_original = env.from_string(task["ansible.builtin.set_fact"]["_ha_assist_pipeline_entry_id"]).render(
-        _ha_assist_pipeline_config_entries_raw={"content": base64.b64encode(path.read_bytes()).decode()},
-        homeassistant_wyoming_host="owned",
-        homeassistant_wyoming_port="10300",
-    )
-    assert actual_original == "first"
-    assert state.entry_id(config, path.read_bytes()) == actual_original
+    assert state.entry_id(config, path.read_bytes()) == "first"
     assert state.prepare_list(config)[0]["stt_engine"] == "stt.first"

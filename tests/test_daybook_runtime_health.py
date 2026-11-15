@@ -62,48 +62,6 @@ def test_original_failures_remain_failures(helper: Any, rc: int, enabled: bool, 
     assert helper.healthy(rc, {"enabled": enabled, "status": status}) is False
 
 
-def test_original_role_oracle_uses_local_enabled_and_unreadable_only(helper: Any) -> None:
-    role_root = os.environ.get("OPS_LIBRARY_PATH")
-    if not role_root:
-        pytest.skip("Actual role oracle is qualified explicitly")
-    import jinja2.nativetypes
-    import yaml
-
-    tasks = yaml.safe_load((Path(role_root) / "roles/daybook_operations_runtime_deploy/tasks/verify.yml").read_text())
-    expression = next(
-        t["ansible.builtin.set_fact"]["daybook_operations_runtime_verify_report"]
-        for t in tasks
-        if isinstance(t.get("ansible.builtin.set_fact", {}).get("daybook_operations_runtime_verify_report"), str)
-    )
-    env = jinja2.nativetypes.NativeEnvironment(undefined=importlib.import_module("jinja2").StrictUndefined)
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    for rc, enabled, status in [
-        (0, True, "idle"),
-        (0, True, "running"),
-        (0, True, "blocked"),
-        (0, True, "unreadable"),
-        (0, False, "idle"),
-        (1, True, "idle"),
-    ]:
-        payload = {
-            "enabled": enabled,
-            "status": status,
-            "server": {
-                "enabled": False,
-                "active_state": "assigned",
-                "disposition": None,
-                "stale": True,
-                "needs_operator": True,
-                "expiry_pending": True,
-            },
-        }
-        original: Any = env.from_string(expression).render(
-            daybook_operations_runtime_verify_report=[],
-            item={"rc": rc, "stdout": json.dumps(payload), "item": "regular"},
-        )
-        assert original[0]["healthy"] is helper.healthy(rc, payload)
-
-
 @pytest.mark.parametrize("different_account", [False, True])
 def test_actual_client_sanitizes_private_response_and_preserves_original_login_context(
     helper: Any, monkeypatch: pytest.MonkeyPatch, different_account: bool, capsys: Any

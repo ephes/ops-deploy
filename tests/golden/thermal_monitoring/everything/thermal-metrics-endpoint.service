@@ -1,0 +1,38 @@
+[Unit]
+Description=Thermal metrics HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=thermo
+Group=thermgrp
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 /opt/thermal/httpd.py \
+  --bind 127.0.0.1 \
+  --port 9200 \
+  --path /x/thermal \
+  --json-path /srv/thermal/thermal.json \
+  --htpasswd-file /etc/thermal-x/htpasswd
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+ReadOnlyPaths=/srv/thermal
+
+[Install]
+WantedBy=multi-user.target

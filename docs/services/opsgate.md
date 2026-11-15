@@ -177,14 +177,13 @@ header policy. They run on the existing Linux Traefik host as a separate stage
 after the Mac daemon. Configuration uses the original names without the
 `opsgate_ingress_` prefix: `backend_url`, `traefik_host`, `traefik_enabled`,
 `traefik_entrypoints`, `traefik_cert_resolver`, `traefik_config_path` and
-`allowed_ip_ranges`. The defaults and rendered bytes match the role.
+`allowed_ip_ranges`. The defaults and rendered bytes matched the role when the service moved to pyinfra.
 
 Route publication uses `services._traefik_routes.route_put`, including its
 existing transaction-lock guard and no-write convergence. Only an actual route
 change invokes the original service handler: reload Traefik, and restart if
 reload fails. Disabling ingress skips it and retains its existing route.
 
-Focused role parity is exercised against the current absolute library checkout.
 The owned Linux workflow tests real Traefik routing, conditional reload/restart,
 transaction-lock failure preservation and zero-change repeats; qualification of
 this additive ingress path is pending its recorded workflow result.

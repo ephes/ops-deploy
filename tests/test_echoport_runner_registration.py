@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -22,10 +21,9 @@ from ops_deploy.services._echoport_runner.registration import (
 )
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.echoport_runner_data import INPUTS, runner_sha256
 
-PARITY = Path(__file__).parent / "parity/echoport_runner"
-INPUTS = json.loads((PARITY / "inputs.json").read_text())["runners"]
-EXPECTED = json.loads((PARITY / "expected.json").read_text())["runners"]
+EXPECTED = runner_sha256()
 SECRET = "fixture-account-secret-0123456789abcdef"  # pragma: allowlist secret
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
 MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
@@ -146,9 +144,9 @@ A1 = (
 
 
 @pytest.mark.parametrize("name", A1)
-def test_the_runner_renders_as_ansible_rendered_it(name: str) -> None:
-    # expected.json: ansible-playbook's rendering of the same values (homeassistant
-    # with ansible_default_ipv4.address 192.0.2.10, read here from the host's route).
+def test_the_runner_renders_the_recorded_script(name: str) -> None:
+    # The recorded render of the same values (homeassistant with
+    # ansible_default_ipv4.address 192.0.2.10, read here from the host's route).
     cfg = registration(name)
     variables = template_variables_for(cfg, HOMEASSISTANT_ADDRESS)
 

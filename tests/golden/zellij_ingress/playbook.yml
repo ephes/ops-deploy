@@ -1,0 +1,27 @@
+# Managed by Ansible - Traefik configuration for Zellij private redirect ingress
+
+http:
+  routers:
+    zellij-secure:
+      rule: "Host(`zellij.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - zellij-redirect-target
+      service: noop@internal
+      tls: {}
+
+    zellij-http:
+      rule: "Host(`zellij.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web
+      middlewares:
+        - zellij-redirect-target
+      service: noop@internal
+
+  middlewares:
+    zellij-redirect-target:
+      redirectRegex:
+        regex: ".*"
+        replacement: "https://backend.example.invalid/"
+        permanent: false

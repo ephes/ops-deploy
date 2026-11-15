@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import importlib.resources
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import ValidationError
 from pyinfra.connectors.fake import FakeConnector
 
@@ -220,43 +218,3 @@ def test_sdk_root_connection_clears_privilege_fields_and_runs_one_sequence(monke
         assert len(result.mutating_changed_ops) == (1 if expected else 0)
         assert result.uploaded_paths == []
     assert calls
-
-
-def test_disabled_branch_matches_the_ops_library_role() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH not set")
-    role = Path(source) / "roles/daybook_voice_memo_work_deploy"
-    defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
-    assert defaults["daybook_voice_memo_work_launchd_label"] == LABEL
-    assert defaults["daybook_voice_memo_work_enabled"] is False
-    tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
-    names = [task["name"] for task in tasks]
-    # The disabled branch this port mirrors, in its original order, ending
-    # where the role stops for a disabled job.
-    disabled = names[: names.index("Stop after applying disabled Voice Memo work state") + 1]
-    assert disabled == [
-        "Validate Voice Memo work deployment inputs",
-        "Resolve Voice Memo work owner uid",
-        "Read disabled Voice Memo work GUI domain",
-        "Read disabled Voice Memo work loaded state",
-        "Disable Voice Memo work LaunchAgent",
-        "Boot out disabled Voice Memo work LaunchAgent",
-        "Verify disabled Voice Memo work LaunchAgent is unloaded",
-        "Delete the retired Voice Memo work plist",
-        "Stop after applying disabled Voice Memo work state",
-    ]
-    by_name = {task["name"]: task for task in tasks}
-    assert by_name["Read disabled Voice Memo work GUI domain"]["failed_when"] == (
-        "daybook_voice_memo_work_disabled_domain.rc not in [0, 112]"
-    )
-    assert by_name["Boot out disabled Voice Memo work LaunchAgent"]["when"] == [
-        "not daybook_voice_memo_work_enabled | bool",
-        "daybook_voice_memo_work_disabled_domain.rc == 0",
-        "daybook_voice_memo_work_disabled_loaded.rc == 0",
-    ]
-    assert by_name["Delete the retired Voice Memo work plist"]["when"] == [
-        "not daybook_voice_memo_work_enabled | bool",
-        "daybook_voice_memo_work_retired | bool",
-        "daybook_voice_memo_work_disabled_domain.rc == 0",
-    ]

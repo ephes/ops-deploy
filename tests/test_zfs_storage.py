@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
-import json
-import os
 import re
 import subprocess
 from decimal import Decimal
@@ -20,6 +17,7 @@ from pyinfra.api import DeployError
 from ops_deploy.infra.zfs_storage import ZfsDatasetConfig, ZfsPoolConfig
 from ops_deploy.infra.zfs_storage.deploy import pool_payload, render_unlock
 from ops_deploy.infra.zfs_storage.size import comparable, size_to_bytes
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
 
@@ -206,16 +204,10 @@ def test_unknown_property_response_refuses_before_mutation(monkeypatch: pytest.M
         module.properties("zfs", "owned", ["quota"])
 
 
-def test_selected_role_provenance_and_original_unlock_resource() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if not library:
-        pytest.skip("explicit selected-role cf3 proof requires paired OPS_LIBRARY_PATH")
-    oracle = json.loads((Path(__file__).parent / "parity/zfs_storage_sources.json").read_text())
-    for relative, digest in oracle["resources"].items():
-        assert hashlib.sha256((Path(library) / relative).read_bytes()).hexdigest() == digest, relative
-    assert (ROOT / "src/ops_deploy/infra/zfs_storage/templates/zfs-unlock-pool.service.j2").read_bytes() == (
-        Path(library) / "roles/zfs_pool_deploy/templates/zfs-unlock-pool.service.j2"
-    ).read_bytes()
+def test_unlock_unit_is_golden() -> None:
+    """The unlock unit decides whether the pool's key loads at boot; it stays as the hosts have it."""
+
+    assert_golden(Path(__file__).parent / "golden" / "zfs_storage" / "zfs-unlock-owned.service", render_unlock(pool()))
 
 
 @pytest.mark.parametrize(

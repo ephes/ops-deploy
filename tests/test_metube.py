@@ -1,15 +1,13 @@
-"""Native MeTube config and exact role artifacts, including persistent-path guards."""
+"""Native MeTube config and golden host files, including persistent-path guards."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import jinja2
 import pytest
 from pydantic import SecretStr
 
@@ -20,46 +18,34 @@ from ops_deploy.services.metube import MetubeConfig, deploy_metube
 from ops_deploy.services.metube.deploy import PACKAGE, render, render_env, render_unit, template_vars
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
-VENDORED = Path(__file__).parent / "parity/ansible"
+GOLDEN = Path(__file__).parent / "golden" / "metube"
 AUTH = BasicAuth(user="admin", password=SecretStr("owned-fixture-password"))
 
 
-def role(template: str, cfg: MetubeConfig, auth: BasicAuth | None = None, auth_hash: str | None = None) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters["bool"] = bool
-    env.filters["ternary"] = lambda value, yes, no: yes if value else no
-    env.filters["to_json"] = json.dumps
-    return env.get_template("metube_deploy__" + template).render(**template_vars(cfg, auth, auth_hash))
+@pytest.mark.parametrize(
+    ("case", "changes"),
+    [("defaults", {}), ("port-mounts", {"port": 8083, "mounts_required": ("/mnt/cryptdata/media",)})],
+)
+def test_env_and_unit_are_golden(case: str, changes: dict[str, Any]) -> None:
+    """The host files stay what hosts have today (recorded while equal to the retired role's; tests/goldens.py)."""
+
+    cfg = MetubeConfig(**changes)
+    assert_golden(GOLDEN / case / "metube.env", render_env(cfg))
+    assert_golden(GOLDEN / case / "metube.service", render_unit(cfg))
 
 
-@pytest.mark.parametrize("port", [8081, 8083])
-def test_env_and_unit_exact_role_parity(port: int) -> None:
-    cfg = MetubeConfig(port=port)
-    assert render_env(cfg) == role("metube.env.j2", cfg)
-    assert render_unit(cfg) == role("metube.service.j2", cfg)
+@pytest.mark.parametrize(("case", "auth"), [("no-auth", None), ("auth", AUTH)])
+def test_route_is_golden(case: str, auth: BasicAuth | None) -> None:
+    cfg = MetubeConfig()
+    hashed = "$2y$05$fixture" if auth else None
+    route = render(PACKAGE, "metube-traefik.yml.j2", **template_vars(cfg, auth, hashed))
+    assert_golden(GOLDEN / case / "metube-traefik.yml", route)
 
 
-# sha256 of the default unit before ``mounts_required`` was rendered: an empty
-# list must leave the deployed unit byte-identical.
-DEFAULT_UNIT_SHA256 = "4a63b61a5b869688aaf3e074f2f10ea1f9f426a0356c53ff58467695cc347f4e"
-
-
-@pytest.mark.parametrize("mounts", [(), ("/mnt/cryptdata/media",), ("/mnt/cryptdata/media", "/srv/extra")])
-def test_unit_mounts_exact_role_parity(mounts: tuple[str, ...]) -> None:
-    cfg = MetubeConfig(mounts_required=mounts)
-    assert render_unit(cfg) == role("metube.service.j2", cfg)
-
-
-def test_unit_without_mounts_is_unchanged() -> None:
-    unit = render_unit(MetubeConfig())
-    assert "RequiresMountsFor" not in unit
-    assert hashlib.sha256(unit.encode()).hexdigest() == DEFAULT_UNIT_SHA256
+def test_unit_without_mounts_has_no_mount_requirement() -> None:
+    assert "RequiresMountsFor" not in render_unit(MetubeConfig())
 
 
 def test_unit_requires_every_mount_in_its_unit_section() -> None:
@@ -76,15 +62,6 @@ def test_unit_requires_every_mount_in_its_unit_section() -> None:
 def test_refuses_mounts_that_are_not_plain_paths(mount: str) -> None:
     with pytest.raises((ConfigValidationError, ValueError)):
         MetubeConfig(mounts_required=(mount,))
-
-
-@pytest.mark.parametrize("auth", [None, AUTH])
-def test_route_exact_role_parity(auth: BasicAuth | None) -> None:
-    cfg = MetubeConfig()
-    hashed = "$2y$05$fixture" if auth else None
-    assert render(PACKAGE, "metube-traefik.yml.j2", **template_vars(cfg, auth, hashed)) == role(
-        "metube-traefik.yml.j2", cfg, auth, hashed
-    )
 
 
 @pytest.mark.parametrize(

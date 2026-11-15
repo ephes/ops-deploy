@@ -1,0 +1,13 @@
+{
+ "conversation_engine": "conversation.custom",
+ "conversation_language": "de",
+ "id": "",
+ "language": "de",
+ "name": "Room",
+ "preferred": false,
+ "stt_engine": "stt.first",
+ "stt_language": "de",
+ "tts_engine": "tts.first",
+ "tts_language": "de",
+ "tts_voice": ""
+}

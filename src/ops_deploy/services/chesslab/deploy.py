@@ -3,11 +3,10 @@
 Port of the ``chesslab_deploy`` Ansible role (rsync method) and of the
 operations wiring in ops-control's ``deploy-chesslab.yml`` (Echoport backup
 target, Nyxmon health check). The files it writes are byte-identical to the
-role's (``tests/test_chesslab_parity.py``), so Ansible and ops-deploy can take
-turns on one host without churn. The SQLite database lives outside the synced
-site directory and is never created here: like the role, the deploy stops
-before any change to the site when it is missing or not read/writable by the
-service user.
+retired role's (goldens: ``tests/test_chesslab_golden.py``). The SQLite
+database lives outside the synced site directory and is never created here:
+like the role, the deploy stops before any change to the site when it is
+missing or not read/writable by the service user.
 """
 
 from __future__ import annotations

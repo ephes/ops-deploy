@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import os
 from dataclasses import replace
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -168,34 +165,3 @@ def test_legacy_slot_idle_lock_halt_and_missing_evidence_exact_contract() -> Non
             require_profile_transition(
                 cfg, profile, closed_out=False, label_loaded=False, serving=False, journals=[evidence]
             )
-
-
-def test_window_predicate_matches_actual_original_role_expression() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Actual paired role oracle is run explicitly during qualification")
-    import jinja2
-    import yaml
-
-    role = Path(source) / "roles/daybook_operations_runtime_deploy"
-    tasks = yaml.safe_load((role / "tasks/stop_window.yml").read_text())
-    expression = next(
-        t["ansible.builtin.set_fact"]["daybook_operations_runtime_stop_window"]
-        for t in tasks
-        if "ansible.builtin.set_fact" in t
-    )
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    env.tests.update(importlib.import_module("ansible.plugins.test.core").TestModule().tests())
-    for clock in ("06:54", "06:55", "08:45", "18:55", "20:45", "unavailable"):
-        original = env.from_string(expression).render(
-            daybook_operations_runtime_stop_windows=WINDOWS,
-            daybook_operations_runtime_stop_window_lead_minutes=20,
-            daybook_operations_runtime_stop_window_timezone="Europe/Berlin",
-            daybook_operations_runtime_stop_clock={"stdout": clock},
-        )
-        if original:
-            with pytest.raises(RuntimeGuardError):
-                require_stop_window(WINDOWS, 20, clock, running=True)
-        else:
-            require_stop_window(WINDOWS, 20, clock, running=True)

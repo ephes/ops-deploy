@@ -1,7 +1,7 @@
 """OpenClaw deploy, removal and Nyxmon checks on the fake host; the host script's steps.
 
 The inputs are the ``production`` parity case (the playbook's values with
-synthetic secrets); ``test_openclaw_parity.py`` checks the bytes.
+synthetic secrets); ``test_openclaw_golden.py`` pins the bytes.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from ops_deploy.services.openclaw.variables import resolve, version_at_least
 from ops_deploy.testing.harness import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.test_infra_docker_vector import DOCKER_PACKAGES, docker_converged
-from tests.test_openclaw_parity import host_script, inputs
+from tests.test_openclaw_golden import host_script, inputs
 
 P = "Deploy OpenClaw | "
 CFG, SECRETS = inputs("production")

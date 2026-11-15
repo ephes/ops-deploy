@@ -1,8 +1,7 @@
 """``deploy_certbot_dns`` against the fake connector, plus its pieces.
 
-The role templates are vendored under ``tests/parity/ansible`` (checked
-against ops-library by ``test_traefik_parity.test_vendored_templates_match_ops_library``)
-and rendered the way Ansible's ``template`` module does. No test contacts an
+The credentials file and the renewal hook are compared with golden renders
+(``tests/golden/certbot_dns``, see ``tests/goldens.py``). No test contacts an
 ACME server: ``certbot`` never runs here.
 """
 
@@ -13,7 +12,6 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 from pydantic import SecretStr, ValidationError
 
@@ -29,8 +27,9 @@ from ops_deploy.infra.certbot_dns import (
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.fakehost import UBUNTU
+from tests.goldens import assert_golden
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
+GOLDEN = Path(__file__).parent / "golden" / "certbot_dns"
 DOMAIN = "home.example.org"
 SECRET = SecretStr("dHNpZy1maXh0dXJlLXNlY3JldA==")
 CFG = CertbotDnsConfig(
@@ -50,17 +49,6 @@ GUARD = "env 'CERTBOT_STRAY_INPUT="
 P = "certbot DNS | "
 CERTONLY = P + "Request or renew the certificate"
 READ_ONLY = [P + "Check the renewal hook"]
-
-
-def render_ansible(template: str, variables: dict[str, Any]) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters["upper"] = str.upper
-    return env.get_template(template).render(**variables)
 
 
 def lineage(
@@ -147,7 +135,7 @@ def cfg(**changes: Any) -> CertbotDnsConfig:
     return CertbotDnsConfig.model_validate({**CFG.model_dump(), **changes})
 
 
-# Rendering against the role ------------------------------------------------------------------
+# Host files, byte for byte ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -159,19 +147,9 @@ def cfg(**changes: Any) -> CertbotDnsConfig:
     ],
     ids=["rfc2136", "rfc2136-overrides", "gandi"],
 )
-def test_credentials_match_the_role(config: CertbotDnsConfig) -> None:
-    variables = {
-        "certbot_dns_provider": config.provider,
-        "certbot_dns_gandi_api_token": SECRET.get_secret_value(),
-        "certbot_dns_rfc2136_server": config.rfc2136_server,
-        "certbot_dns_rfc2136_port": config.rfc2136_port,
-        "certbot_dns_rfc2136_key_name": config.rfc2136_key_name,
-        "certbot_dns_rfc2136_key_secret": SECRET.get_secret_value(),
-        "certbot_dns_rfc2136_key_algorithm": config.rfc2136_key_algorithm.lower(),
-    }
-
-    expected = render_ansible("certbot_dns_deploy__dns-credentials.ini.j2", variables)
-    assert render_credentials(config, SECRET) == expected
+def test_credentials_are_golden(config: CertbotDnsConfig, request: pytest.FixtureRequest) -> None:
+    case = request.node.callspec.id
+    assert_golden(GOLDEN / f"credentials-{case}.ini", render_credentials(config, SECRET))
 
 
 @pytest.mark.parametrize(
@@ -179,10 +157,9 @@ def test_credentials_match_the_role(config: CertbotDnsConfig) -> None:
     [(), CFG.renewal_hooks, ("one", "two\nthree", 'printf "%s\\n" x\n')],
     ids=["none", "consumers", "multi-line"],
 )
-def test_hook_matches_the_role(hooks: tuple[str, ...]) -> None:
-    expected = render_ansible("certbot_dns_deploy__renewal-hooks.sh.j2", {"certbot_dns_renewal_hooks": list(hooks)})
-
-    assert render_hook(cfg(renewal_hooks=hooks)) == expected
+def test_hook_is_golden(hooks: tuple[str, ...], request: pytest.FixtureRequest) -> None:
+    case = request.node.callspec.id
+    assert_golden(GOLDEN / f"reload-services-{case}.sh", render_hook(cfg(renewal_hooks=hooks)))
 
 
 def test_certonly_argv_is_the_roles() -> None:

@@ -1,8 +1,6 @@
-"""Traefik health probes: validation, capture/verify over a runner, the pyinfra install, role parity.
+"""Traefik health probes: validation, capture/verify over a runner, the pyinfra install, host files.
 
-The probe program is ops-library's ``traefik_health_probe.py`` byte for byte
-(``test_ops_library_drift`` checks it against ``OPS_LIBRARY_PATH``; the pinned
-digest below is the file at ops-library ``3110a0f1``). Capture runs for real
+Capture runs for real
 here against a local HTTP server, with ``/usr/bin/python3`` replaced by this
 interpreter; the install and verification run on the lima VM in
 ``tests/smoke/test_traefik_probes_smoke.py``.
@@ -23,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.backups.remote import CommandResult, RemoteCommandError, SubprocessRunner
@@ -37,7 +34,6 @@ from ops_deploy.infra import (
     verify_traefik_health_probes,
 )
 from ops_deploy.infra.traefik_probes import (
-    CAPTURE_PREFIX,
     CHECKS_PATH,
     PROBE_DIR,
     PROGRAM,
@@ -52,12 +48,10 @@ from ops_deploy.infra.traefik_probes import (
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
+from tests.goldens import assert_golden
 
-PARITY = Path(__file__).parent / "parity" / "traefik_deploy"
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-needs_ops_library = pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
-# sha256 of roles/traefik_deploy/files/traefik_health_probe.py at ops-library 3110a0f1.
-OPS_LIBRARY_3110A0F1_PROGRAM = "f1f826dd121cc24a5b8f5881402de5f31a020c5b367f1e9a5dd192f333f27377"
+FIXTURES = Path(__file__).parent / "fixtures" / "traefik_probes"
+GOLDEN = Path(__file__).parent / "golden" / "traefik_probes"
 SPEC = ProbeSpec.model_validate(
     {
         "probes": [{"host": "app.example.org", "scheme": "https", "port": 443, "address": "192.0.2.10"}],
@@ -67,7 +61,7 @@ SPEC = ProbeSpec.model_validate(
 
 
 def baseline_input() -> dict[str, Any]:
-    config: dict[str, Any] = json.loads((PARITY / "baseline-input.json").read_text())["traefik_health_probe_config"]
+    config: dict[str, Any] = json.loads((FIXTURES / "baseline-input.json").read_text())["traefik_health_probe_config"]
     return config
 
 
@@ -75,10 +69,6 @@ BASELINE = ProbeBaseline.model_validate(baseline_input())
 
 
 # The program ------------------------------------------------------------------------------------
-
-
-def test_program_is_ops_library_3110a0f1_byte_for_byte() -> None:
-    assert PROGRAM_SHA256 == OPS_LIBRARY_3110A0F1_PROGRAM
 
 
 def run_program(*args: str) -> subprocess.CompletedProcess[str]:
@@ -161,23 +151,21 @@ def test_missing_fingerprints_are_fine_without_tls_fingerprints() -> None:
     assert ProbeBaseline.model_validate(data).tls_fingerprints is False
 
 
-# Parity with the role ---------------------------------------------------------------------------
+# Host files ---------------------------------------------------------------------------
 
 
-def test_checks_json_is_what_the_role_writes() -> None:
-    """``checks.json`` is byte-identical to the role's ``to_nice_json`` copy.
+def test_checks_json_is_golden() -> None:
+    """``checks.json`` on the host stays byte for byte as recorded.
 
-    ``tests/parity/traefik_deploy/checks.json`` was written by ansible-core
-    2.19.0's ``copy`` with ``content: '{{ traefik_health_probe_config | to_nice_json }}'``
-    (the role's task) from ``baseline-input.json``. Absent keys (``path``,
-    ``tls_error``) stay absent and non-ASCII file names are escaped.
+    Absent keys (``path``, ``tls_error``) stay absent and non-ASCII file names
+    are escaped, as in the ``to_nice_json`` copy the hosts already have.
     """
 
-    assert config_json(BASELINE).encode() == (PARITY / "checks.json").read_bytes()
-    assert ProbeBaseline.model_validate_json((PARITY / "checks.json").read_bytes()) == BASELINE
+    assert_golden(GOLDEN / "checks.json", config_json(BASELINE))
+    assert ProbeBaseline.model_validate_json(config_json(BASELINE)) == BASELINE
 
 
-def test_probe_commands_are_the_roles() -> None:
+def test_probe_commands() -> None:
     commands = probe_commands().as_request()
 
     assert list(commands) == [
@@ -193,68 +181,6 @@ def test_probe_commands_are_the_roles() -> None:
     assert modes["metrics_bind_acceptance_probe"] == [PROGRAM_PATH, "metrics_bind", CHECKS_PATH]
     assert modes["cleanup_probe"] == [PROGRAM_PATH, "cleanup", CHECKS_PATH]
     assert {value["sha256"] for value in commands.values()} == {PROGRAM_SHA256}
-
-
-def role_tasks(name: str) -> list[dict[str, Any]]:
-    assert OPS_LIBRARY is not None
-    tasks: list[dict[str, Any]] = yaml.safe_load(Path(OPS_LIBRARY, "roles/traefik_deploy/tasks", name).read_text())
-    return tasks
-
-
-def task(tasks: list[dict[str, Any]], suffix: str) -> dict[str, Any]:
-    found = [t for t in tasks if t["name"].endswith(suffix)]
-    assert len(found) == 1, suffix
-    return found[0]
-
-
-@needs_ops_library
-def test_install_paths_modes_and_commands_match_the_role() -> None:
-    tasks = role_tasks("health_probe.yml")
-
-    directory = task(tasks, "Create private probe directory")["ansible.builtin.file"]
-    assert (directory["path"], directory["mode"], directory["owner"]) == (PROBE_DIR, "0700", "root")
-    program = task(tasks, "Install read-only acceptance program")["ansible.builtin.copy"]
-    assert (program["src"], program["dest"], program["mode"]) == ("traefik_health_probe.py", PROGRAM_PATH, "0755")
-    checks = task(tasks, "Install captured private acceptance baseline")["ansible.builtin.copy"]
-    assert (checks["dest"], checks["mode"]) == (CHECKS_PATH, "0600")
-    assert checks["content"] == "{{ traefik_health_probe_config | to_nice_json }}"
-    verify = task(tasks, "Verify the captured baseline against live ingress")["ansible.builtin.command"]["argv"]
-    assert verify == [PYTHON, PROGRAM_PATH, "health", CHECKS_PATH]
-    returned = task(tasks, "Supply transaction probe commands")["ansible.builtin.set_fact"]
-    role_commands = returned["traefik_health_probe_commands"]
-    ours = probe_commands().as_request()
-    assert list(role_commands) == list(ours)
-    assert {key: value["argv"] for key, value in role_commands.items()} == {
-        key: value["argv"] for key, value in ours.items()
-    }
-    python = task(tasks, "Check the explicitly pinned probe interpreter")["ansible.builtin.raw"]
-    assert python.startswith(f"{PYTHON} -c ")
-    assert "(3, 11)" in python
-
-
-@needs_ops_library
-def test_capture_matches_the_role() -> None:
-    tasks = role_tasks("health_probe_capture.yml")
-
-    guard = task(tasks, "Require an explicit probe specification")["ansible.builtin.assert"]["that"]
-    assert "traefik_health_probe_spec.observations is not defined" in guard
-    assert "traefik_health_probe_spec.dynamic is not defined" in guard
-    tempdir = task(tasks, "Create private temporary capture directory")["ansible.builtin.tempfile"]
-    assert tempdir["prefix"] == CAPTURE_PREFIX
-    block = task(tasks, "Capture the live ingress baseline")
-    program = task(block["block"], "Copy probe program")["ansible.builtin.copy"]
-    spec = task(block["block"], "Write private probe specification")["ansible.builtin.copy"]
-    run = task(block["block"], "Run read-only capture")["ansible.builtin.command"]["argv"]
-    assert (program["mode"], spec["mode"]) == ("0700", "0600")
-    assert spec["content"] == "{{ traefik_health_probe_spec | to_nice_json }}"
-    assert run[0] == PYTHON
-    assert run[2] == "capture"
-    script = capture_script(SPEC)
-    assert 'chmod 0700 "$dir/health.py"' in script
-    assert 'chmod 0600 "$dir/spec.json"' in script
-    assert f'{PYTHON} "$dir/health.py" capture "$dir/spec.json"' in script
-    merged = task(block["block"], "Return the merged probe configuration")["ansible.builtin.set_fact"]
-    assert "combine(traefik_health_probe_capture_run.stdout | from_json)" in merged["traefik_health_probe_captured"]
 
 
 # Capture ----------------------------------------------------------------------------------------
@@ -451,7 +377,7 @@ def test_deploy_installs_program_and_private_baseline() -> None:
 
     assert result.succeeded, result.error
     assert result.upload(PROGRAM_PATH) == PROGRAM
-    assert result.written(CHECKS_PATH) == (PARITY / "checks.json").read_bytes()
+    assert result.written(CHECKS_PATH) == (GOLDEN / "checks.json").read_bytes()
     text = result.all_text()
     assert "192.0.2.10" not in text
     assert "app.example.org" not in text

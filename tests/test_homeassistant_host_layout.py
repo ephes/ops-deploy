@@ -1,16 +1,11 @@
-"""Original layout source and fake-connector effects; not native device proof."""
+"""Host layout and fake-connector effects; not native device proof."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 from importlib.resources import files
 from pathlib import Path
 
-import jinja2
 import pytest
-import yaml
 
 from ops_deploy.services.homeassistant.host_layout import configure_layout, directories, run_udev_handlers
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
@@ -19,36 +14,10 @@ from tests import fakehost
 
 
 @pytest.mark.parametrize("home", ["/home/homeassistant", "/srv/owned-ha"])
-def test_original_ordered_paths_and_no_extra_group_or_recursive_policy(home: str) -> None:
+def test_ordered_paths_below_home(home: str) -> None:
     cfg = HomeAssistantRuntimeConfig(home=home)
-    fixture = Path(__file__).parent / "parity/homeassistant"
-    original = yaml.safe_load((fixture / "directories.yml").read_text())[0]
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    values = {"homeassistant_" + key: value for key, value in cfg.model_dump().items()}
-    expected = tuple(env.from_string(value).render(**values) for value in original["loop"])
-    assert directories(cfg) == expected
-    assert original["ansible.builtin.file"]["mode"] == "0755"
-    user = yaml.safe_load((fixture / "user.yml").read_text())[0]["ansible.builtin.user"]
-    assert user["groups"] == ["dialout"]
-    assert user["append"] is True
-    assert "group" not in user
-    assert "system" not in user
-
-
-def test_source_bindings_and_exact_rule() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant"
-    manifest = json.loads((fixture / "layout-source.json").read_text())
-    for relative, expected in manifest["files"].items():
-        if relative.startswith("templates/"):
-            body = files("ops_deploy.services.homeassistant").joinpath(relative).read_bytes()
-        else:
-            body = (
-                fixture / ("layout-handlers.yml" if relative == "handlers/main.yml" else Path(relative).name)
-            ).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == expected
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            original = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/homeassistant_deploy" / relative
-            assert hashlib.sha256(original.read_bytes()).hexdigest() == expected
+    below = (".local", ".local/share", ".local/share/uv", "site", "site/config", "site/data", "site/logs", "site/bin")
+    assert directories(cfg) == (home, *(f"{home}/{path}" for path in below))
 
 
 @pytest.mark.parametrize("enable", [False, True])

@@ -5,11 +5,10 @@ preflight in ops-control's ``deploy-vaultwarden.yml``. The packages come from
 the vendor's apt repository (signing key and ``vaultwarden.list`` as the role
 writes them) and own the binary, the unit and the ``vaultwarden`` user; this
 deploy writes ``/etc/vaultwarden.env``, the systemd drop-in and the Traefik
-route byte-identical to the role's (``tests/test_vaultwarden_parity.py``), so
-Ansible and ops-deploy can take turns on a host without rewriting a file or
-restarting anything. ``traefik_ip_allowlist`` is the role's
-``vaultwarden_traefik_ip_allowlist``: a non-empty allowlist adds an
-``ipAllowList`` middleware to the route, in both engines.
+route byte-identical to what the role wrote (``tests/test_vaultwarden_golden.py``),
+so a host the role set up is not rewritten or restarted. ``traefik_ip_allowlist``
+is the role's ``vaultwarden_traefik_ip_allowlist``: a non-empty allowlist adds an
+``ipAllowList`` middleware to the route.
 
 When ``data/config.json`` exists (the admin panel saved settings, which then
 override the environment file), the role's SMTP settings are merged into it on

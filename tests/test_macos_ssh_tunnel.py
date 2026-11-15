@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 import plistlib
 import shlex
 import sys
@@ -19,6 +18,7 @@ from pydantic import ValidationError
 from ops_deploy.services.macos_ssh_tunnel import MacosSshTunnelConfig, deploy_macos_ssh_tunnel
 from ops_deploy.services.macos_ssh_tunnel.deploy import host_command, payload
 from ops_deploy.testing import run_deploy_fake
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -97,20 +97,16 @@ def test_exact_unchanged_mutation_and_controller_resource_hashes() -> None:
     )
 
 
-def test_actual_role_resource_pair_parity() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; paired role oracle parity is run explicitly")
-    base = ROOT / "src/ops_deploy/services/macos_ssh_tunnel"
-    library = Path(source)
-    pairs = {
-        "files/forwarding_identity_host.py": "roles/ssh_forwarding_identity/files/manage_forwarding_identity.py",
-        "files/tunnel_control.py": "roles/macos_ssh_tunnel/files/tunnel_control.py",
-        "templates/ssh_config.j2": "roles/macos_ssh_tunnel/templates/ssh_config.j2",
-        "templates/launchagent.plist.j2": "roles/macos_ssh_tunnel/templates/launchagent.plist.j2",
-    }
-    for target, role in pairs.items():
-        assert (base / target).read_bytes() == (library / role).read_bytes()
+def test_tunnel_files_are_golden() -> None:
+    """The LaunchAgent, its ssh_config and health config: a changed byte reloads the tunnel."""
+
+    cfg = config()
+    assert cfg.directory is not None
+    contents = payload(cfg)["contents"]
+    golden = Path(__file__).parent / "golden" / "macos_ssh_tunnel"
+    assert_golden(golden / "launchagent.plist", contents[str(cfg.plist)])
+    assert_golden(golden / "ssh_config", contents[str(cfg.directory / "ssh_config")])
+    assert_golden(golden / "config.json", contents[str(cfg.directory / "config.json")])
 
 
 def test_bundled_original_module_can_load_dataclasses_without_execution() -> None:

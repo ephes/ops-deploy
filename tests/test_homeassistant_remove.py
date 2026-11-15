@@ -1,8 +1,7 @@
-"""Original removal primitives; synthetic files/accounts/services only."""
+"""Removal primitives; synthetic files/accounts/services only."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib
 import json
 import os
@@ -11,16 +10,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
-import yaml
 from pyinfra.api import Config, Inventory, State
 from pyinfra.api.connect import connect_all, disconnect_all
 from pyinfra.api.deploy import add_deploy
 from pyinfra.api.operations import run_ops
 
 from ops_deploy.helpers.traefik import route_guard_command
+from ops_deploy.services.homeassistant.ingress import HomeAssistantIngressConfig
 from ops_deploy.services.homeassistant.remove import SERVICE_PROBE, HomeAssistantRemoveConfig, remove_homeassistant
+from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 from ops_deploy.testing import run_deploy_fake
 from ops_deploy.testing.harness import collect_ops
 from tests import fakehost
@@ -34,25 +33,15 @@ def selected(**values: Any) -> HomeAssistantRemoveConfig:
 
 
 @pytest.mark.parametrize("overrides", [{}, {"user": "owned", "service_name": "owned-ha"}, {"home": "/srv/owned"}])
-def test_exact_original_defaults_and_dependent_paths(overrides: dict[str, Any]) -> None:
-    root = Path(__file__).parent / "parity/homeassistant/remove"
-    manifest = json.loads((root / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (root / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-    cfg = HomeAssistantRemoveConfig(**overrides)
-    context = {"homeassistant_" + k: v for k, v in cfg.model_dump().items()}
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    for name, value in yaml.safe_load((root / "defaults.yml").read_text()).items():
-        field = name.removeprefix("homeassistant_")
-        expected = overrides.get(field, env.from_string(value).render(**context) if isinstance(value, str) else value)
-        assert getattr(cfg, field) == expected
-    tasks = yaml.safe_load((root / "tasks.yml").read_text())
-    assert tasks[2]["failed_when"] is False
-    assert tasks[2]["ignore_errors"] is True
-    assert tasks[-3]["ansible.builtin.user"]["remove"] == "{{ homeassistant_remove_site_dir | bool }}"
+def test_removal_paths_are_the_deployed_paths(overrides: dict[str, Any]) -> None:
+    removal = HomeAssistantRemoveConfig(**overrides).model_dump()
+    deployed = HomeAssistantRuntimeConfig(**overrides).model_dump()
+    # The removal's group stays "homeassistant" when only the user changes (as the role's did).
+    skip = ("traefik_config_path", "group")
+    shared = {name for name in removal if not name.startswith(("remove_", "confirm_")) and name not in skip}
+    assert shared <= set(deployed)
+    assert {name: removal[name] for name in shared} == {name: deployed[name] for name in shared}
+    assert removal["traefik_config_path"] == HomeAssistantIngressConfig().dynamic_dir + "/homeassistant.yml"
 
 
 def test_confirmation_precedes_every_target_probe() -> None:
@@ -99,7 +88,7 @@ def test_service_disable_precedes_stop_and_failure_only_skips_rest_of_that_task(
 
 
 @pytest.mark.parametrize("active", ["active", "activating", "deactivating", "inactive", "failed"])
-def test_original_stop_states_and_disabled_service(active: str) -> None:
+def test_stop_states_and_disabled_service(active: str) -> None:
     run = run_deploy_fake(
         remove_homeassistant,
         selected(remove_service=True),
@@ -177,7 +166,7 @@ def test_actual_owned_leaf_removal_preserves_symlink_target_and_repeat(
         ("disabled", 1, False),
     ],
 )
-def test_probe_preserves_actual_original_is_enabled_exit_and_output_semantics(
+def test_probe_preserves_is_enabled_exit_and_output_semantics(
     tmp_path: Path, state: str, exit_code: int, expected: bool
 ) -> None:
     fake = tmp_path / "systemctl"
@@ -204,7 +193,7 @@ def test_probe_preserves_actual_original_is_enabled_exit_and_output_semantics(
 
 
 @pytest.mark.parametrize("flag", FLAGS)
-def test_each_original_flag_selects_only_its_declared_resources(flag: str) -> None:
+def test_each_flag_selects_only_its_declared_resources(flag: str) -> None:
     cfg = selected(**{flag: True})
     expected = {
         "remove_service": ["rm -rf " + cfg.systemd_unit_path, "systemctl daemon-reload"],

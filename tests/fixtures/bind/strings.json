@@ -1,0 +1,61 @@
+{
+  "distribution": "Ubuntu",
+  "major_version": 22,
+  "config": {
+    "config_dir": "/srv/named/etc",
+    "working_dir": "/srv/named/cache",
+    "dynamic_zone_dir": "/srv/named/dyn",
+    "builtin_zones_file": "/srv/named/etc/zones.rfc1918",
+    "zone_default_type": "primary",
+    "recursion_acl": [
+      "localhost",
+      "10.0.0.0/8",
+      "!192.0.2.66"
+    ],
+    "allow_query": "trusted",
+    "allow_query_cache": [
+      "localhost"
+    ],
+    "allow_transfer": "none",
+    "dnssec_validation": "no",
+    "listen_on": "127.0.0.1",
+    "listen_on_v6": [],
+    "extra_options": [
+      "minimal-responses yes;",
+      "version \"not disclosed\";"
+    ],
+    "tsig_keys_file": "/srv/named/keys/tsig.conf",
+    "tsig_keys": [
+      {
+        "name": "k1",
+        "algorithm": "hmac-sha384",
+        "secret": "azE="
+      }
+    ],
+    "zones": [
+      {
+        "name": "example.org",
+        "file": "db.example.org"
+      },
+      {
+        "name": "dyn.example.org",
+        "file": "db.dyn",
+        "dynamic": true,
+        "update_policy": "grant k1 zonesub ANY",
+        "allow_transfer": "none"
+      },
+      {
+        "name": ".",
+        "file": "db.root",
+        "type": "hint"
+      },
+      {
+        "name": "mirror.example.org",
+        "file": "db.mirror",
+        "type": "slave",
+        "primaries": "192.0.2.1",
+        "extra_config": []
+      }
+    ]
+  }
+}

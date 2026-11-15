@@ -1,11 +1,10 @@
-"""Native role parity, credential transport and retained-state failure paths."""
+"""Native host files, credential transport and retained-state failure paths."""
 
 from __future__ import annotations
 
 import base64
 import importlib.util
 import json
-import os
 import plistlib
 import shlex
 import sys
@@ -19,10 +18,12 @@ from ops_deploy.services.graphyard import GraphyardVectorConfig, GraphyardVector
 from ops_deploy.services.graphyard.vector import fragment_text
 from ops_deploy.services.graphyard.vector_darwin import host_command, native_payload
 from ops_deploy.testing import run_deploy_fake
+from tests.goldens import assert_golden
 from tests.graphyard_fixtures import secrets_values
 from tests.test_graphyard import assert_no_secret_leaks
 
 ROOT = Path(__file__).parents[1]
+GOLDEN = Path(__file__).parent / "golden" / "graphyard" / "darwin"
 
 
 def config(**overrides: Any) -> GraphyardVectorConfig:
@@ -45,7 +46,7 @@ def host_script() -> Any:
     return module
 
 
-def test_native_defaults_and_literal_space_paths_are_role_compatible() -> None:
+def test_native_defaults_and_literal_space_paths() -> None:
     cfg = config()
     assert cfg.filesystem_mountpoint_excludes == ()
     cfg = config(filesystem_mountpoint_excludes=("/Volumes/Backups of studio",))
@@ -61,13 +62,20 @@ def test_excludes_reject_control_characters(path: str) -> None:
         config(filesystem_mountpoint_excludes=(path,))
 
 
-@pytest.mark.parametrize("name", ["vector.launchd.plist.j2", "vector.newsyslog.conf.j2"])
-def test_native_role_resources_are_exact(name: str) -> None:
-    shipped = ROOT / "src/ops_deploy/services/graphyard/templates" / name
-    vendored = ROOT / "tests/parity/ansible" / ("graphyard_vector_deploy__" + name)
-    assert shipped.read_bytes() == vendored.read_bytes()
-    if source := os.environ.get("OPS_LIBRARY_PATH"):
-        assert shipped.read_bytes() == (Path(source) / "roles/graphyard_vector_deploy/templates" / name).read_bytes()
+def test_native_host_files_are_golden() -> None:
+    """The plist, newsyslog and Vector files stay what studio has today (tests/goldens.py)."""
+
+    cfg = config()
+    contents = native_payload(cfg, fragment_text(cfg, secrets_values()))["contents"]
+
+    assert sorted(contents) == [
+        "/Library/LaunchDaemons/de.wersdoerfer.graphyard.vector.plist",
+        "/etc/newsyslog.d/graphyard-vector.conf",
+        "/etc/vector/config.d/00-global.yaml",
+        "/etc/vector/config.d/20-graphyard-host-metrics.yaml",
+    ]
+    for path, text in contents.items():
+        assert_golden(GOLDEN / Path(path).name, text)
 
 
 def test_private_fragment_is_absent_from_every_command_argument() -> None:

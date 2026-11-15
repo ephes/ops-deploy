@@ -4,9 +4,9 @@ Port of the ``opaq_app_deploy`` Ansible role together with the steps around it
 in ops-control's ``deploy-opaq-app.yml``: the guard against taking over a name
 a static page still routes, the login and allowlist checks, and the Echoport
 backup target and Nyxmon health check upserts. The env file, unit and Traefik
-route are byte-identical to the role's (``tests/test_opaq_app_parity.py``), so
-Ansible and ops-deploy can take turns on one host without churn. The database
-lives in ``data/``, outside the synced tree, so no sync can remove it.
+route are byte-identical to the retired role's (goldens:
+``tests/test_opaq_app_golden.py``). The database lives in ``data/``, outside
+the synced tree, so no sync can remove it.
 
 Not ported: the ``uv_install`` role (uv must already be at
 ``/usr/local/bin/uv``) and the playbook's second play, which hands the upload

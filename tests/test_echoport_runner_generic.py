@@ -1,9 +1,9 @@
 """``_echoport_runner.generic``: the generic runner ``echoport-backup`` and its per-target accesses, on the fake host.
 
-The runner renders to what ``ansible-playbook`` rendered for macmini's
-sixteen targets (``echoport-backup-macmini`` in the parity record), which is
-byte for byte the script read on macmini on 2026-11-10 (sha256 below);
-``config.json`` and the sudoers rule are what the role wrote there.
+The runner renders, for macmini's sixteen targets (``echoport-backup-macmini``
+in ``tests/echoport_runner_data.py``), byte for byte the script read on
+macmini on 2026-11-10 (sha256 below); ``config.json`` and the sudoers rule are
+what macmini has.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,10 +26,8 @@ from ops_deploy.services._echoport_runner.generic import (
 from ops_deploy.services.minio.config import MC_SHA256
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.echoport_runner_data import INPUTS, runner_sha256
 
-PARITY = Path(__file__).parent / "parity/echoport_runner"
-INPUTS = json.loads((PARITY / "inputs.json").read_text())["runners"]
-EXPECTED = json.loads((PARITY / "expected.json").read_text())["runners"]
 CASE = "echoport-backup-macmini"
 # /usr/local/libexec/fastdeploy/echoport-backup/backup.py on macmini, 2026-11-10.
 LIVE_RUNNER_SHA256 = "d92c2fc302a8a293137ab279c17d8293deed704469d8e99f213a986860ac745a"
@@ -159,7 +156,7 @@ def test_the_runner_config_and_sudoers_are_what_macmini_has() -> None:
     cfg = registration()
     script = runner_script(cfg.runner, cfg.variables)
 
-    assert hashlib.sha256(script.encode()).hexdigest() == LIVE_RUNNER_SHA256 == EXPECTED[CASE]
+    assert hashlib.sha256(script.encode()).hexdigest() == LIVE_RUNNER_SHA256 == runner_sha256()[CASE]
     assert service_config(cfg.runner) == LIVE_CONFIG
     assert sudoers_rule(cfg.runner) == LIVE_SUDOERS
     assert cfg.runner.script == "/usr/local/libexec/fastdeploy/echoport-backup/backup.py"

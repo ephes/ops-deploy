@@ -2,8 +2,7 @@
 
 The restart and recreate rules are what matters here: a converged host gets
 no mutating operation and no container command at all; a changed config file
-restarts only its reader; an image bump recreates through ``up``; the switch
-from the role's files applies once.
+restarts only its reader; an image bump recreates through ``up``.
 """
 
 from __future__ import annotations
@@ -29,9 +28,9 @@ from tests.livekit_fixtures import (
     SERVER_IMAGE,
     SERVER_YAML,
     STATE,
-    ansible_deployed,
     converged,
     livekit_config,
+    unstamped,
     values,
 )
 
@@ -187,8 +186,8 @@ def test_a_converged_host_gets_no_mutating_operation_and_no_container_command(
     assert f"{PREFIX}Check http://127.0.0.1:7880/" in read_only
 
 
-def test_the_run_after_the_switch_is_a_no_op(cfg: LivekitConfig, secrets: SecretValues) -> None:
-    first = deploy(cfg, secrets, ansible_deployed(cfg, secrets))
+def test_the_run_after_a_first_apply_is_a_no_op(cfg: LivekitConfig, secrets: SecretValues) -> None:
+    first = deploy(cfg, secrets, unstamped(cfg))
     assert RELOAD in first.mutating_changed_ops
 
     # The host as the first run left it: its uploads, its stamp.
@@ -198,41 +197,8 @@ def test_the_run_after_the_switch_is_a_no_op(cfg: LivekitConfig, secrets: Secret
     assert container_commands(second) == []
 
 
-# -- the switch from the role's files ------------------------------------------------
-
-
-def test_the_switch_from_the_role_applies_once_without_a_pull_or_a_traefik_restart(
-    cfg: LivekitConfig, secrets: SecretValues
-) -> None:
-    run = deploy(cfg, secrets, ansible_deployed(cfg, secrets))
-
-    assert run.mutating_changed_ops == [
-        PENDING,
-        f"{PREFIX}Write docker-compose.yml",
-        WRITE_SERVER,
-        WRITE_EGRESS,
-        f"{PREFIX}Install systemd unit livekit.service",
-        f"{PREFIX}Reload systemd for livekit.service",
-        RELOAD,
-        RESTART_BOTH,
-        STAMP,
-    ]
-    commands = container_commands(run)
-    assert commands == [
-        "systemctl reload livekit.service",
-        "docker compose -p livekit -f /opt/livekit/docker-compose.yml restart livekit-egress livekit-server",
-    ]
-    # The role's route is kept byte for byte: no write, and Traefik is never restarted.
-    assert ROUTE_WRITE not in run.mutating_changed_ops
-    assert not any("traefik" in c and "systemctl" in c for c in run.executed_commands)
-    assert not any("docker pull" in c for c in run.executed_commands)
-    # egress.yaml goes from the old 0644 to the role's 0640.
-    egress_install = next(c for c in run.executed_commands if "/etc/livekit egress.yaml " in c)
-    assert egress_install.endswith(" 0640 root root")
-
-
 def test_secrets_never_reach_commands_or_op_arguments(cfg: LivekitConfig, secrets: SecretValues) -> None:
-    run = deploy(cfg, secrets, ansible_deployed(cfg, secrets))
+    run = deploy(cfg, secrets, unstamped(cfg))
     text = run.all_text()
 
     for key, value in SECRET_VALUES.items():
@@ -342,7 +308,7 @@ def test_without_a_traefik_host_no_route_is_written(secrets: SecretValues) -> No
 
 
 def test_the_stamp_records_the_pins_and_both_config_files(cfg: LivekitConfig, secrets: SecretValues) -> None:
-    run = deploy(cfg, secrets, ansible_deployed(cfg, secrets))
+    run = deploy(cfg, secrets, unstamped(cfg))
     stdin = next(text for command, text in run.stdin if command.endswith("' stamp"))
 
     stamp = json.loads(base64.b64decode(stdin))["stamp"]

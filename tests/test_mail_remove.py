@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -11,14 +10,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from ops_deploy.services._lifecycle.apt_purge import PACKAGES
 from ops_deploy.services.mail_remove import MailRemoveConfig, remove_mail
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/mail/remove"
 APT = (
     "env DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=60 -o Dpkg::Options::=--force-confdef"
     " -o Dpkg::Options::=--force-confold --purge remove --"
@@ -26,10 +23,6 @@ APT = (
 PSQL = "cd / && runuser -u postgres -- psql -X -q -t -A -v ON_ERROR_STOP=1 -d postgres -c "
 # What just remove-one mail passes both plays: every component, the role's other defaults.
 EVERYTHING = {"backend": True, "relay": True, "spam": True}
-
-
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
 
 
 def confirmed(**values: Any) -> MailRemoveConfig:
@@ -58,77 +51,11 @@ def commands(run: Any) -> list[str]:
     return [command for command in run.executed_commands if "import json, subprocess" not in command]
 
 
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles() -> None:
-    defaults = role("defaults.yml")
+def test_defaults_keep_mail_data_accounts_and_the_database() -> None:
     cfg = MailRemoveConfig()
-    for field in (
-        "confirm",
-        "backend",
-        "relay",
-        "spam",
-        "purge_packages",
-        "remove_configs",
-        "remove_state",
-        "remove_data",
-        "remove_vmail_user",
-        "drop_database",
-        "drop_db_user",
-        "db_force_disconnect",
-        "postgres_database",
-        "postgres_user",
-        "postgres_become_user",
-    ):
-        assert getattr(cfg, field) == defaults["mail_remove_" + field], field
-    for field in ("vmail_path", "backup_path", "vmail_user", "vmail_group"):
-        assert getattr(cfg, field) == defaults["mail_" + field]
-    for kind in ("backend", "relay", "spam"):
-        assert list(getattr(cfg, f"{kind}_services")) == defaults[f"mail_remove_{kind}_services"]
-        assert list(getattr(cfg, f"packages_{kind}")) == defaults[f"mail_remove_packages_{kind}"]
-        assert list(getattr(cfg, f"config_paths_{kind}")) == defaults[f"mail_remove_config_paths_{kind}"]
-        assert list(getattr(cfg, f"state_paths_{kind}")) == defaults[f"mail_remove_state_paths_{kind}"]
-    assert defaults["mail_remove_data_paths"] == ["{{ mail_vmail_path }}", "{{ mail_backup_path }}"]
-
-
-def test_role_task_order_is_the_ported_one() -> None:
-    tasks = role("tasks.yml")
-    modules = [next(key for key in task if key.startswith(("ansible.", "community."))) for task in tasks]
-    assert modules == [
-        "ansible.builtin.assert",
-        "ansible.builtin.set_fact",
-        "ansible.builtin.command",  # postqueue -p
-        "ansible.builtin.debug",  # queue warning
-        "ansible.builtin.service_facts",
-        "ansible.builtin.set_fact",  # present services only
-        "ansible.builtin.systemd",
-        "ansible.builtin.apt",
-        "ansible.builtin.file",  # configs
-        "ansible.builtin.file",  # state
-        "ansible.builtin.file",  # data
-        "ansible.builtin.user",
-        "ansible.builtin.group",
-        "community.postgresql.postgresql_db",
-        "community.postgresql.postgresql_user",
-        "ansible.builtin.debug",
-    ]
-    assert tasks[6]["ansible.builtin.systemd"] == {"name": "{{ item }}", "state": "stopped", "enabled": False}
-    assert tasks[6]["failed_when"] is False
-    assert tasks[7]["ansible.builtin.apt"] == {
-        "name": "{{ mail_remove_target_packages | unique }}",
-        "state": "absent",
-        "purge": True,
-    }
-    assert tasks[11]["ansible.builtin.user"]["remove"] == "{{ mail_remove_remove_data | bool }}"
-    assert tasks[13]["community.postgresql.postgresql_db"]["force"] == "{{ mail_remove_db_force_disconnect | bool }}"
-    assert all(tasks[index]["become_user"] == "{{ mail_remove_postgres_become_user }}" for index in (13, 14))
+    assert (cfg.confirm, cfg.backend, cfg.relay, cfg.spam) == (False, False, False, False)
+    assert (cfg.purge_packages, cfg.remove_configs, cfg.remove_state) == (True, True, True)
+    assert (cfg.remove_data, cfg.remove_vmail_user, cfg.drop_database, cfg.drop_db_user) == (False,) * 4
 
 
 def test_confirmation_and_a_component_precede_every_probe() -> None:

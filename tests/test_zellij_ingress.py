@@ -1,18 +1,12 @@
-"""zellij_ingress: byte parity with the role's template, the route's shape, plans and input refusal.
+"""zellij_ingress: the route stays byte for byte what hosts have, its shape, plans and input refusal.
 
-Parity renders the vendored role template (``tests/parity/ansible/
-zellij_ingress_deploy__zellij-traefik.yml.j2``, checked against ops-library by
-``test_traefik_parity.test_vendored_templates_match_ops_library``) with a
-Jinja2 environment configured like Ansible's ``template`` module, with the
-role defaults overlaid by the inputs, and compares bytes with what the deploy
-writes. The role variables here are written out independently of
-``role_vars()`` so a mapping mistake cannot cancel itself out.
+The route renders are recorded under ``tests/golden/zellij_ingress`` (see
+``tests/goldens.py``); Traefik reloads on any change to the file.
 """
 
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -26,26 +20,14 @@ from ops_deploy.services.zellij_ingress import (
 )
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
-PACKAGED = Path(__file__).parents[1] / "src/ops_deploy/services/zellij_ingress/templates"
-TEMPLATE = "zellij-traefik.yml.j2"
+GOLDEN = Path(__file__).parent / "golden" / "zellij_ingress"
 ROUTE = "/etc/traefik/dynamic/zellij.yml"
 DYNAMIC = "/etc/traefik/dynamic"
 HOST = "zellij.example.invalid"
 TARGET = "https://backend.example.invalid/"
 PREFIX = "Deploy Zellij ingress | "
-
-# zellij_ingress_deploy/defaults/main.yml
-ROLE_DEFAULTS: dict[str, Any] = {
-    "zellij_ingress_traefik_enabled": True,
-    "zellij_ingress_traefik_host": "",
-    "zellij_ingress_redirect_target": "",
-    "zellij_ingress_traefik_entrypoints": ["web-secure"],
-    "zellij_ingress_traefik_cert_resolver": "",
-    "zellij_ingress_traefik_config_path": "/etc/traefik/dynamic/zellij.yml",
-    "zellij_ingress_allowed_ip_ranges": ["127.0.0.1/32", "::1/128", "100.64.0.0/10", "fd7a:115c:a1e0::/48"],
-}
 
 
 def config(**overrides: Any) -> ZellijIngressConfig:
@@ -53,91 +35,45 @@ def config(**overrides: Any) -> ZellijIngressConfig:
     return ZellijIngressConfig(**fields)
 
 
-def render_ansible(variables: dict[str, Any]) -> str:
-    # ansible.builtin.template defaults: trim_blocks on, lstrip_blocks off, trailing newline kept.
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    return env.get_template(f"zellij_ingress_deploy__{TEMPLATE}").render(**{**ROLE_DEFAULTS, **variables})
-
-
-# (config overrides, the same inputs as role variables)
-VARIANTS: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
-    "playbook": (
-        {},
-        {"zellij_ingress_traefik_host": HOST, "zellij_ingress_redirect_target": TARGET},
-    ),
-    "cert resolver": (
-        {"traefik_cert_resolver": "letsencrypt"},
-        {
-            "zellij_ingress_traefik_host": HOST,
-            "zellij_ingress_redirect_target": TARGET,
-            "zellij_ingress_traefik_cert_resolver": "letsencrypt",
-        },
-    ),
-    "entrypoints, one range, http target with port and path": (
-        {
-            "traefik_entrypoints": ("web-secure", "tailnet_secure"),
-            "allowed_ip_ranges": ("10.0.0.0/8",),
-            "redirect_target": "http://backend.example.invalid:8082/web/",
-        },
-        {
-            "zellij_ingress_traefik_host": HOST,
-            "zellij_ingress_redirect_target": "http://backend.example.invalid:8082/web/",
-            "zellij_ingress_traefik_entrypoints": ["web-secure", "tailnet_secure"],
-            "zellij_ingress_allowed_ip_ranges": ["10.0.0.0/8"],
-        },
-    ),
-    "everything": (
-        {
-            "traefik_host": "term.example.invalid",
-            "redirect_target": "https://Backend.example.invalid",
-            "traefik_entrypoints": ("websecure",),
-            "traefik_cert_resolver": "le_dns",
-            "traefik_config_path": "/etc/traefik/dynamic/zellij-web.yml",
-            "allowed_ip_ranges": ("192.0.2.0/24", "2001:db8::/32", "198.51.100.7/32"),
-        },
-        {
-            "zellij_ingress_traefik_host": "term.example.invalid",
-            "zellij_ingress_redirect_target": "https://Backend.example.invalid",
-            "zellij_ingress_traefik_entrypoints": ["websecure"],
-            "zellij_ingress_traefik_cert_resolver": "le_dns",
-            "zellij_ingress_traefik_config_path": "/etc/traefik/dynamic/zellij-web.yml",
-            "zellij_ingress_allowed_ip_ranges": ["192.0.2.0/24", "2001:db8::/32", "198.51.100.7/32"],
-        },
-    ),
+VARIANTS: dict[str, dict[str, Any]] = {
+    "playbook": {},
+    "cert resolver": {"traefik_cert_resolver": "letsencrypt"},
+    "entrypoints, one range, http target with port and path": {
+        "traefik_entrypoints": ("web-secure", "tailnet_secure"),
+        "allowed_ip_ranges": ("10.0.0.0/8",),
+        "redirect_target": "http://backend.example.invalid:8082/web/",
+    },
+    "everything": {
+        "traefik_host": "term.example.invalid",
+        "redirect_target": "https://Backend.example.invalid",
+        "traefik_entrypoints": ("websecure",),
+        "traefik_cert_resolver": "le_dns",
+        "traefik_config_path": "/etc/traefik/dynamic/zellij-web.yml",
+        "allowed_ip_ranges": ("192.0.2.0/24", "2001:db8::/32", "198.51.100.7/32"),
+    },
 }
 
 
-# -- parity ---------------------------------------------------------------------------
-
-
-def test_packaged_template_is_the_vendored_role_template() -> None:
-    assert (PACKAGED / TEMPLATE).read_bytes() == (VENDORED / f"zellij_ingress_deploy__{TEMPLATE}").read_bytes()
+# -- the route, byte for byte ---------------------------------------------------------
 
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
-def test_route_is_byte_identical_to_the_role(variant: str) -> None:
-    overrides, role_variables = VARIANTS[variant]
+def test_route_is_golden(variant: str) -> None:
+    ours = render_route(config(**VARIANTS[variant]))
 
-    ours = render_route(config(**overrides))
-
-    assert ours == render_ansible(role_variables)
+    assert_golden(GOLDEN / (variant.replace(",", "").replace(" ", "-") + ".yml"), ours)
     assert ours.startswith("# Managed by Ansible - Traefik configuration for Zellij private redirect ingress\n")
     assert ours.endswith("permanent: false\n")
 
 
-def test_defaults_are_the_roles() -> None:
+def test_defaults() -> None:
     cfg = config()
 
     assert cfg.traefik_enabled is True
     assert cfg.traefik_entrypoints == ("web-secure",)
     assert cfg.traefik_cert_resolver == ""
     assert cfg.traefik_config_path == ROUTE
-    assert list(DEFAULT_ALLOWED_IP_RANGES) == ROLE_DEFAULTS["zellij_ingress_allowed_ip_ranges"]
+    assert list(DEFAULT_ALLOWED_IP_RANGES) == ["127.0.0.1/32", "::1/128", "100.64.0.0/10", "fd7a:115c:a1e0::/48"]
 
 
 # -- route shape ----------------------------------------------------------------------
@@ -152,7 +88,7 @@ def parsed(cfg: ZellijIngressConfig) -> dict[str, Any]:
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_only_allowlisted_redirect_routers_and_no_backend(variant: str) -> None:
-    cfg = config(**VARIANTS[variant][0])
+    cfg = config(**VARIANTS[variant])
     http = parsed(cfg)
 
     # No services section: nothing but Traefik's internal no-op service is reachable.

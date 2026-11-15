@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly Nyxmon warning digest
+
+[Timer]
+OnCalendar=Fri *-*-* 07:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

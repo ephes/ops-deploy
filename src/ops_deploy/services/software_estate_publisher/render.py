@@ -1,7 +1,7 @@
 """The roles' content-addressed release, configuration and templates, byte for byte.
 
 ``templates/linux`` and ``templates/darwin`` are the roles' templates,
-vendored unchanged (``tests/test_ops_library_drift.py``); ``files/`` holds the
+vendored unchanged (ops-deploy owns them now); ``files/`` holds the
 five programs of ops-library's ``software_estate`` role as ``<name>.py.txt``
 (installed as ``<name>.py``), so the package's Python scans do not take them
 for host scripts of this package.

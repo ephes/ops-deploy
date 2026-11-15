@@ -1,0 +1,14 @@
+[Unit]
+Description=ZFS syncoid replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+OnFailure=zfs-syncoid-replication-failure@%n.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=6h
+ExecStartPre=/usr/local/bin/zfs-syncoid-abort-partial-receive.sh "tank/owned" "true"
+ExecStartPre=/usr/local/bin/zfs-syncoid-prune-conflicts.sh "fast/owned" "tank/owned" "true" "true"
+ExecStart=/usr/sbin/syncoid --recursive --recvoptions="o readonly=on" --force-delete --no-sync-snap "fast/owned" "tank/owned"
+ExecStart=/usr/sbin/syncoid --no-rollback "fast/second" "tank/second"
+ExecStartPost=/usr/local/bin/zfs-syncoid-spindown.sh

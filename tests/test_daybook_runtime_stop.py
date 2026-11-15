@@ -244,54 +244,6 @@ def test_native_executor_uses_original_account_login_flags_and_sanitizes_body(
         driver.source("regular")
 
 
-def test_original_role_stop_commands_and_bounds_are_the_source_oracle() -> None:
-    import os
-
-    import yaml
-
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Actual paired stop role oracle runs explicitly during qualification")
-    role = Path(source) / "roles/daybook_operations_runtime_deploy"
-    tasks = yaml.safe_load((role / "tasks/stop.yml").read_text())
-    commands = {task["name"]: task["ansible.builtin.command"] for task in tasks if "ansible.builtin.command" in task}
-    status = commands["stop | Ask the server about each source this machine runs"]["argv"]
-    assert status == [
-        "{{ daybook_operations_runtime_python }}",
-        "-I",
-        "-c",
-        "from daybook.cli import main; raise SystemExit(main())",
-        "operations",
-        "status",
-        "--policy",
-        "{{ daybook_operations_runtime_policy }}",
-        "--policy-owner",
-        "{{ daybook_operations_runtime_owner }}",
-        "--binding",
-        "{{ item }}",
-    ]
-    status_task = next(t for t in tasks if t["name"] == "stop | Ask the server about each source this machine runs")
-    assert status_task["become_flags"] == "-H -S -n -i"
-    host_task = next(t for t in tasks if t["name"] == "stop | Ask whether the capability host is running")
-    assert host_task["become_flags"] == "-H -S -n -i"
-    assert host_task["environment"] == {"TMUX_TMPDIR": "{{ daybook_operations_runtime_host_tmpdir }}"}
-    defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
-    cfg = config()
-    for name in ("quiet_retries", "quiet_delay", "stop_timeout", "poll_delay"):
-        assert getattr(cfg, name) == defaults["daybook_operations_runtime_" + name]
-    window = RuntimeStopPolicy()
-    assert list(window.windows) == defaults["daybook_operations_runtime_stop_windows"]
-    assert window.lead_minutes == defaults["daybook_operations_runtime_stop_window_lead_minutes"]
-    assert window.timezone == defaults["daybook_operations_runtime_stop_window_timezone"]
-    code = yaml.safe_load((role / "tasks/code.yml").read_text())
-    python_find = next(task for task in code if task["name"] == "code | Find the pinned interpreter")
-    assert python_find["environment"]["UV_PYTHON_PREFERENCE"] == "only-managed"
-    host_script = PACKAGE.joinpath("files/runtime_stop.py").read_text()
-    assert '"/bin/kill", "-TERM", *pids' in host_script
-    assert '"-KILL"' not in host_script
-    assert '"kill-session"' not in host_script
-
-
 def test_original_serving_only_failure_also_attempts_keeper_recovery() -> None:
     driver = Driver()
     driver.state = replace(driver.state, label_loaded=False, label_runs_keeper=False)
@@ -301,26 +253,6 @@ def test_original_serving_only_failure_also_attempts_keeper_recovery() -> None:
     assert "bootout" not in driver.events
     assert "TERM" in driver.events
     assert driver.events[-1] == "restore_keeper"
-
-
-def test_original_rescue_recovers_keeper_even_if_initial_label_was_unloaded() -> None:
-    import os
-
-    import yaml
-
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Actual paired rescue oracle runs explicitly during qualification")
-    tasks = yaml.safe_load((Path(source) / "roles/daybook_operations_runtime_deploy/tasks/stop.yml").read_text())
-    rescue = next(task["rescue"] for task in tasks if task["name"] == "stop | Stop the supervisor")
-    frozen = yaml.safe_load((Path(__file__).parent / "fixtures/daybook-runtime-stop-rescue-cf3.yml").read_text())
-    assert frozen["rescue"] == rescue
-    enable = next(task for task in rescue if task["name"] == "stop | Enable the keeper label")
-    bootstrap = next(task for task in rescue if task["name"] == "stop | Boot the keeper back in")
-    assert enable["when"] == "daybook_operations_runtime_stop_is_keeper | bool"
-    assert bootstrap["when"] == "daybook_operations_runtime_stop_is_keeper | bool"
-    assert "stop_label" not in str(enable["when"])
-    assert "stop_label" not in str(bootstrap["when"])
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])

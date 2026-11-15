@@ -4,9 +4,8 @@ Port of the ``static_site_deploy`` Ansible role. The controller validates the
 publication source (regular files only, no symlinks, optional exact file
 allowlist), syncs it to the host, and the host serves it from a hardened
 systemd unit on loopback behind a Traefik route. The unit, the server script
-and the route are byte-identical to the role's
-(``tests/test_static_site_parity.py``), so Ansible and ops-deploy can take
-turns on one host.
+and the route are byte-identical to the retired role's (goldens:
+``tests/test_static_site_golden.py``).
 
 The HTTP server is the role's Python script or the pinned Rust
 ``metrics-httpd static`` (``httpd_impl``; the role's ``metrics_httpd_switch``,

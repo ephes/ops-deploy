@@ -1,10 +1,9 @@
 """nyxmon: Django dashboard (``nyxmon``) plus monitoring agent (``nyxmon-monitor``).
 
 Port of the ``nyxmon_deploy`` Ansible role, rsync method only. The files it
-writes are byte-identical to the role's (``tests/test_nyxmon_parity.py``), so
-Ansible and ops-deploy can take turns on one host without churn. The SQLite
-database and the other host-side state in the site directory survive every
-sync (``persistent_excludes``).
+writes are byte-identical to the retired role's (goldens:
+``tests/test_nyxmon_golden.py``). The SQLite database and the other host-side
+state in the site directory survive every sync (``persistent_excludes``).
 """
 
 from __future__ import annotations

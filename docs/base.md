@@ -277,7 +277,7 @@ written and a probe went through it, for every `impl` (the rollback to `python`
 included). It reads root's `authorized_keys` while planning (never printed) with
 `live_state`, the role's `echoport_guard_live_state` filter (ops-library
 `plugins/filter/echoport_guard.py`, vendored as
-`base/files/echoport_guard_live_state.py.txt` and checked by the drift test):
+`base/files/echoport_guard_live_state.py.txt`):
 
 1. The pinned key must have exactly one line, carrying exactly the forced
    command, and with `shadow` or `rust` the binary it names must report
@@ -370,9 +370,8 @@ separate prefix. The role's deprecated `uv_create_symlinks`/`uv_symlink_dir`
 are not ported.
 Planning (`pyinfra-check`) only reads, which matches the role's `--check`
 since ops-library 2.48.2: a host with the pinned version plans no step, a
-pending install or update shows as the one install step.
-`tests/parity/ops_library_roles.json` records the role (`uv_install`, checked
-against ops-library main `540ede2b`, 2.56.0).
+pending install or update shows as the one install step. The port follows the
+`uv_install` role as of ops-library main `540ede2b` (2.56.0).
 [homelab](services/homelab.md) and [graphyard](services/graphyard.md) run it
 only when their `uv` field is set.
 
@@ -1361,8 +1360,10 @@ back by hand if it is ever not wanted.
 
 `tests/test_base_*.py` run each deploy against the fake connector: first run,
 converged run (no change), drift and refusal cases, config validation, and the
-authorized_keys and journald drop-in rendering against the vendored role
-templates. `tests/test_base_tlshd.py` and `tests/test_base_nfs_client_mount.py`
+the files they write (authorized_keys, the journald drop-in, the fail2ban
+jail and the sshd drop-in of the SSH guard) against golden renders under
+`tests/golden/` (the bytes the roles wrote before the switch, so the next deploy
+restarts nothing). `tests/test_base_tlshd.py` and `tests/test_base_nfs_client_mount.py`
 also check that the private key appears in no operation name, argument or
 upload record, that `docker.service` is never started, stopped, restarted or
 reloaded, the order install, hosts line, tlshd, daemon-reload, enable, seal
@@ -1399,15 +1400,13 @@ container must be named `ops-deploy-systemd-journald-20261020`, carry the
 labels `ops-deploy.fixture=journald-systemd` and `ops-deploy.run=journald-20261020`,
 and run systemd as PID 1 with no network, binds, ports or devices, a private
 cgroup namespace and `SYS_ADMIN` as its only added capability (an Ubuntu 24.04
-image with `systemd`, plus `ansible-core` for the takeover case; the entry
+image with `systemd`; the entry
 point remounts its own cgroup2 tree writable before `exec /sbin/init`, which
 needs AppArmor unconfined). The test checks that the first run restarts
 (new invocation ID and PID) and flushes, a converged run leaves journald and
 the file alone, mode drift restarts, `restart_on_change=False` does not, the
 flush moves a volatile journal to disk, `absent` restarts once, and a symlinked
-drop-in is replaced or unlinked while its target stays untouched. With
-`OPS_LIBRARY_PATH` set it also applies the role with Ansible inside the
-container first; the deploy must then change nothing.
+drop-in is replaced or unlinked while its target stays untouched.
 `tests/smoke/test_base_smoke.py` deploys each one twice on the
 [smoke VM](concepts/smoke.md) (the second run must not change anything; not
 `dpkg_arch_remove`, which has only fake-connector tests) and

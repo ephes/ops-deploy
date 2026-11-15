@@ -262,18 +262,18 @@ verbosity out of shared logs. `tests/test_traefik_route_diff.py` (and the
 jellyfin and homelab `--diff` tests) check that no hash reaches anything
 pyinfra logs, in the plan or the execution phase.
 
-### Parity with the Ansible templates
+### Golden routes
 
-`tests/test_traefik_parity.py` renders the vendored nyxmon and fastdeploy role
-templates (`tests/parity/ansible/`) and checks that `render_route` produces the
-same YAML, line for line, once comments and blank lines are dropped. The
-comments differ: the header says "Managed by ops-deploy", and the role-specific
-explanations are gone. So the first ops-deploy run over an Ansible-deployed
-route rewrites the file once and restarts Traefik once. A service that needs a
-byte-identical file can pass its own `renderer(route, auth_hash) -> str`.
-
-Set `OPS_LIBRARY_PATH` to also check that the vendored copies still match
-ops-library.
+`tests/test_traefik_route_golden.py` pins what `render_route` writes (plain
+routes with and without basic auth, cert resolver and middlewares, and the
+redirect route with a health check) against `tests/golden/traefik_route/`.
+These are the bytes in every service's file under `/etc/traefik/dynamic`;
+a change rewrites the routes and restarts Traefik on the next deploy (see
+[golden host files](testing.md#golden-host-files)). The routes were once
+checked against the nyxmon and fastdeploy role templates: they matched line
+for line except for comments, so the first ops-deploy run over an
+Ansible-deployed route rewrote the file and restarted Traefik once. A service
+that needs other bytes can pass its own `renderer(route, auth_hash) -> str`.
 
 ## Read-only checks: `wait_port` and `http_check`
 
@@ -383,8 +383,7 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
 
 The decisions (pin moves, the prune plan, the version and consumer grammar)
 are ops-library's `plugins/filter/rust_release.py`, vendored byte for byte as
-`templates/rust_release.py.txt`; `tests/test_ops_library_drift.py` compares
-the two, and the drift manifest records the role. The steps run on the host
+`templates/rust_release.py.txt` (ops-deploy owns that copy now). The steps run on the host
 at execution time, in `templates/rust_release_host.py.txt` (standard library
 only). Both texts are sent on stdin to `/usr/bin/python3 -I -` as root, so
 target hosts need a system Python 3.9 or later; every Ansible-managed host
@@ -394,12 +393,7 @@ nothing.
 
 `tests/test_rust_release.py` runs the host script locally against temporary
 roots with fake release archives. It also checks the planned operations
-against the fake connector. With `OPS_LIBRARY_PATH` and `ansible-playbook`
-it runs the role on a twin tree with the same steps: installs, the pin moves
-v1 → v2 → v1 → v3, a second consumer, a switch to Python, then prunes with
-`protect` entries and the fail-closed cases. The trees must stay
-byte-identical (contents and modes), and both engines must remove the same
-versions. On macOS the role needs Homebrew's `gmv`.
+against the fake connector.
 
 nyxmon's and graphyard's agent installs keep their own code (`.staging`,
 `.previous-version`, no `.pins`). Moving them to this helper would change
@@ -454,7 +448,7 @@ example `ops_deploy.base._common.output`).
 ## Parity differences from the Ansible roles
 
 Known, intended differences. Everything else is meant to behave like the
-roles. The Traefik YAML is checked by `tests/test_traefik_parity.py`.
+roles. The Traefik YAML is pinned by `tests/test_traefik_route_golden.py`.
 
 1. **Traefik file comments.** The generated route matches the nyxmon and
    fastdeploy templates line for line except for comments. The first

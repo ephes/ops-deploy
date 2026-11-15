@@ -1,10 +1,6 @@
-"""A fake host for the Traefik transaction engines: ours and ops-library's reference.
+"""A fake host for the Traefik transaction engine, and pinned outcomes of its functions.
 
-``ENGINES`` holds :mod:`ops_deploy.infra.traefik_tx.engine` and the reference engine,
-vendored byte for byte from ops-library 3110a0f1 as ``parity/traefik_deploy/
-traefik_transaction.py.txt`` (``.txt`` keeps lint, mypy and pytest away from it).
-
-:class:`FakeHost` replaces, the same way in both engines, what a test cannot have
+:class:`FakeHost` replaces what a test cannot have
 or must pin: systemd and the running process (``identity``, ``systemctl restart``,
 ``traefik version``), the probe programs, the ``tar`` backup, root (``geteuid``,
 the root-owned state directory, ``trusted_file`` without the ownership check),
@@ -13,12 +9,12 @@ the root-owned state directory, ``trusted_file`` without the ownership check),
 actions it also replaces ``openssl`` (a certificate's expiry is derived from its PEM),
 the TLS probe of local Traefik (``tls_fingerprints``), the root ownership of the ACME
 target's parent directories, and maps the fake host's ACME paths to the real ones for
-``validate_acme_storage``, which accepts only those. The parity tests compare each
-replaced function separately. Everything else runs for real on files below a
-temporary root: state records, the lock, the transaction directory, the release
-archive, the candidate, the binary replacement and its rollback. ``run_scenario``
-drives one engine through one request and returns everything it left behind, so
-two runs can be compared.
+``validate_acme_storage``, which accepts only those. The replaced functions are tested
+on their own, their outcomes pinned by :class:`OutcomePins`. Everything else runs for
+real on files below a temporary root: state records, the lock, the transaction
+directory, the release archive, the candidate, the binary replacement and its rollback.
+``run_scenario`` drives the engine through one request and returns everything it left
+behind.
 """
 
 from __future__ import annotations
@@ -47,22 +43,70 @@ from unittest.mock import patch
 from ops_deploy.infra.traefik_tx import engine as port
 from tests import stubs
 
-REFERENCE_PATH = Path(__file__).parent / "parity" / "traefik_deploy" / "traefik_transaction.py.txt"
-REFERENCE_COMMIT = "3110a0f136320654dd7041a0f78e8d6fc629c3d9"
-REFERENCE_SHA256 = "6c79b22af04290c76384bd0ba397097875f03cfef58099d8634bc526c3da6030"
+PORT = port
+GOLDEN = Path(__file__).parent / "golden" / "traefik_tx"
 
 
-def load_reference() -> types.ModuleType:
-    """The vendored ops-library engine as a module of its own."""
+def plain(value: Any, roots: tuple[str, ...] = ()) -> Any:
+    """``value`` as JSON data, with the test's temporary directory spelled ``<tmp>``."""
 
-    module = types.ModuleType("traefik_transaction_reference")
-    module.__file__ = str(REFERENCE_PATH)
-    exec(compile(REFERENCE_PATH.read_text(), str(REFERENCE_PATH), "exec", dont_inherit=True), module.__dict__)
-    return module
+    if isinstance(value, bytes):
+        try:
+            return {"bytes": plain(value.decode(), roots)}
+        except UnicodeDecodeError:
+            return {"bytes_sha256": hashlib.sha256(value).hexdigest()}
+    if isinstance(value, PosixPath):
+        value = str(value)
+    if isinstance(value, str):
+        for root in roots:
+            value = value.replace(root, "<tmp>")
+        return value
+    if isinstance(value, dict):
+        return {str(plain(key, roots)): plain(item, roots) for key, item in value.items()}
+    if isinstance(value, set | frozenset):
+        return sorted((plain(item, roots) for item in value), key=repr)
+    if isinstance(value, list | tuple):
+        return [plain(item, roots) for item in value]
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return repr(value)
 
 
-reference = load_reference()
-ENGINES: dict[str, types.ModuleType] = {"ops-deploy": port, "ops-library": reference}
+class OutcomePins:
+    """Outcomes of the engine's functions, pinned in ``tests/golden/traefik_tx/<name>.json``.
+
+    The records and refusals the engine returns are what the hosts' state and the
+    operator rely on; a changed outcome fails until it is re-recorded on purpose with
+    ``OPS_DEPLOY_UPDATE_GOLDEN=1`` (run serially: ``-p no:xdist``) and reviewed.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.path = GOLDEN / f"{name}.json"
+        self.test = ""
+        self.count = 0
+        self.roots: tuple[str, ...] = ()
+        self._data: dict[str, Any] | None = None
+
+    def start(self, test: str, tmp_path: Path) -> None:
+        self.test, self.count = test, 0
+        self.roots = tuple(sorted({str(tmp_path), os.path.realpath(tmp_path)}, key=len, reverse=True))
+
+    def check(self, outcome: Any) -> Any:
+        key = self.test if self.count == 0 else f"{self.test}#{self.count}"
+        self.count += 1
+        value = plain(outcome, self.roots)
+        if os.environ.get("OPS_DEPLOY_UPDATE_GOLDEN") == "1":
+            data = json.loads(self.path.read_text()) if self.path.exists() else {}
+            data[key] = value
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n")
+            return outcome
+        if self._data is None:
+            self._data = json.loads(self.path.read_text())
+        assert key in self._data, f"no pinned outcome {key} in {self.path.name} (OPS_DEPLOY_UPDATE_GOLDEN=1 records it)"
+        assert value == self._data[key], key
+        return outcome
+
 
 NOW = 1_800_000_000
 OLD, NEW = "3.7.14", "3.7.16"

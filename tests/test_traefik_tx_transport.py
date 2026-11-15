@@ -454,7 +454,7 @@ def test_refusals_come_through_a_local_bash(local_python: None) -> None:
 
 
 def test_a_too_old_python_is_refused_by_the_script() -> None:
-    old = Path(__file__).parent / "parity" / "no-such-python"
+    old = Path(__file__).parent / "no-such-python"
     with (
         patch.object(transport, "PYTHON", str(old)),
         pytest.raises(TransportError, match=rf"^poll: {re.escape(str(old))} 3.11 or newer is required$"),

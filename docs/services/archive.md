@@ -128,10 +128,10 @@ Defaults follow the role's `defaults/main.yml`.
 
 The deploy ships the role's four templates unchanged and renders them with
 Ansible's template options, so `.env`, `.env.shell`, both units and the
-Traefik route are **byte-identical** to what Ansible writes
-(`tests/test_archive_parity.py`, against the vendored copies in
-`tests/parity/ansible/archive_deploy__*`). The route has no basic-auth hash,
-so unlike nyxmon even the Traefik file stays untouched on a tool switch.
+Traefik route are **byte-identical** to what the retired role wrote
+(`tests/test_archive_golden.py` keeps them so, against goldens in
+`tests/golden/archive`). The route has no basic-auth hash, so unlike nyxmon
+even the Traefik file stayed untouched on the switch.
 
 Differences, all on the "change only what differs" side:
 
@@ -171,7 +171,7 @@ backups: `ops_deploy.services._lifecycle.echoport_runner`
   secret rotation, a missing admin alias of root, refused MinIO root
   credentials and CR/LF in the media secret, pending media migration, Echoport upsert and missing
   Echoport, settings from the secrets file, validation, leak checks.
-- `tests/test_archive_parity.py`: byte parity with the role's templates.
+- `tests/test_archive_golden.py`: the env files, units and route against their goldens.
 - `tests/smoke/test_archive_smoke.py` (`just smoke`, needs `ARCHIVE_SOURCE` or
   `PROJECTS_ROOT`): two real deploys plus a fresh-clone run of the committed
   `HEAD`; converged reruns, units active, env files private, migrations

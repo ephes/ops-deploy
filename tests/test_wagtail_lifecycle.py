@@ -594,7 +594,7 @@ def test_encoded_command_runs_through_a_shell_with_the_payload_on_stdin(tmp_path
     assert sorted(path.name for path in root.iterdir()) == ["manual-1.tar.gz"]
 
 
-def test_vendored_preserver_is_the_ops_library_file() -> None:
+def test_restore_ships_the_preserver() -> None:
     assert "RESTORE_PRESERVED" in (wagtail.FILES / "preserve.py").read_text()
     assert wagtail.HOST_SCRIPT.startswith("PRESERVE_SOURCE=")
 

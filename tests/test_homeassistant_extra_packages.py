@@ -1,4 +1,4 @@
-"""Declared managed resolution and original post-success notification, not native UV."""
+"""Declared managed resolution and post-success notification, not native UV."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def test_planning_classification_is_the_planned_result(planned: bool) -> None:
 
 
 @pytest.mark.parametrize("constraints", [False, True])
-def test_original_argv_each_spec_single_argument_and_constraint_order(constraints: bool) -> None:
+def test_argv_each_spec_single_argument_and_constraint_order(constraints: bool) -> None:
     cfg = HomeAssistantRuntimeConfig(
         user="owned",
         home="/srv/owned",
@@ -103,30 +103,21 @@ def test_original_argv_each_spec_single_argument_and_constraint_order(constraint
     ]
 
 
-def test_notification_expression_matches_bound_original_task() -> None:
-    import re
-    from pathlib import Path
-
-    import jinja2
-    import yaml
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("Audited", "", False),
+        ("", "Prepared 1 package", True),
+        ("Un", "installed", True),  # stdout and stderr are searched joined: "Uninstalled"
+        ("installed", "", False),
+        ("Built", "", True),
+    ],
+)
+def test_notification_follows_uv_install_output(stdout: str, stderr: str, expected: bool) -> None:
     from pyinfra.connectors.util import CommandOutput, OutputLine
 
-    tasks = yaml.safe_load((Path(__file__).parent / "parity/homeassistant/python.yml").read_text())
-    task = next(row for row in tasks if row["name"] == "Install Home Assistant extra Python packages via uv pip")
-    expression = task["changed_when"]
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    env.tests["search"] = lambda value, pattern: re.search(pattern, value) is not None
-    original = env.compile_expression(expression)
-    for stdout, stderr in [
-        ("Audited", ""),
-        ("", "Prepared 1 package"),
-        ("Un", "installed"),
-        ("installed", ""),
-        ("Built", ""),
-    ]:
-        result = OperationMeta("owned", True)
-        result.set_complete(
-            True, ["declared-install"], CommandOutput([OutputLine("stdout", stdout), OutputLine("stderr", stderr)])
-        )
-        expected = bool(original(_ha_extra_package_install={"stdout": stdout, "stderr": stderr}))
-        assert extra_packages_changed(result) is expected
+    result = OperationMeta("owned", True)
+    result.set_complete(
+        True, ["declared-install"], CommandOutput([OutputLine("stdout", stdout), OutputLine("stderr", stderr)])
+    )
+    assert extra_packages_changed(result) is expected

@@ -139,7 +139,7 @@ gems before the rebuild.
 
 `remove_mastodon(MastodonRemoveConfig(confirm=True))` ports the
 `mastodon_remove` role at ops-library `44a532ba` with `mastodon_shared`'s
-paths and removal flags (both recorded under `tests/parity/mastodon/remove`).
+paths and removal flags.
 Without `confirm` it fails before any host probe; a root account, `/`, a
 top-level directory or a traversal as a path is refused.
 

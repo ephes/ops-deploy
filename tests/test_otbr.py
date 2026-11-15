@@ -1,10 +1,8 @@
-"""Original OTBR desired/render/build trigger contracts; no hardware."""
+"""OTBR desired/render/build trigger contracts (kept from the Ansible role); no hardware."""
 
 from __future__ import annotations
 
-import hashlib
 import itertools
-import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -23,20 +21,17 @@ from ops_deploy.infra.otbr.prepare import (
     source_effect_map,
 )
 
-ROOT = Path(__file__).parent
-PARITY = ROOT / "parity/otbr_deploy"
+# Raw template flag -> the boolean an existing host's flag stands for (Ansible's ``bool``).
+RAW_FLAG_ROWS: list[tuple[Any, bool]] = [
+    (None, False), (True, True), (False, False), ("true", True), ("false", False), ("TRUE", True),
+    ("yes", True), ("no", False), ("on", True), ("off", False), ("1", True), ("0", False),
+    (1, True), (0, False), (2, False), ("", False), ("other", False), ([], False), ({}, False),
+    (1.0, True), (0.0, False), (-1.0, False), ("1.0", False), ([1], False), ({"x": 1}, False),
+]  # fmt: skip
 
 
 def config(**overrides: Any) -> OtbrConfig:
     return resolved_interfaces(OtbrConfig(rcp_device="/dev/owned-synthetic-rcp", infra_interface="owned0", **overrides))
-
-
-def test_original_sources_and_templates_are_exact_snapshots() -> None:
-    for name, digest in json.loads((PARITY / "SOURCE-HASHES.json").read_text()).items():
-        assert hashlib.sha256((PARITY / name).read_bytes()).hexdigest() == digest
-    for name in ["otbr-agent.defaults.j2", "99-otbr-zbt2.rules.j2"]:
-        packaged = ROOT.parent / "src/ops_deploy/infra/otbr/templates" / name
-        assert packaged.read_bytes() == (PARITY / "templates" / name).read_bytes()
 
 
 def test_default_build_record_exact_original_order_and_custom_environment_replaces() -> None:
@@ -102,10 +97,8 @@ def test_original_template_flags_cannot_override_nonflag_settings() -> None:
         "no_auto_attach",
     ],
 )
-@pytest.mark.parametrize("row", json.loads((ROOT / "parity/otbr_bool_coercion.json").read_text())["rows"])
-def test_original_raw_flags_require_the_matching_original_boolean_condition(flag: str, row: dict[str, Any]) -> None:
-    raw, expected = row["input"], row["bool"]
-    assert row["actual_template_bool"] is expected
+@pytest.mark.parametrize(("raw", "expected"), RAW_FLAG_ROWS)
+def test_raw_flags_require_the_matching_boolean_condition(flag: str, raw: Any, expected: bool) -> None:
     valid = config(**{flag: expected}, original_template_flags={flag: raw})
     assert getattr(valid, flag) is expected
     with pytest.raises(ValidationError, match="original template flag must match"):

@@ -5,8 +5,8 @@ with the options of Ansible's ``template`` module. The payloads below are the
 role's ``set_fact`` expressions in Python, in the role's key order, with
 Ansible's filter semantics where they differ from Python's (``unique`` and
 ``sort`` ignore case, ``combine(recursive=True)`` replaces lists, ``to_nice_json``
-sorts keys and escapes non-ASCII). ``tests/parity/openclaw_deploy`` holds
-what ansible-core itself rendered and computed from the same variables.
+sorts keys and escapes non-ASCII). ``tests/golden/openclaw`` records the
+result, first recorded when it equalled what ansible-core computed.
 """
 
 from __future__ import annotations

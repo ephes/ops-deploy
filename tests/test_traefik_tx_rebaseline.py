@@ -1,9 +1,7 @@
 """The engine's ``rebaseline`` action: route-only drift becomes a new ``clear`` record, nothing else does.
 
-Only ops-deploy's engine has the action (ops-library's refuses it as unknown), so these
-tests run the port alone on the fake host of ``traefik_tx_fixtures`` and then hand its
-records to both engines. Every refusal must leave the host record, the route inventory and
-Traefik as they were.
+These tests run the engine on the fake host of ``traefik_tx_fixtures``. Every refusal must
+leave the host record, the route inventory and Traefik as they were.
 """
 
 from __future__ import annotations
@@ -24,11 +22,11 @@ import pytest
 
 from tests import stubs
 from tests.traefik_tx_fixtures import (
-    ENGINES,
     MACHINE_ID,
     NEW,
     NOW,
     OLD,
+    PORT,
     FakeHost,
     Outcome,
     Setup,
@@ -39,7 +37,6 @@ from tests.traefik_tx_fixtures import (
     sha256,
 )
 
-PORT, REFERENCE = ENGINES["ops-deploy"], ENGINES["ops-library"]
 ENROLLED = "11111111"  # the revision prefix of the enrolled record (``enrolled_state``)
 INVENTORY = "state/" + PORT.ROUTE_INVENTORY
 Change = Callable[[FakeHost], None]
@@ -415,12 +412,12 @@ def history(host: FakeHost) -> Callable[[types.ModuleType, str], dict[str, Any]]
 
 
 def test_after_a_binary_transaction_the_archive_names_the_changed_files(tmp_path: Path) -> None:
-    host = ArchivingHost(REFERENCE, tmp_path)
+    host = ArchivingHost(PORT, tmp_path)
     host.install()
     add_route("keep.yml")(host)
     add_route("gone.yml")(host)
     step = history(host)
-    step(REFERENCE, "enroll")
+    step(PORT, "enroll")
     updated = step(PORT, "binary")["state"]
     assert updated["transaction"].startswith(str(host.state_root))
 
@@ -456,7 +453,7 @@ def test_after_a_binary_transaction_the_archive_names_the_changed_files(tmp_path
 def test_archived_names_are_ordered_like_the_route_tree(tmp_path: Path) -> None:
     """Paths sort by component ("app/route.yml" before "app.yml"), not as strings."""
 
-    host = ArchivingHost(REFERENCE, tmp_path)
+    host = ArchivingHost(PORT, tmp_path)
     host.install()
     add_route("app/route.yml")(host)
     add_route("app-b.yml")(host)
@@ -464,7 +461,7 @@ def test_archived_names_are_ordered_like_the_route_tree(tmp_path: Path) -> None:
     with host.patched():
         assert [name for name, _ in PORT.route_files(host.dynamic)] == ["app/route.yml", "app-b.yml", "app.yml"]
     step = history(host)
-    step(REFERENCE, "enroll")
+    step(PORT, "enroll")
     step(PORT, "binary")
     add_route("app/other.yml")(host)
     record = step(PORT, "rebaseline")["state"]
@@ -476,10 +473,10 @@ def test_archived_names_are_ordered_like_the_route_tree(tmp_path: Path) -> None:
 def archive_case(tmp_path: Path, spoil: Callable[[FakeHost, Path], None]) -> dict[str, Any]:
     """Enroll, update (with a real archive), let ``spoil`` damage the archive basis, add a route, rebaseline."""
 
-    host = ArchivingHost(REFERENCE, tmp_path)
+    host = ArchivingHost(PORT, tmp_path)
     host.install()
     step = history(host)
-    step(REFERENCE, "enroll")
+    step(PORT, "enroll")
     transaction = Path(step(PORT, "binary")["state"]["transaction"])
     spoil(host, transaction)
     add_route()(host)
@@ -585,27 +582,23 @@ def test_a_malformed_inventory_is_ignored(inventory: str, tmp_path: Path) -> Non
     assert record["rebaseline"]["changed_files"] == {"added": ["new.yml"], "modified": [], "removed": []}
 
 
-# -- the records cross between engines ---------------------------------------------------------
+# -- after a rebaseline ----------------------------------------------------------------------
 
 
-def test_both_engines_continue_from_a_rebaselined_record(tmp_path: Path) -> None:
-    """The reference engine refuses route drift; after a rebaseline either engine updates."""
+def test_the_engine_continues_from_a_rebaselined_record(tmp_path: Path) -> None:
+    """Route drift is refused; after a rebaseline the engine updates."""
 
-    for name, engine in ENGINES.items():
-        host = FakeHost(REFERENCE, tmp_path / name)
-        host.install()
-        step = history(host)
-        step(REFERENCE, "enroll")
-        add_route()(host)
-        with host.patched(), pytest.raises(REFERENCE.Refused, match=r"^unknown action$"):
-            REFERENCE.execute(base_setup(host, "rebaseline").request)
-        refused = pytest.raises(engine.Refused, match=r"^active recovery or unreviewed baseline drift$")
-        with refused:
-            step(engine, "binary")
-        rebaselined = step(PORT, "rebaseline")["state"]
-        assert step(REFERENCE, "inspect")["state"] == rebaselined
-        done = step(engine, "binary")
-        assert done["changed"] is True
-        assert done["state"]["phase"] == "clear"
-        assert done["state"]["identity"]["version"] == NEW
-        assert done["state"]["identity"]["dynamic_sha256"] == rebaselined["identity"]["dynamic_sha256"]
+    host = FakeHost(PORT, tmp_path)
+    host.install()
+    step = history(host)
+    step(PORT, "enroll")
+    add_route()(host)
+    with pytest.raises(PORT.Refused, match=r"^active recovery or unreviewed baseline drift$"):
+        step(PORT, "binary")
+    rebaselined = step(PORT, "rebaseline")["state"]
+    assert step(PORT, "inspect")["state"] == rebaselined
+    done = step(PORT, "binary")
+    assert done["changed"] is True
+    assert done["state"]["phase"] == "clear"
+    assert done["state"]["identity"]["version"] == NEW
+    assert done["state"]["identity"]["dynamic_sha256"] == rebaselined["identity"]["dynamic_sha256"]

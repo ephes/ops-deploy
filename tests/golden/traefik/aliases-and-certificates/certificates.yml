@@ -1,0 +1,7 @@
+# Managed by Ansible - File provider certificates
+tls:
+  certificates:
+    - certFile: "/etc/letsencrypt/live/x/fullchain.pem"
+      keyFile: "/etc/letsencrypt/live/x/privkey.pem"
+    - certFile: "/etc/letsencrypt/live/x/fullchain.pem"
+      keyFile: "/etc/letsencrypt/live/x/privkey.pem"

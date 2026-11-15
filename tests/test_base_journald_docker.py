@@ -5,8 +5,6 @@ running fixture container (see ``docs/base.md``, "journald_config"). It checks
 what the fake connector cannot: journald really restarts (new invocation and
 PID) only when the drop-in changed, a converged run leaves the running
 journald alone, and the flush moves a volatile journal to ``/var/log/journal``.
-With ``OPS_LIBRARY_PATH`` set, the role itself writes the drop-in first and
-the deploy must then change nothing.
 """
 
 from __future__ import annotations
@@ -247,30 +245,3 @@ def test_symlinked_drop_in_is_replaced_or_unlinked_never_followed(fixture: Fixtu
     assert fixture.sh(f"test -e {DEFAULT_DROPIN} || test -L {DEFAULT_DROPIN} || echo gone") == "gone"
     assert fixture.sh(f"stat -c '%U:%G %a %i %Y %s' {target} && cat {target}") == untouched
     assert fixture.journald() != linked
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_switching_from_the_role_changes_nothing(fixture: Fixture) -> None:
-    role = Path(os.environ["OPS_LIBRARY_PATH"], "roles", "journald_config")
-    assert role.is_dir()
-    base = fixture.sh("mktemp -d /opt/journald-role.XXXXXX")
-    fixture.sh(f"mkdir {base}/roles")
-    fixture.docker("cp", str(role), f"{fixture.identifier}:{base}/roles/journald_config")
-    play = (
-        "- hosts: localhost\n  roles:\n    - role: journald_config\n      vars:\n"
-        '        journald_config_system_max_use: "2G"\n        journald_config_system_max_file_size: "64M"\n'
-        '        journald_config_system_max_files: 500\n        journald_config_max_retention_sec: "21day"\n'
-        "        journald_config_extra_settings:\n          Compress: true\n"
-    )
-    fixture.sh(f"printf %s {shlex.quote(play)} > {base}/play.yml")
-    before = fixture.journald()
-    recap = fixture.sh(f"cd {base} && ANSIBLE_ROLES_PATH=roles ansible-playbook -c local -i localhost, play.yml")
-    assert re.search(r"localhost\s+: ok=\d+\s+changed=[1-9]\d*\s+unreachable=0\s+failed=0", recap), recap
-    by_role = fixture.journald()
-    assert by_role != before
-    snapshot = fixture.dropin()
-
-    assert mutating(fixture.deploy(CFG)) == []
-    assert fixture.journald() == by_role
-    assert fixture.dropin() == snapshot
-    assert fixture.sh(f"cat {DEFAULT_DROPIN}") + "\n" == render_journald_dropin(CFG)

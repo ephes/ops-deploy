@@ -1,9 +1,8 @@
-"""Exact original helper plus owned synthetic HTTP/WebSocket controls."""
+"""The llama.cpp provisioner helper and owned synthetic HTTP/WebSocket controls."""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import importlib.util
 import io
 import json
@@ -32,21 +31,16 @@ assert SPEC is not None
 assert SPEC.loader is not None
 helper = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(helper)
-FIXTURE = Path(__file__).parent / "parity/homeassistant/builtin"
+CONTROLS = Path(__file__).parent / "fixtures" / "homeassistant" / "llama_cpp_provision_tests.py.txt"
 
 
-def test_exact_original_program_and_all_original_seventeen_controls() -> None:
-    source = json.loads((FIXTURE / "source.json").read_text())
-    assert hashlib.sha256(PROGRAM.read_bytes()).hexdigest() == source["program"]["sha256"]
-    for name, value in source["sources"].items():
-        assert hashlib.sha256((FIXTURE / name).read_bytes()).hexdigest() == value["sha256"]
-    test_source = (FIXTURE / "original-tests.py.txt").read_text()
-    original = 'ROOT / "roles/homeassistant_deploy/files/llama_cpp_provision.py"'
-    assert test_source.count(original) == 1
-    test_source = test_source.replace(original, f"Path({str(PROGRAM)!r})")
-    module = types.ModuleType("original_builtin_controls")
-    module.__file__ = str(FIXTURE / "original-tests.py.txt")
-    exec(compile(test_source, module.__file__, "exec"), module.__dict__)
+def test_provisioner_controls() -> None:
+    """The provisioner's own unittest controls (kept from ops-library) against the deployed helper."""
+
+    module = types.ModuleType("llama_cpp_provision_controls")
+    module.__file__ = str(CONTROLS)
+    module.__dict__["PROGRAM"] = PROGRAM
+    exec(compile(CONTROLS.read_text(), module.__file__, "exec"), module.__dict__)
     suite = unittest.defaultTestLoader.loadTestsFromModule(module)
     assert suite.countTestCases() == 17
     stream = io.StringIO()

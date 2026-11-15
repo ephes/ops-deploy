@@ -1,23 +1,19 @@
-"""Owned real WebSocket/original-script pipeline protocol controls."""
+"""Owned real WebSocket pipeline protocol controls."""
 
 from __future__ import annotations
 
 import asyncio
 import copy
-import hashlib
 import importlib.util
 import json
-import os
 import ssl
 import sys
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from aiohttp import web
 
 SPEC = importlib.util.spec_from_file_location(
@@ -27,7 +23,6 @@ assert SPEC is not None
 assert SPEC.loader is not None
 pipelines = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(pipelines)
-ORIGINAL = Path(__file__).parent / "parity/homeassistant/pipelines/original.yml"
 TOKEN = "owned-synthetic-pipeline-token-00000"
 
 
@@ -147,73 +142,8 @@ async def endpoint(
         await runner.cleanup()
 
 
-def original_script() -> str:
-    return str(
-        next(
-            task["ansible.builtin.command"]["argv"][-1]
-            for task in yaml.safe_load(ORIGINAL.read_text())
-            if task["name"] == "Create or update Assist pipelines via Home Assistant WebSocket API"
-        )
-    )
-
-
 def payload(url: str, desired: list[dict[str, Any]], action: str = "apply") -> dict[str, Any]:
     return {"url": url, "token": TOKEN, "desired": desired, "action": action, "timeout": 3}
-
-
-@pytest.mark.parametrize(
-    "desired",
-    [
-        [definition()],
-        [definition(language="de")],
-        [definition("New", preferred=True)],
-        [definition(id="missing")],
-        [definition("Rename", id="selected")],
-        [definition(preferred=True)],
-        [definition(wake_word_entity=None, wake_word_id=None, prefer_local_intents=False)],
-        [definition("New"), definition("New")],
-        [definition(language="de"), definition(language="de")],
-        [definition(language="de"), {"name": "Broken"}],
-    ],
-)
-def test_actual_original_requests_and_whole_state_match(tmp_path: Path, desired: list[dict[str, Any]]) -> None:
-    async def scenario() -> None:
-        old, new = initial(), initial()
-        output = tmp_path / "original.json"
-        async with endpoint(old) as (url, old_calls):
-            env = dict(
-                os.environ,
-                HA_API_URL=url,
-                HA_TIMEOUT="3",
-                HA_ASSIST_PIPELINES_JSON=json.dumps(desired),
-                HA_RESULT_PATH=str(output),
-            )
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-I",
-                "-B",
-                "-c",
-                original_script(),
-                env=env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await asyncio.wait_for(process.communicate(json.dumps({"HA_TOKEN": TOKEN}).encode()), 10)
-            original = json.loads(output.read_text())
-        async with endpoint(new) as (url, new_calls):
-            report = await pipelines.run(payload(url, desired), pipelines.new_report())
-        assert new == old
-        assert new_calls == old_calls
-        assert report["success"] == (original["status"] == "success")
-        assert report["mutation_attempts"] == len([item for item in new_calls if not item["type"].endswith("/list")])
-        assert report["changed"] == bool(report["mutation_attempts"])
-        assert new["pipelines"][1] == initial()["pipelines"][1]
-        assert new["pipelines"][0]["acknowledge_media_id"] == "owned-ack"
-        for private in (TOKEN, "never-export", "unlisted-private", "unexported-fault", "selected"):
-            assert private not in json.dumps(report)
-
-    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(
@@ -280,12 +210,7 @@ def test_real_fault_reports_known_attempts_not_zero_claim(
     asyncio.run(scenario())
 
 
-def test_actual_helper_main_and_original_hash() -> None:
-    assert (
-        hashlib.sha256(ORIGINAL.read_bytes()).hexdigest()
-        == json.loads(ORIGINAL.with_name("source.json").read_text())["sha256"]
-    )
-
+def test_actual_helper_main() -> None:
     async def scenario() -> None:
         async with endpoint(initial()) as (url, calls):
             source = files("ops_deploy.services.homeassistant").joinpath("files/pipelines.py").read_text()
@@ -324,9 +249,7 @@ def test_actual_helper_main_and_original_hash() -> None:
         (False, False, False),
     ],
 )
-def test_standalone_voice_original_requests_state_and_repeat(
-    tmp_path: Path, manage_stt: bool, manage_tts: bool, current: bool
-) -> None:
+def test_standalone_voice_requests_state_and_repeat(manage_stt: bool, manage_tts: bool, current: bool) -> None:
     async def scenario() -> None:
         desired = {
             "stt_engine": "stt.owned" if current else "stt.new",
@@ -335,41 +258,8 @@ def test_standalone_voice_original_requests_state_and_repeat(
             "tts_language": "en" if current else "de",
             "tts_voice": "" if current else "owned-voice",
         }
-        old, new = initial(), initial()
-        output = tmp_path / "voice-result.json"
-        tasks = yaml.safe_load(ORIGINAL.with_name("voice.yml").read_text())
-        script = next(
-            item["ansible.builtin.command"]["argv"][-1]
-            for item in tasks
-            if item["name"] == "Update Assist pipeline voice engines via Home Assistant WebSocket API"
-        )
-        async with endpoint(old) as (url, old_calls):
-            env = dict(
-                os.environ,
-                HA_API_URL=url,
-                HA_TIMEOUT="3",
-                HA_RESULT_PATH=str(output),
-                HA_PIPELINE_ID="selected",
-                HA_MANAGE_STT=str(manage_stt).lower(),
-                HA_MANAGE_TTS=str(manage_tts).lower(),
-                **{
-                    "HA_" + key.upper() + ("_ID" if key.endswith("engine") else ""): val for key, val in desired.items()
-                },
-            )
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-I",
-                "-B",
-                "-c",
-                script,
-                env=env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await asyncio.wait_for(process.communicate(json.dumps({"HA_TOKEN": TOKEN}).encode()), 10)
-            assert process.returncode == 0
-            original = json.loads(output.read_text())
+        new = initial()
+        changed = not current and (manage_stt or manage_tts)
         async with endpoint(new) as (url, new_calls):
             value = {
                 **payload(url, []),
@@ -382,15 +272,14 @@ def test_standalone_voice_original_requests_state_and_repeat(
             before = copy.deepcopy(new)
             plan = await pipelines.run({**value, "action": "inspect"}, pipelines.new_report())
             assert plan["success"]
-            assert plan["pending"] == int(original["changed"])
+            assert plan["pending"] == int(changed)
             assert plan["mutation_attempts"] == 0
             assert new == before
             new_calls.clear()
             first = await pipelines.run(value, pipelines.new_report())
             assert first["success"]
-            assert first["changed"] == original["changed"]
-            assert new == old
-            assert new_calls == old_calls
+            assert first["changed"] == changed
+            assert (new != before) is changed
             after = copy.deepcopy(new)
             new_calls.clear()
             repeat = await pipelines.run(value, pipelines.new_report())
@@ -411,9 +300,7 @@ def test_standalone_voice_original_requests_state_and_repeat(
     asyncio.run(scenario())
 
 
-def test_standalone_voice_partial_update_failure_and_source_hash() -> None:
-    receipt = json.loads(ORIGINAL.with_name("source.json").read_text())["voice"]
-    assert hashlib.sha256(ORIGINAL.with_name("voice.yml").read_bytes()).hexdigest() == receipt["sha256"]
+def test_standalone_voice_partial_update_failure() -> None:
 
     async def scenario() -> None:
         state = initial()

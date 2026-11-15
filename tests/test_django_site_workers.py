@@ -147,38 +147,27 @@ def test_security_secrets_cannot_be_optional(tmp_path: Path, target: str) -> Non
         DjangoSiteConfig.model_validate(raw)
 
 
-@pytest.mark.parametrize(("queue", "extra"), [(None, ()), ("transcripts", ("--log-level", "INFO"))])
-def test_worker_argv_matches_wagtail_origin(tmp_path: Path, queue: str | None, extra: tuple[str, ...]) -> None:
-    import shlex
+DB_WORKER = (
+    "exec /home/marina/site/.venv/bin/python manage.py db_worker --backend transcripts --worker-id marina-db-worker"
+)
 
-    import jinja2
 
+@pytest.mark.parametrize(
+    ("queue", "extra", "options"),
+    [
+        (None, (), " --interval 5"),
+        ("transcripts", ("--log-level", "INFO"), " --queue-name transcripts --interval 5 --log-level INFO"),
+    ],
+)
+def test_worker_runs_db_worker_with_its_options(
+    tmp_path: Path, queue: str | None, extra: tuple[str, ...], options: str
+) -> None:
     cfg = worker_site(tmp_path)
     worker = cfg.workers[0].model_copy(update={"queue": queue, "extra_args": extra})
-    template = Path(__file__).parent / "parity/ansible/wagtail_deploy__wagtail-db-worker.service.j2"
-    old = jinja2.Template(template.read_text()).render(
-        wagtail_service_name=cfg.unit_name,
-        wagtail_user=cfg.user,
-        wagtail_group=cfg.group_name,
-        wagtail_site_path=str(cfg.app_path),
-        wagtail_django_settings_module=cfg.app.settings_module,
-        wagtail_env_path=str(cfg.env_path),
-        wagtail_python=str(cfg.venv_bin / "python"),
-        wagtail_manage_py=str(cfg.app_path / "manage.py"),
-        wagtail_db_worker_backend=worker.backend,
-        wagtail_db_worker_id=worker.worker_id or worker.unit,
-        wagtail_db_worker_queue_name=queue or "",
-        wagtail_db_worker_interval_seconds=worker.interval,
-        wagtail_db_worker_extra_args=shlex.join(extra),
-        wagtail_cache_dir=str(cfg.cache_dir),
-    )
-    old_command = old.partition("ExecStart=")[2].split("\n\n", 1)[0].replace("\\\n", " ")
+
     new = render("worker.sh.j2", cfg, worker=worker)
-    new_command = next(line.removeprefix("exec ") for line in new.splitlines() if line.startswith("exec "))
-    old_argv = shlex.split(old_command)
-    new_argv = shlex.split(new_command)
-    new_argv[1] = str(cfg.app_path / new_argv[1])
-    assert old_argv == new_argv
+
+    assert DB_WORKER + options in new.splitlines()
     assert f". {cfg.env_path}" in new
     assert "RestartSec=10" in render("worker.service.j2", cfg, worker=worker)
 

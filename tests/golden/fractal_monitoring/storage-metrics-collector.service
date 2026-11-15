@@ -1,0 +1,20 @@
+[Unit]
+Description=Collect storage metrics and write to JSON file
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/usr/local/bin/nyxmon-storage-metrics > /var/lib/storage-metrics/storage.json.tmp && mv /var/lib/storage-metrics/storage.json.tmp /var/lib/storage-metrics/storage.json'
+
+# Run as root to access ZFS/SMART data
+User=root
+Group=root
+
+# Ensure directory exists and has correct permissions
+ExecStartPre=/bin/mkdir -p /var/lib/storage-metrics
+ExecStartPre=/bin/chown root:metrics /var/lib/storage-metrics
+ExecStartPre=/bin/chmod 0750 /var/lib/storage-metrics
+
+# After writing, ensure the metrics user can read the file
+ExecStartPost=/bin/chown root:metrics /var/lib/storage-metrics/storage.json
+ExecStartPost=/bin/chmod 0640 /var/lib/storage-metrics/storage.json

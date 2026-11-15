@@ -1,0 +1,17 @@
+[Unit]
+Description=MeTube (yt-dlp web UI)
+After=network.target
+
+[Service]
+User=metube
+Group=metube
+WorkingDirectory=/opt/metube
+EnvironmentFile=-/etc/metube/metube.env
+Environment=PATH=/opt/metube/venv/bin:/usr/local/bin:/usr/bin
+ExecStart=/opt/metube/venv/bin/python3 /opt/metube/app/main.py
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

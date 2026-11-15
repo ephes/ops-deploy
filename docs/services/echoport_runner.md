@@ -163,8 +163,7 @@ as root with root's alias, a target without its scoped account (root's
 shared `minio` alias is retired, so the playbook refuses that too), and
 template variables that name another alias, `mc` or bucket than the access.
 The include's first task, the ops-library version assert, is not ported:
-the templates are vendored and `tests/test_ops_library_drift.py` pins
-ops-library. Variables named in `default_ipv4_variables`
+the templates are vendored here. Variables named in `default_ipv4_variables`
 (homeassistant's `homeassistant_backup_health_forwarded_for`) get the host's
 `ansible_default_ipv4.address`, the source address of
 `ip -4 route get 8.8.8.8` read while planning, and `192.168.0.1` without a
@@ -575,18 +574,18 @@ ported: the playbook passes it no credentials, so it never runs.
 and the sudoers rule with what the role wrote on macmini (2026-11-10, sixteen
 targets) and plans no mutating operation on that host.
 
-## Parity
+## Golden tests
 
-- `tests/test_echoport_runner_parity.py`: every runner script of the 28
+- `tests/test_echoport_runner_golden.py`: every runner script of the 28
   register playbooks that use these templates (plus one synthetic variant
   and the generic runner as it is rendered for macmini's sixteen targets,
-  `echoport-backup-macmini`)
-  renders to the sha256 `ansible-playbook` produced
-  (`tests/parity/echoport_runner/expected.json`, written by `generate.py`
-  from `inputs.json`), and `config.json` and the sudoers rule equal the
-  role's own tasks' output for three settings. With `OPS_LIBRARY_PATH`,
-  `ansible-playbook` and `community.general`, the oracle test renders all of
-  it again.
+  `echoport-backup-macmini`), rendered from
+  `tests/fixtures/echoport_runner/inputs.json`, has the sha256 recorded in
+  `tests/golden/echoport_runner/runner-sha256.json` (the scripts as hosts
+  have them, first recorded by `ansible-playbook`), and `config.json` and the
+  sudoers rule equal the recorded files for three settings. An intended
+  change re-records them (`OPS_DEPLOY_UPDATE_GOLDEN=1`, see
+  [Testing](../concepts/testing.md)).
 - `tests/test_echoport_runner_registration.py`: the seven A1 runners render
   through `RunnerRegistration` to the same sha256 (homeassistant with the
   fixtures' address), a host the playbook left plans no mutating operation
@@ -605,13 +604,6 @@ targets) and plans no mutating operation on that host.
   and the parts run in the playbooks' order, and heis's rotation helper is
   the playbook's `copy` content (`quote`, `to_json`) with systemd reloaded
   only when a unit changed.
-- `tests/test_ops_library_drift.py` records `fastdeploy_runner`,
-  `echoport_backup` and `minio_backup` and fails when a vendored template
-  differs from ops-library's or ops-library gains or loses one. For a
-  template in `render.FORKED` the runners' recorded sha256 is ops-deploy's
-  own rendering, and the drift and oracle tests check instead that
-  ops-library's copy is still the one recorded in `expected.json`'s
-  `forked_from`.
 - `tests/test_echoport_runner_unifi_minecraft.py`: unifi's login file and
   its mongodump check (run against a stand-in `mongodump` to show the
   password reaches only its stdin), minecraft's mcrcon refusal.

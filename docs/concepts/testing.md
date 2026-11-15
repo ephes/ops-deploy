@@ -107,59 +107,41 @@ output for files and directories, `sha1sum` output matching the rendered
 content, and `systemctl show` output for the unit. `tests/test_toy.py`
 (`converged_host`) is the reference.
 
-## Drift from ops-library
+## Golden host files
 
-The [2026-10-30 reconciliation](parity-reconciliation-2026-10-30.md) records
-the disposition and regression coverage of the previously failing roles.
-`role_commits` overrides the manifest's default source revision for an
-individually reviewed role; drift failures report that role's actual baseline.
-
-Paired role-oracle tests also import Ansible's native filters. Supply that
-test-only dependency when checking a source checkout; `just test-parity`
-does that in its own `.venv-parity` (see [Development](../development.md)):
+Files a deploy writes to a host (units, env files, Traefik routes, configs,
+root-owned scripts) are pinned by golden tests: a test renders the file from
+synthetic inputs and compares it with the copy under `tests/golden/<service>/`
+through `tests/goldens.py`'s `assert_golden(path, actual)`. Identical bytes
+mean the next deploy rewrites nothing and restarts nothing, so a failing
+golden test is a decision rather than a bug. When the change to the host file
+is intended, record the new render and review the diff before committing it:
 
 ```bash
-just test-parity                                # ../ops-library
-OPS_LIBRARY_PATH=/path/to/ops-library just test-parity
+OPS_DEPLOY_UPDATE_GOLDEN=1 uv run --locked pytest -q tests/test_nyxmon_golden.py
+git diff tests/golden
 ```
 
-The ports follow ops-library's roles, which keep changing. Parity tests
-compare rendered files with the vendored role templates
-(`tests/parity/ansible`), but a role can also change what it does (remove a
-file, stop restarting Traefik, skip entries on restore) without touching a
-template. With `OPS_LIBRARY_PATH` set to a checkout of ops-library's main
-branch:
+Name the golden directory literally in the test module
+(`Path(__file__).parent / "golden" / "<service>"`), so that
+`just test-changed` maps a changed golden file to its test. Goldens hold only
+synthetic values: fixture secrets, `example` hosts and documentation
+addresses (`192.0.2.0/24`), never real hostnames, IPs or secrets.
 
-- `test_traefik_parity.py -k vendored` fails when a vendored template differs
-  from the role's or is gone;
-- `tests/test_ops_library_drift.py` fails when a role file vendored under
-  `services/*/files` (`ensure_token_user.py`, `sudoers_blanket_check.py`, the
-  delve StoreKit certificates) differs or is gone, and when a role a port
-  mirrors changed since it was last checked:
-  `tests/parity/ops_library_roles.json` records the ops-library commit and a
-  digest of each role's `defaults`, `files`, `handlers`, `tasks`,
-  `templates` and `vars`. It covers the `bind_authoritative_deploy`, `fastdeploy_*`, `graphyard_*`,
-  `gotosocial_deploy`, `mastodon_deploy`/`mastodon_shared`, `homelab_deploy`/`homelab_shared`, `jellyfin_deploy`/`jellyfin_shared`,
-  `journald_config`, `livekit_deploy`,
-  `minio_deploy`, `nyxmon_*`, `traefik_deploy`, `uv_install`,
-  `vaultwarden_*`, `vibe_coding_deploy`, `work_app_*` and `zellij_ingress_deploy` roles so far
-  (and the backup, restore and removal roles named in the changelog).
-  Entries added later than the recorded commit name the commit they were
-  checked against in their service page (homelab, jellyfin, `uv_install`,
-  gotosocial and vaultwarden: `540ede2b`, 2.56.0; Mastodon existing-install convergence:
-  `3110a0f1`, 2.68.0; `bind_authoritative_deploy`:
-  `06394c81`, 2.64.5; `vibe_coding_deploy`: `6777cbb1`, 2.75.5).
+The goldens were first recorded when the Ansible parity and role-oracle tests
+were retired (see the changelog): every deploy now runs on pyinfra, and the
+recorded bytes are the ones the ops-library roles produced, which hosts
+carried at that point. Files vendored from ops-library (`services/*/files`,
+`infra/files`, `software_estate_publisher` templates, `*.py.txt` helpers) are
+ops-deploy's own now and change like any other source; there is no longer a
+comparison with an ops-library checkout. The
+[2026-10-30 reconciliation](parity-reconciliation-2026-10-30.md) is kept as a
+historical record.
 
 Policy carried over from ops-library is checked without a checkout:
-`tests/test_traefik_hsts.py` fails when any template under `src/` or
-`tests/parity/` sets `stsPreload` (HSTS preload, removed from the roles in
-`abae172`), and each service's tests check its rendered route with
-`tests/hsts.py`.
-
-After a role change, port it (or document why not), print the new digests
-with `uv run python -m tests.test_ops_library_drift <ops-library>` and update
-the manifest and its commit. Without `OPS_LIBRARY_PATH` these tests are
-skipped (CI has no ops-library checkout); a stale checkout fails them.
+`tests/test_traefik_hsts.py` fails when any template under `src/` sets
+`stsPreload` (HSTS preload, removed from the roles in `abae172`), and each
+service's tests check its rendered route with `tests/hsts.py`.
 
 ## Notes on pyinfra behaviour
 

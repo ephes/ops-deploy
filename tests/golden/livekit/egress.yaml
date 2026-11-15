@@ -1,0 +1,16 @@
+# Managed by ops-deploy (compose_app). Local changes are overwritten by the next deploy.
+redis:
+  address: 127.0.0.1:6379
+  password: fixture-redis-password-0123
+api_key: APIfixtureKey0123
+api_secret: fixture-api-secret-0123456789abcdef
+ws_url: ws://127.0.0.1:7880
+s3:
+  access_key: fixture-s3-access
+  secret: fixture-s3-secret-0123456789
+  region: us-east-1
+  endpoint: http://127.0.0.1:9001
+  bucket: recorder
+  force_path_style: true
+logging:
+  level: info

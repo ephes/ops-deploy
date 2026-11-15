@@ -1,8 +1,8 @@
 """The role's variable namespace: its vendored defaults, the playbook's values, Ansible's Jinja.
 
 ``files/deploy_defaults.yml`` and ``files/remove_defaults.yml`` are the
-roles' ``defaults/main.yml``, byte for byte (``tests/test_ops_library_drift.py``
-compares them). A default that refers to other variables (``{{ openclaw_home
+roles' ``defaults/main.yml`` as vendored byte for byte (ops-deploy owns them
+now). A default that refers to other variables (``{{ openclaw_home
 }}/site``) is resolved lazily against the final namespace, as Ansible does,
 so a playbook value such as ``openclaw_data_dir`` moves every path below it.
 

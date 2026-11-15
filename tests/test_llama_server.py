@@ -93,15 +93,6 @@ def test_plist_preserves_native_owner_domain_and_pin(cfg: LlamaServerConfig) -> 
     assert parsed["EnvironmentVariables"]["DELVE_DETECTOR_BUILD"] == cfg.build
 
 
-def test_role_template_source_parity() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; actual role source parity is an explicit paired check")
-    assert (ROOT / "src/ops_deploy/services/llama_server/templates/llama-server.launchd.plist.j2").read_bytes() == (
-        Path(source) / "roles/llama_server_deploy/templates/llama-server.launchd.plist.j2"
-    ).read_bytes()
-
-
 def test_current_deployment_has_no_upload_or_mutation(cfg: LlamaServerConfig) -> None:
     run = run_deploy_fake(deploy_llama_server, cfg, {"api_key": KEY_VALUE}, responses={" status ": ["current"]})
     assert run.succeeded

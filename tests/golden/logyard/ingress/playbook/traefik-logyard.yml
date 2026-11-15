@@ -1,0 +1,71 @@
+# Traefik configuration for Logyard
+# Managed by Ansible - do not edit manually
+
+http:
+  routers:
+    logyard-root:
+      rule: "Host(`logyard.example.invalid`) && Path(`/`)"
+      entryPoints:
+        - web-secure
+      priority: 140
+      middlewares:
+        - logyard-root-redirect
+      service: noop@internal
+      tls:
+        certResolver: letsencrypt
+    # Only the producer push path and the readiness probe are routed. Loki runs
+    # with auth_enabled: false, so query, tail, label and delete endpoints must
+    # never be reachable here; any other path on this host has no router (404).
+    # Grafana reads Loki over the docker network, not through this ingress.
+    logyard-int:
+      rule: "Host(`logyard.example.invalid`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`)) && (((Method(`POST`)) && Path(`/loki/api/v1/push`)) || ((Method(`GET`) || Method(`HEAD`)) && Path(`/ready`)))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - logyard-headers
+        - logyard-gzip
+      service: logyard
+      tls:
+        certResolver: letsencrypt
+
+    logyard-http:
+      rule: "Host(`logyard.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - logyard-redirect-to-https
+      service: logyard
+
+  middlewares:
+    logyard-root-redirect:
+      redirectRegex:
+        regex: "^https?://[^/]+/$"
+        replacement: "https://grafana.home.xn--wersdrfer-47a.de/d/logyard-home/logyard-overview"
+        permanent: false
+
+    logyard-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    logyard-gzip:
+      compress: {}
+
+    logyard-redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    logyard:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:3101"

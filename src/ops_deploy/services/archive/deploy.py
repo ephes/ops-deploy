@@ -2,12 +2,12 @@
 
 Port of the ``archive_deploy`` Ansible role (rsync method) together with the
 playbook steps around it in ops-control's ``deploy-archive.yml``: the MinIO
-media bucket and service account (through root's MinIO admin alias on the
-host, never the MinIO root credentials), the one-time move of a local media tree
-into MinIO, and the Echoport backup target. The role's templates are shipped
+media bucket and service account (through root's MinIO admin alias on the host,
+never the MinIO root credentials), the one-time move of a local media tree into
+MinIO, and the Echoport backup target. The role's templates are shipped
 unchanged and rendered the way Ansible renders them, so env files, units and
-the Traefik route are byte-identical (``tests/test_archive_parity.py``) and
-Ansible and ops-deploy can take turns on one host without churn.
+the Traefik route are byte-identical (goldens:
+``tests/test_archive_golden.py``).
 
 Unlike the role, steps that would change nothing are skipped: migrate and
 collectstatic run when code, dependencies or the env changed; the admin

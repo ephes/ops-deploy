@@ -1,12 +1,11 @@
 """FastDeploy: the FastAPI deploy platform with its Vue frontend, on PostgreSQL.
 
-Port of the ``fastdeploy_deploy`` Ansible role, rsync method only. The env
-and unit files are byte-identical to the role's
-(``tests/test_fastdeploy_parity.py``), so Ansible and ops-deploy can take turns
-on one host. Host-side state in the site directory (registered services,
-env files, the venv, the built frontend) survives every sync
-(``persistent_excludes``). Like the role, every deploy restarts the service
-and then checks its DB-backed auth with a freshly minted token.
+Port of the ``fastdeploy_deploy`` Ansible role, rsync method only. The env and
+unit files are byte-identical to the retired role's (goldens:
+``tests/test_fastdeploy_golden.py``). Host-side state in the site directory
+(registered services, env files, the venv, the built frontend) survives every
+sync (``persistent_excludes``). Like the role, every deploy restarts the
+service and then checks its DB-backed auth with a freshly minted token.
 """
 
 from __future__ import annotations

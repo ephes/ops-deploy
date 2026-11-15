@@ -1,0 +1,20 @@
+[Unit]
+Description=graphyard web application
+After=network.target gy-runtime.service
+# Wants=, not Requires=/PartOf=/BindsTo=: a stop, restart or failed start of
+# the runtime leaves this unit running (role README, "Unit dependencies").
+Wants=gy-runtime.service
+
+[Service]
+Type=simple
+User=graphyard
+Group=graphyard
+WorkingDirectory=/opt/apps/graphyard/site/src/django
+EnvironmentFile=/etc/graphyard/graphyard.env
+# SQLite backend: keep write concurrency constrained to avoid lock storms.
+ExecStart=/opt/apps/graphyard/site/.venv/bin/granian --workers 1 --interface wsgi --host 127.0.0.1 --port 8051 --access-log config.wsgi_proxy:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -27,15 +27,15 @@ deploy_redis_install(RedisInstallConfig(requirepass_enabled=True), SecretStr(red
 Field names follow the role variables without the role prefix; defaults are
 the role defaults unless noted.
 
-## Coexistence with the roles
+## The files the roles wrote
 
-Both deploys write the same bytes the roles write: `pg_hba.conf`, the
-`conf.d/20-ops-library.conf` drop-in, `redis.conf` (including the `Managed by
-Ansible` header) and the `.sources` file `deb822_repository` writes (fields in
-its order). `tests/test_infra_parity.py` renders the vendored role templates
-and compares, and checks the default files against macmini's sizes and its
-PGDG `.sources` file. A host set up by one tool therefore shows no change when
-the other runs, and no restart.
+Both deploys write the bytes the roles wrote before the switch: `pg_hba.conf`,
+the `conf.d/20-ops-library.conf` drop-in, `redis.conf` (including the `Managed by
+Ansible` header) and the `.sources` file `deb822_repository` wrote (fields in
+its order). `tests/test_infra_postgres_redis_golden.py` pins the renders as
+golden files (`tests/golden/postgres_install`, `tests/golden/redis_install`)
+and checks the default files against macmini's sizes and its PGDG `.sources`
+file. A host the roles set up therefore shows no change, and no restart.
 
 Existing data is never dropped or recreated. Databases and login roles go
 through [`postgres_database`](concepts/helpers.md): it creates what is missing,
@@ -335,8 +335,8 @@ each path must be absolute and normalized (letters, digits, `.`, `_`, `-`,
 `/`, no `.`/`..` segments, no `//`, no trailing slash) and must not be equal
 to, inside or above `config_dir`, `/etc/letsencrypt`, `/var/lib/letsencrypt`
 or `/var/log/letsencrypt`; both are checked when the config is built. The
-guard, vendored byte for byte from the role (`infra/files/certbot_stray_guard.py`,
-checked by `tests/test_ops_library_drift.py`), also checks after resolving
+guard, vendored byte for byte from the role (`infra/files/certbot_stray_guard.py`),
+also checks after resolving
 symlinks, requires a real directory with a real `renewal/`, and refuses
 everything unless the live trees use only literal paths (no symlinks besides
 certbot's lineage links, plain paths inside the live dirs in every renewal
@@ -366,8 +366,8 @@ gives no operation on the next run.
 
 ### Tests
 
-`tests/test_infra_certbot_dns.py` renders the vendored role templates
-(`tests/parity/ansible/certbot_dns_deploy__*`) and compares, pins the
+`tests/test_infra_certbot_dns.py` pins the credentials file and the renewal
+hook as golden files (`tests/golden/certbot_dns`), pins the
 `certonly` and `reconfigure` argv, and runs the deploy on the fake connector:
 fresh host, converged host (no certbot command, credentials only on stdin),
 due certificate, provider switch, the cleanup scan's exit codes, stray

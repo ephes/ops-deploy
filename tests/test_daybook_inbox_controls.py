@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from importlib.resources import files
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from ops_deploy.services.daybook_voice_memo_inbox.config import PACKAGE
-from ops_deploy.services.daybook_voice_memo_inbox.layout import directories, logs
-from tests.test_daybook_inbox_declaration import config
 
 
 @pytest.fixture
@@ -113,29 +109,6 @@ def test_original_stopped_disabled_pair_passes_without_application_or_mutation_c
     assert all(argv[0] in {"/bin/launchctl", "/usr/bin/pgrep"} for argv in probes.calls)
     assert all(argv[1] in {"print", "print-disabled", "-u"} for argv in probes.calls)
     assert probes.calls[-1] == ["/bin/launchctl", "print", "gui/501/owned-long"]
-
-
-def test_managed_layout_matches_original_role_exact_paths_owners_modes() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    import yaml
-    from jinja2 import StrictUndefined
-    from jinja2.nativetypes import NativeEnvironment
-
-    cfg = config()
-    tasks = yaml.safe_load((Path(source) / "roles/daybook_voice_memo_inbox_deploy/tasks/main.yml").read_text())
-    env = NativeEnvironment(undefined=StrictUndefined)
-    values = cfg.model_dump(mode="json")
-    original_dirs = next(t["loop"] for t in tasks if t["name"] == "Create protected Voice Memo inbox directories")
-    expected = [
-        {key: (int(value, 8) if key == "mode" else env.from_string(value).render(values)) for key, value in row.items()}
-        for row in original_dirs
-    ]
-    assert [vars(row) for row in directories(cfg)] == expected
-    original_logs = next(t["loop"] for t in tasks if t["name"] == "Create owner-only Voice Memo inbox logs")
-    assert [row.path for row in logs(cfg)] == [env.from_string(path).render(values) for path in original_logs]
-    assert all((row.owner, row.group, row.mode) == ("fixture", "staff", 0o600) for row in logs(cfg))
 
 
 class ManagedProbes(Probes):

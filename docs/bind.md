@@ -268,13 +268,12 @@ a secret).
 
 ## Tests
 
-- `tests/test_infra_bind_parity.py`: byte parity with files Ansible
-  (ansible-core 2.21) rendered from the role's templates for four input sets
-  (`tests/parity/bind_authoritative_deploy/<case>/`: defaults, a primary with
+- `tests/test_infra_bind_golden.py`: the four configuration files, byte for
+  byte, against golden renders (`tests/golden/bind/<case>/`) for four synthetic
+  input sets (`tests/fixtures/bind/<case>.json`: defaults, a primary with
   dynamic zone and keys on Debian 13, a secondary on Debian 12, string ACLs
-  and moved paths; rendered from ops-library `56564cce`, whose role is
-  unchanged up to `06394c81`); with `OPS_LIBRARY_PATH`, the defaults, task
-  order and seed semantics against the role.
+  and moved paths). The goldens are the files Ansible rendered from the role
+  before the switch, so the nameservers keep them without a reload.
 - `tests/test_infra_bind.py`: the deploy on the fake connector (converged,
   fresh, changed file, refusals, `reload-pending`, leftovers, secrets only on
   stdin, fish-safe command lines, no keys, secondary, verify, UFW, Debian 13,
@@ -292,7 +291,7 @@ a secret).
   `--network none`, not privileged, `--cgroupns private`, `SYS_ADMIN` as the
   only added capability, no mounts, ports or devices and systemd as PID 1.
   Built from `ubuntu:24.04` with `systemd systemd-sysv python3 python3-apt
-  ansible-core bind9 bind9-utils dnsutils ca-certificates`, `named.service`
+  bind9 bind9-utils dnsutils ca-certificates`, `named.service`
   enabled and the packaged `/etc/bind` copied to `/opt/bind-pristine` (the
   test's reset), `--tmpfs /run --tmpfs /run/lock`, AppArmor unconfined and an
   entry point that remounts its cgroup2 tree writable before `exec
@@ -309,6 +308,4 @@ a secret).
   only the lock holder removing staged files; a symlinked directory in
   `/etc/bind` never written; a clock behind named's last load refused before
   any change; an unbumped serial and a lone journal refused without a change;
-  removing the keys; a secondary configuration; and with
-  `OPS_LIBRARY_PATH` the role (`bind_packages: []`, the fixture has no
-  network) and this deploy taking turns without a change or a reload.
+  removing the keys; and a secondary configuration.

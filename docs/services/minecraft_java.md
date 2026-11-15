@@ -148,8 +148,7 @@ convergence before switching an engine.
 ## Removal
 
 `remove_minecraft_java(MinecraftJavaRemoveConfig(confirm_removal=True))` ports
-the `minecraft_java_remove` role at ops-library `55a23d33` (the role files are
-recorded under `tests/parity/minecraft_java/remove`). Without `confirm_removal`
+the `minecraft_java_remove` role at ops-library `55a23d33`. Without `confirm_removal`
 it fails before any host probe. The defaults are the role's, not the deploy's:
 `user`/`group` `minecraft`, `home` `/home/minecraft`, `service_name`
 `minecraft-java`, `port` 25565, `rcon_port` 25575 and
@@ -287,11 +286,11 @@ Tests: `tests/test_minecraft_java_lifecycle.py` (configs, planned operations,
 and the host program end to end against temporary directories with a fake
 RCON server, stubbed `systemctl`/`findmnt` and the real `preserve.py`).
 
-## Parity and limits
+## Rendered files and limits
 
-Selected templates from the current source live separately in
-`tests/parity/minecraft_java_3110a0f1`; older frozen parity inputs are unchanged.
-All selected templates render byte-identically except the deliberate env/unit
+`tests/golden/minecraft_java` records the rendered files for a vanilla and a
+Forge server. They were recorded when they equalled the role's renders
+(ops-library `3110a0f1`) except the deliberate env/unit
 change that keeps the RCON password out of process arguments and accepts
 Forge's successful RCON shutdown status, and the explicit JDK binary in place
 of `/usr/bin/java` (unit and Forge wrapper). The public path

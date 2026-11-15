@@ -1,18 +1,15 @@
 """A livekit config (made-up values) and the facts of hosts running it.
 
 Two hosts: one where ops-deploy applied ``cfg`` and nothing changed since
-(:func:`converged`), and one the ``livekit_deploy`` role deployed with the
-same inputs (:func:`ansible_deployed`): its files, containers on the same
-images, no applied stamp.
+(:func:`converged`), and one running the containers on the same images
+without the compose file, the unit, the config files or an applied stamp
+(:func:`unstamped`).
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
-
-import jinja2
 
 from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.services.compose_app.render import render_compose, render_config, render_unit
@@ -21,7 +18,6 @@ from ops_deploy.services.livekit import LivekitConfig, render_route
 from tests import fakehost
 from tests.test_infra_docker_vector import docker_converged
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
 SITE = "/opt/livekit"
 COMPOSE = f"{SITE}/docker-compose.yml"
 SERVER_YAML = "/etc/livekit/livekit.yaml"
@@ -118,59 +114,9 @@ def converged(cfg: LivekitConfig, secrets: SecretValues, **overrides: Any) -> di
     return responses
 
 
-def role_vars(cfg: LivekitConfig, secrets: SecretValues) -> dict[str, Any]:
-    """The playbook's role vars for these inputs (the role's defaults for the rest)."""
+def unstamped(cfg: LivekitConfig, **overrides: Any) -> dict[str, Any]:
+    """Facts of a host running the containers (and the route) but none of the other files, and no stamp."""
 
-    server, _, server_tag = cfg.server_image.partition("@")[0].rpartition(":")
-    egress, _, egress_tag = cfg.egress_image.partition("@")[0].rpartition(":")
-    return {
-        "livekit_service_name": cfg.service_name,
-        "livekit_server_image": server,
-        "livekit_server_tag": server_tag,
-        "livekit_egress_image": egress,
-        "livekit_egress_tag": egress_tag,
-        "livekit_site_dir": str(cfg.site_path),
-        "livekit_config_dir": str(cfg.config_dir),
-        "livekit_http_port": cfg.http_port,
-        "livekit_rtc_tcp_port": cfg.rtc_tcp_port,
-        "livekit_rtc_port_range_start": cfg.rtc_port_range_start,
-        "livekit_rtc_port_range_end": cfg.rtc_port_range_end,
-        "livekit_node_ip": cfg.node_ip,
-        "livekit_api_key": secrets["api_key"],
-        "livekit_api_secret": secrets["api_secret"],
-        "livekit_webhook_url": cfg.webhook_url,
-        "livekit_s3_access_key": secrets["s3_access_key"],
-        "livekit_s3_secret_key": secrets["s3_secret_key"],
-        "livekit_s3_endpoint": cfg.s3_endpoint,
-        "livekit_s3_bucket": cfg.s3_bucket,
-        "livekit_traefik_host": cfg.traefik_host or "",
-        "livekit_redis_password": secrets["redis_password"],
-    }
-
-
-def render_ansible(template: str, variables: dict[str, Any]) -> str:
-    """A vendored ``livekit_deploy`` template, rendered like Ansible's ``template`` module."""
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    return env.get_template(f"livekit_deploy__{template}").render(**variables)
-
-
-def ansible_deployed(cfg: LivekitConfig, secrets: SecretValues, **overrides: Any) -> dict[str, Any]:
-    """Facts of a host the role deployed with these inputs: its files, running containers, no stamp.
-
-    ``egress.yaml`` is ``0644``, as roles before the 0640 tightening left it.
-    """
-
-    variables = role_vars(cfg, secrets)
     responses = _host(cfg)
-    responses.update(fakehost.file(COMPOSE, render_ansible("livekit-compose.yml.j2", variables)))
-    responses.update(fakehost.file(UNIT, render_ansible("livekit.service.j2", variables)))
-    responses.update(fakehost.file(SERVER_YAML, render_ansible("livekit.yaml.j2", variables), mode="-rw-------"))
-    responses.update(fakehost.file(EGRESS_YAML, render_ansible("egress.yaml.j2", variables)))
     responses.update(overrides)
     return responses

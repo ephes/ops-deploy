@@ -1,0 +1,5 @@
+# FastDeploy runner delve-backup (ops-library fastdeploy_runner).
+# The script and every directory above it are root-owned; NOSETENV because
+# FastDeploy passes the context in the --config file, not the environment.
+fd ALL=(runner) NOPASSWD:NOSETENV: /opt/runners/delve-backup/run.py *
+runner ALL=(backup) NOPASSWD:NOSETENV: /opt/runners/delve-backup/run.py *

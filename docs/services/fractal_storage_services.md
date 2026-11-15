@@ -382,5 +382,6 @@ real loaded ZFS2.2.2 with a file-vdev pool. Tests cover configuration, native pa
 accounts, synthetic loopback SMB access/masks and interrupted rollouts. ARM fixture
 results do not attest physical SATA/APM behavior or production AMD64/share state.
 Inventory deployment and protection receipts are separate operator gates.
-The hdparm boot unit is covered by an Ansible template oracle, fake-host
+The hdparm boot unit is covered by golden renders (first recorded from the role's
+own render), fake-host
 rollouts and a local run of its script with a stub `hdparm`; no fixture boots it.

@@ -32,8 +32,8 @@ from ops_deploy.services._echoport_runner.target import RunnerTarget, ServiceTok
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests import test_echoport_runner_deploy_registration as deploy_tests
+from tests.echoport_runner_data import INPUTS
 
-INPUTS = deploy_tests.INPUTS
 EXPECTED = deploy_tests.EXPECTED
 USER = "fixture-fastdeploy-user"
 HEIS = "heis-production-backup"
@@ -161,11 +161,11 @@ def converged(cfg: DeployRunnerRegistration) -> dict[Any, Any]:
     return responses
 
 
-# -- parity --------------------------------------------------------------------------
+# -- rendered files ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", [HEIS, VILLA])
-def test_the_runner_renders_as_ansible_rendered_it(name: str) -> None:
+def test_the_runner_renders_the_recorded_script(name: str) -> None:
     cfg = registration(name)
 
     assert hashlib.sha256(runner_script(cfg.runner, dict(cfg.variables)).encode()).hexdigest() == EXPECTED[name]

@@ -203,4 +203,4 @@ def test_a_converged_minecraft_host_with_mcrcon_gets_no_mutating_operation() -> 
 @pytest.mark.parametrize("name", ["unifi-backup", "minecraft-java-backup"])
 def test_the_forked_runners_render_the_recorded_scripts(name: str) -> None:
     # A1's runners loop leaves these two out; they render from ops-deploy's own templates now.
-    a1.test_the_runner_renders_as_ansible_rendered_it(name)
+    a1.test_the_runner_renders_the_recorded_script(name)

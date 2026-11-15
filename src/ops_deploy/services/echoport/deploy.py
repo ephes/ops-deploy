@@ -4,9 +4,9 @@ Port of the ``echoport_deploy`` Ansible role (rsync method, uv) together with
 the steps ops-control's ``deploy-echoport.yml`` runs around it: the loopback
 listener check and the Nyxmon health check upsert. The role's templates are
 shipped unchanged and rendered the way Ansible renders them, so the env file,
-unit, Traefik route and staging refresh script are byte-identical
-(``tests/test_echoport_parity.py``) and Ansible and ops-deploy can take turns
-on one host without churn. The crontab entries use Ansible's own format
+unit, Traefik route and staging refresh script stayed byte-identical when
+hosts moved from Ansible (``tests/test_echoport_golden.py`` keeps them as they
+are). The crontab entries use Ansible's own format
 (``#Ansible: <name>`` header), so neither tool adds a second copy of a job.
 
 Unlike the role, steps that would change nothing are skipped: migrate and

@@ -14,7 +14,7 @@ from ops_deploy.services.snappymail import SnappyMailConfig
 from tests.hsts import hsts_headers
 
 ROOT = Path(__file__).parents[1]
-TEMPLATES = sorted((ROOT / "src" / "ops_deploy").rglob("*.j2")) + sorted((ROOT / "tests" / "parity").rglob("*.j2"))
+TEMPLATES = sorted((ROOT / "src" / "ops_deploy").rglob("*.j2"))
 HASH = "$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
 
 
@@ -45,7 +45,7 @@ def test_no_template_enables_preload(template: Path) -> None:
 
 
 def test_templates_were_found() -> None:
-    assert len(TEMPLATES) > 50
+    assert len(TEMPLATES) > 400
 
 
 AUTH = BasicAuth(user="admin", password=SecretStr("fixture-password"))

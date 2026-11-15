@@ -6,7 +6,7 @@ secret and host values, images pinned by digest, a Traefik route, typed API
 steps and read-only checks. Each app is a `ComposeAppConfig` (data only); the
 step code never branches on the app. torrent (gluetun, qBittorrent, Jackett)
 is the first consumer; the *arr apps follow (see the worked example below).
-logyard and the graphyard runtime keep their byte-parity modules.
+logyard and the graphyard runtime keep their own modules (and golden tests).
 [livekit](livekit.md) is a typed wrapper that builds its config and adds
 the role's own route (its services use the host network).
 

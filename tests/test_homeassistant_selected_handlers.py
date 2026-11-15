@@ -1,15 +1,12 @@
-"""Original selected notifications at real SDK boundaries, with owned fake hosts."""
+"""Selected handler notifications at real SDK boundaries, with owned fake hosts."""
 
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 
 import pytest
-import yaml
 from pyinfra.operations import server
 
-from ops_deploy.services.homeassistant.ingress import HomeAssistantIngressConfig
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
@@ -23,16 +20,6 @@ COMMANDS = {
     "trigger udev": "udevadm trigger --subsystem-match=tty",
     "reload traefik config": "",
 }
-
-
-def test_original_named_handler_set_and_default() -> None:
-    root = Path(__file__).parent / "parity/homeassistant"
-    original = yaml.safe_load((root / "service-handlers.yml").read_text())
-    assert [item["name"] for item in original] == list(COMMANDS)
-    defaults = yaml.safe_load((root / "deployment/defaults.yml").read_text())
-    assert HomeAssistantIngressConfig().reload_handler == defaults["homeassistant_traefik_reload_handler"]
-    assert original[2]["when"] == "homeassistant_matter_server_restart_on_change | bool"
-    assert original[3]["when"] == original[4]["when"] == "homeassistant_enable_udev_rule"
 
 
 @pytest.mark.parametrize("selector", COMMANDS)

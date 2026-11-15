@@ -62,7 +62,7 @@ is modified; no installed-ref pin or user ref override bypasses normal Main.
 
 Focused tests include actual owned Git clone/fetch/update/attestation refusals,
 private transfer IO/fault cleanup, GUI resource files and environment replacement
-with controlled probes, exact original template/default oracles, launchd state
+with controlled probes, launchd state
 machine faults and the real controller entrypoint. Root/ACL/UV identity is
 simulated in some local tests and is separate from native proof.
 

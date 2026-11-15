@@ -1,0 +1,10 @@
+{
+    "deploy_script": "/opt/runners/delve-backup/run.py",
+    "description": "Delve \"SQLite\" backup",
+    "name": "delve-backup",
+    "steps": [
+        {
+            "name": "backup"
+        }
+    ]
+}

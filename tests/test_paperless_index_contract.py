@@ -16,7 +16,7 @@ from ops_deploy.services.paperless.index_contract import (
 
 
 def test_actual_release_descriptors_bind_schema_fingerprint() -> None:
-    fixture = json.loads((Path(__file__).parent / "parity/paperless/index-schema-3.4.2.json").read_text())
+    fixture = json.loads((Path(__file__).parent / "fixtures/paperless/index-schema-3.4.2.json").read_text())
     assert fixture["archive_sha256"] == RELEASE_SHA256
     expected = expected_index_sentinels(fixture["release"], "eng+deu")
     assert expected["schema_version"] == fixture["schema_version"] == 4

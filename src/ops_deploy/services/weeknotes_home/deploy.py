@@ -3,10 +3,10 @@
 Port of the ``weeknotes_home_deploy`` Ansible role (rsync method) and of the
 operations wiring in ops-control's ``deploy-weeknotes-home.yml`` (FastDeploy
 service row, Echoport backup target with its FastDeploy service token, Nyxmon
-checks). The env file, unit and Traefik route are byte-identical to the
-role's (``tests/test_weeknotes_home_parity.py``), so Ansible and ops-deploy can
-take turns on one host without churn. The PostgreSQL database, the cache
-directory and the collected static files survive every deploy.
+checks). The env file, unit and Traefik route are byte-identical to the retired
+role's (goldens: ``tests/test_weeknotes_home_golden.py``). The PostgreSQL
+database, the cache directory and the collected static files survive every
+deploy.
 
 Not ported: the role's ``git`` deploy method, ``traefik_enabled``,
 ``basic_auth_enabled`` and ``service_restart_on_change`` switches and the

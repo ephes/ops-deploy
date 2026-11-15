@@ -36,8 +36,7 @@ optional SOPS file, as its playbook does (see its `docs/PYINFRA.md`).
 ## Configuration (`GotosocialConfig`)
 
 Fields are the role's `gotosocial_*` variables without the prefix, with the
-role's defaults (`tests/test_gotosocial_parity.py` compares them with
-`defaults/main.yml` when `OPS_LIBRARY_PATH` is set).
+role's defaults.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -136,21 +135,20 @@ would not:
 - a failing probe (the host cannot answer) stops the deploy instead of
   reading as "no marker".
 
-## Parity with the role
+## Golden files
 
-`tests/test_gotosocial_parity.py` renders the four shipped templates (the
-role's, byte for byte, also vendored under `tests/parity/ansible`) and
-compares them with files **Ansible itself rendered** from the role for three
-input sets (`tests/parity/gotosocial_deploy/<case>/`, ansible-core 2.21): the
-defaults, a full set (SMTP, nested `extra_config`, languages, middlewares,
-no memory limit, another route host) and an IPv6 listener with other users
-and roots. They must be byte-identical: `config.yaml` is Ansible's
-`to_nice_yaml(indent=2, sort_keys=True)` over the role's settings merged with
+`tests/test_gotosocial_golden.py` renders `config.yaml`, the unit, the admin
+wrapper and the route for three input sets (`tests/fixtures/gotosocial/`):
+the defaults, a full set (SMTP, nested `extra_config`, languages,
+middlewares, no memory limit, another route host) and an IPv6 listener with
+other users and roots. They must stay byte-identical to
+`tests/golden/gotosocial/<case>/`, the files Ansible itself rendered from the
+retired role (ansible-core 2.21, ops-library `540ede2b`), so the next deploy
+rewrites nothing on hosts the role set up. `config.yaml` is
+`to_nice_yaml(indent=2, sort_keys=True)` over the settings merged with
 `extra_config`, including the template module's final-newline handling.
-`tests/parity/ops_library_roles.json` records `gotosocial_deploy` at
-`540ede2b`.
 
-Differences, all on the side of changing less:
+Differences from the role, all on the side of changing less:
 
 - Packages are only installed (and the apt cache only refreshed) when one is
   missing; the role refreshes an hour-old cache on every run.
@@ -182,8 +180,7 @@ Differences, all on the side of changing less:
   disabled routing, the SMTP password only on stdin, the role's assertions,
   and the host-side installer (unpack, bad checksum, missing binary, partial
   or group-writable directories, fixed error messages).
-- `tests/test_gotosocial_parity.py`: byte parity with Ansible's output and
-  the role's defaults.
+- `tests/test_gotosocial_golden.py`: the host files against their goldens.
 - `tests/test_gotosocial_docker.py`: a real install in an owned systemd
   container, skipped unless `GOTOSOCIAL_DOCKER_CONTAINER` holds the full ID
   of a running container named `ops-deploy-gotosocial-20261021`, labelled
@@ -191,7 +188,7 @@ Differences, all on the side of changing less:
   `ops-deploy.run=gotosocial-20261021`, with `--network none`, not
   privileged, `--cgroupns private`, `SYS_ADMIN` as the only added
   capability, no mounts, ports or devices and systemd as PID 1. Built from
-  `debian:trixie` with `systemd systemd-sysv python3 python3-apt ansible-core
+  `debian:trixie` with `systemd systemd-sysv python3 python3-apt
   ca-certificates sqlite3 tar curl iproute2` and the checksum-verified
   release archive copied to `/srv/gts-release/v<version>/` (the test serves
   it on the container's loopback), `--tmpfs /run --tmpfs /run/lock`, an entry
@@ -199,7 +196,5 @@ Differences, all on the side of changing less:
   (AppArmor unconfined). It covers the fresh install (file owners and modes,
   `/readyz`, a loopback-only listener, an account created with the wrapper
   and resolved through WebFinger), an actual second run without a mutating
-  operation or restart, the refused layout change, drift and a lost restart
-  (one restart each), and with `OPS_LIBRARY_PATH` the role and this deploy
-  taking turns on one instance without a restart or a file change (and the
-  role refusing a layout the deploy recorded).
+  operation or restart, the refused layout change, and drift and a lost
+  restart (one restart each).

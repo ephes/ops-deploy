@@ -1,0 +1,10 @@
+# Managed by ops-library ssh_guard_deploy. Do not edit.
+[sshd]
+enabled = true
+backend = auto
+filter = sshd
+port = 2222,ssh
+maxretry = 5
+findtime = 10m
+bantime = -1
+ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10

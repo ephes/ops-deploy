@@ -1,0 +1,46 @@
+# Managed by Ansible - static site static-site
+
+http:
+  routers:
+    static-site-secure:
+      rule: "Host(`static.test.example`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - static-site-headers
+        - static-site-compress
+      service: static-site
+      tls: {}
+
+    static-site-http:
+      rule: "Host(`static.test.example`)"
+      entryPoints:
+        - web
+      middlewares:
+        - static-site-redirect
+      service: noop@internal
+
+  middlewares:
+    static-site-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: SAMEORIGIN
+        referrerPolicy: no-referrer
+        customResponseHeaders:
+          Cache-Control: no-cache
+
+    static-site-compress:
+      compress: {}
+
+    static-site-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    static-site:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:10061"

@@ -3,10 +3,10 @@
 Port of the ``work_app_deploy`` Ansible role (rsync method) and of the
 operations wiring in ops-control's ``deploy-work-app.yml`` (port preflight,
 Echoport backup target, Nyxmon health check). The files it writes are
-byte-identical to the role's (``tests/test_work_app_parity.py``), so Ansible
-and ops-deploy can take turns on one host without churn. The SQLite database
-lives in the site directory next to the synced trees and is never part of a
-sync; this deploy only runs ``migrate`` against it, as the role does.
+byte-identical to the retired role's (goldens:
+``tests/test_work_app_golden.py``). The SQLite database lives in the site
+directory next to the synced trees and is never part of a sync; this deploy
+only runs ``migrate`` against it, as the role does.
 """
 
 from __future__ import annotations

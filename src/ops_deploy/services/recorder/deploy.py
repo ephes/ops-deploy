@@ -4,9 +4,9 @@ Port of the ``recorder_deploy`` Ansible role plus the build and smoke steps of
 ops-control's ``playbooks/recorder/deploy.yml``. The controller builds the
 frontend bundle and cross-compiles the binary from a recorder checkout; the
 host gets the binary, an env file, a systemd unit and a Traefik route. The
-files written are byte-identical to the role's (``tests/test_recorder_parity.py``),
-so Ansible and ops-deploy can take turns on one host. The SQLite database and
-the object store under ``data_dir`` are never touched.
+files written are byte-identical to the retired role's (goldens:
+``tests/test_recorder_golden.py``). The SQLite database and the object store
+under ``data_dir`` are never touched.
 """
 
 from __future__ import annotations

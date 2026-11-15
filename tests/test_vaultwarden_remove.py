@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.vaultwarden import VaultwardenRemoveConfig, remove_vaultwarden
@@ -18,7 +14,6 @@ from ops_deploy.services.vaultwarden.remove import REPO_URL, REPOSITORY, ROUTE, 
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/vaultwarden/remove"
 KEYRING = "/etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg"
 DROPIN = "/etc/systemd/system/vaultwarden.service.d"
 PURGE = (
@@ -27,69 +22,13 @@ PURGE = (
 )
 
 
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
-
-
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles() -> None:
-    defaults = role("defaults.yml")
-    cfg = VaultwardenRemoveConfig()
-    assert cfg.confirm is defaults["vaultwarden_confirm_removal"] is False
-    for field in ("config", "repository", "traefik"):
-        assert getattr(cfg, "remove_" + field) is defaults["vaultwarden_remove_" + field]
-    # Data removal is the playbook's opt-in -e remove_data=true; not offered.
-    assert defaults["vaultwarden_remove_data"] is False
-    assert "remove_data" not in VaultwardenRemoveConfig.model_fields
-
-
-def test_role_task_order_and_paths_are_the_ported_ones() -> None:
-    tasks = role("tasks.yml")
-    assert [task["name"] for task in tasks] == [
-        "Confirm removal is intentional",
-        "Check for Vaultwarden systemd unit",
-        "Stop and disable Vaultwarden service",
-        "Remove Vaultwarden packages",
-        "Remove systemd override directory",
-        "Reload systemd",
-        "Remove Traefik configuration",
-        "Determine apt repo codename (Ubuntu uses bookworm)",
-        "Remove apt repository",
-        "Remove apt repository GPG key",
-        "Remove configuration file",
-        "Backup data before removal (if removing data)",
-        "Remove Vaultwarden data directory",
-        "Remove Vaultwarden log directory",
-        "Display removal summary",
-    ]
-    assert tasks[1]["loop"] == list(UNIT_PATHS)
-    assert tasks[2]["ignore_errors"] is True
-    assert tasks[3]["ansible.builtin.apt"]["name"] == ["vaultwarden", "vaultwarden-web-vault"]
-    assert tasks[3]["ansible.builtin.apt"]["purge"] == "{{ vaultwarden_remove_config }}"
-    assert tasks[4]["ansible.builtin.file"]["path"] == DROPIN
-    assert tasks[6]["ansible.builtin.file"]["path"] == ROUTE
-    assert tasks[8]["ansible.builtin.apt_repository"]["repo"] == (
-        f"deb [signed-by={KEYRING}] {REPO_URL} {{{{ _vaultwarden_repo_codename }}}} main"
-    )
-    assert tasks[9]["ansible.builtin.file"]["path"] == KEYRING
-    assert tasks[10]["ansible.builtin.file"]["path"] == "/etc/vaultwarden.env"
-    assert all(task["when"] == "vaultwarden_remove_data | bool" for task in tasks[11:14])
-    # The handler restarts Traefik (not ported).
-    assert role("handlers.yml") == [
-        {
-            "name": "reload traefik",
-            "ansible.builtin.systemd": {"name": "traefik", "state": "restarted"},
-            "failed_when": False,
-        }
-    ]
+def test_defaults() -> None:
+    assert VaultwardenRemoveConfig().model_dump(mode="json") == {
+        "confirm": False,
+        "remove_config": True,
+        "remove_repository": True,
+        "remove_traefik": True,
+    }
 
 
 def test_confirmation_precedes_every_target_probe() -> None:

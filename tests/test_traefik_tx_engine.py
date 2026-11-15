@@ -1,9 +1,8 @@
-"""What the ported Traefik transaction engine adds to, or leaves out of, ops-library's.
+"""The Traefik transaction engine as a program.
 
-``test_traefik_tx_parity`` and ``test_traefik_tx_config`` compare the two engines; this
-module covers the port on its own: that it runs as a standalone standard-library
-program, its size, and that it shares the reference engine's state, lock and actions
-(all of them ported).
+``test_traefik_tx_scenarios`` and ``test_traefik_tx_config`` cover its actions; this
+module covers that it runs as a standalone standard-library program on the hosts'
+Python, its size, its actions, and the state and lock paths the hosts already have.
 """
 
 from __future__ import annotations
@@ -20,18 +19,9 @@ import pytest
 
 from ops_deploy.infra import traefik_deploy
 from ops_deploy.infra.traefik_tx import engine
-from tests.traefik_tx_fixtures import (
-    REFERENCE_COMMIT,
-    REFERENCE_PATH,
-    REFERENCE_SHA256,
-    FakeHost,
-    base_setup,
-    reference,
-    sha256,
-)
+from tests.traefik_tx_fixtures import FakeHost, base_setup
 
 ENGINE_PATH = Path(engine.__file__)
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
 POLICY = {
     "host": "canary",
     "binary_path": "/usr/local/bin/traefik",
@@ -92,24 +82,14 @@ def test_main_takes_its_arguments(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert json.loads(capsys.readouterr().out) == {"failed": True, "error": "unknown action"}
 
 
-def test_the_reference_engine_knows_exactly_these_actions() -> None:
-    """Every action of the port's ``ACTIONS`` gets past the reference engine's action check."""
-
-    with (
-        patch.object(reference, "identity", side_effect=RuntimeError("identity")),
-        patch("os.geteuid", return_value=1000),
-    ):
-        for action in [*engine.ACTIONS, "rollback"]:
-            with pytest.raises(RuntimeError) as raised:
-                reference.execute({"action": action, "policy": POLICY})
-            assert (str(raised.value) == "unknown action") is (action == "rollback")
+def test_the_actions() -> None:
     assert engine.PORTED == engine.ACTIONS
     assert set(engine.ACTIONS) == {*WRITING, "inspect"}
 
 
-def test_state_and_lock_are_the_reference_engines_and_the_guards() -> None:
-    assert engine.STATE_ROOT == reference.STATE_ROOT == Path(traefik_deploy.TRANSACTION_STATE)
-    assert engine.LOCK == reference.LOCK == Path("/run/lock/traefik-transaction.lock")
+def test_state_and_lock_are_where_the_hosts_have_them() -> None:
+    assert Path(traefik_deploy.TRANSACTION_STATE) == engine.STATE_ROOT
+    assert Path("/run/lock/traefik-transaction.lock") == engine.LOCK
 
 
 def test_engine_uses_the_standard_library_only() -> None:
@@ -127,27 +107,10 @@ def test_engine_uses_the_standard_library_only() -> None:
 
 
 def test_engine_runs_on_the_hosts_python() -> None:
-    """Hosts run 3.12 and 3.13; the reference engine asks for 3.11, so the grammar stays at 3.11."""
+    """Hosts run 3.12 and 3.13; the engine asks for 3.11, so the grammar stays at 3.11."""
 
     ast.parse(ENGINE_PATH.read_text(), feature_version=(3, 11))
 
 
 def test_engine_stays_below_1500_lines() -> None:
     assert len(ENGINE_PATH.read_text().splitlines()) <= 1500
-
-
-def test_vendored_reference_is_ops_library_3110a0f1() -> None:
-    assert REFERENCE_COMMIT.startswith("3110a0f1")
-    assert sha256(REFERENCE_PATH.read_bytes()) == REFERENCE_SHA256
-
-
-@pytest.mark.skipif(not OPS_LIBRARY, reason="OPS_LIBRARY_PATH not set")
-def test_vendored_reference_matches_ops_library() -> None:
-    assert OPS_LIBRARY is not None
-    source = Path(OPS_LIBRARY, "roles", "traefik_deploy", "files", "traefik_transaction.py")
-
-    assert source.is_file(), f"{source} is gone; the port follows it"
-    assert source.read_bytes() == REFERENCE_PATH.read_bytes(), (
-        f"{source} changed since ops-library {REFERENCE_COMMIT[:8]}: port the change, re-run the parity tests, "
-        "then re-vendor it and update REFERENCE_SHA256 and REFERENCE_COMMIT"
-    )

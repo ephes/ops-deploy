@@ -1,0 +1,68 @@
+# Traefik configuration for Echoport
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    echoport-int:
+      rule: "Host(`echoport.home.example.invalid`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - echoport-headers
+        - echoport-gzip
+      service: echoport
+      tls: {}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    echoport-ext:
+      rule: "Host(`echoport.home.example.invalid`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - echoport-auth
+        - echoport-headers
+        - echoport-gzip
+      service: echoport
+      tls: {}
+
+    # HTTP to HTTPS redirect (handled by static config entrypoint redirect)
+    # This router exists on :80 (web) entrypoint
+    # Traefik's static config automatically redirects to web-secure (see /etc/traefik/traefik.toml)
+    echoport-http:
+      rule: "Host(`echoport.home.example.invalid`)"
+      entryPoints:
+        - web
+      service: echoport
+
+  middlewares:
+    echoport-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: true
+
+    echoport-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    echoport-gzip:
+      compress: {}
+
+  services:
+    echoport:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10018"

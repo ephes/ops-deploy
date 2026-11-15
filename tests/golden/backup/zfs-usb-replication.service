@@ -1,0 +1,10 @@
+[Unit]
+Description=ZFS USB replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+OnFailure=zfs-usb-replication-failure@%n.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=8h
+ExecStart=/usr/local/bin/zfs-usb-replication.sh

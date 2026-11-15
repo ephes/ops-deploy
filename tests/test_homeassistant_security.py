@@ -1,9 +1,7 @@
-"""Original policy parity and real isolated inspector execution, never HA."""
+"""Python security policy and real isolated inspector execution, never HA."""
 
 from __future__ import annotations
 
-import ast
-import hashlib
 import json
 import os
 import shlex
@@ -14,60 +12,25 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-import yaml
-from jinja2.nativetypes import NativeEnvironment
 from pyinfra.api import DeployError, OperationError
 
-from ops_deploy.services.homeassistant import security, security_policy
+from ops_deploy.services.homeassistant import security
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
-from ops_deploy.services.homeassistant.security_config import HomeAssistantSecurityConfig
 from ops_deploy.testing import run_deploy_fake
 from tests.fakehost import command_host
 
-FIXTURE = Path(__file__).parent / "parity/homeassistant/security"
 
-
-def test_original_function_bodies_programs_and_sources() -> None:
-    manifest = json.loads((FIXTURE / "source.json").read_text())
-    for name, item in manifest["files"].items():
-        body = (FIXTURE / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == item["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / item["source"]).read_bytes()
-    original = ast.parse((FIXTURE / "plugins__filter__python_security.py.txt").read_text())
-    actual = ast.parse(Path(security_policy.__file__).read_text())
-
-    def functions(tree: ast.Module) -> dict[str, str]:
-        return {n.name: ast.dump(n) for n in tree.body if isinstance(n, ast.FunctionDef)}
-
-    assert functions(actual) == functions(original)
-    for name in ("inspect_python_security.py", "inspect_ca_file.py"):
-        assert (
-            security._script(name) == (FIXTURE / ("roles__python_security_floor__files__" + name + ".txt")).read_text()
-        )
-
-
-def test_original_dependency_defaults_and_environment_selection() -> None:
-    values = yaml.safe_load((FIXTURE / "roles__python_security_floor__defaults__main.yml").read_text())
-    for name, value in HomeAssistantSecurityConfig().model_dump(mode="json").items():
-        assert value == values["python_security_floor_" + name], name
+def test_environment_selection() -> None:
     cfg = HomeAssistantRuntimeConfig(manage_matter_server=True, site_path="/srv/owned")
     assert [env.model_dump() for env in cfg.python_security_environments] == [
         {"path": "/srv/owned/.venv", "label": "Home Assistant environment"},
         {"path": "/srv/owned/.venv-matter-server", "label": "Matter server environment"},
     ]
+    without_matter = HomeAssistantRuntimeConfig(manage_matter_server=False, site_path="/srv/owned")
+    assert [env.model_dump() for env in without_matter.python_security_environments] == [
+        {"path": "/srv/owned/.venv", "label": "Home Assistant environment"}
+    ]
     assert HomeAssistantRuntimeConfig(python_security_environments=()).python_security_environments == ()
-    defaults = yaml.safe_load((FIXTURE.parent / "defaults.yml").read_text())
-    original = NativeEnvironment()
-    original.filters["bool"] = bool  # supplied values are actual booleans
-    for matter in (False, True):
-        actual = HomeAssistantRuntimeConfig(manage_matter_server=matter)
-        expected: Any = original.from_string(defaults["homeassistant_python_security_environments"]).render(
-            homeassistant_virtualenv_path=actual.virtualenv_path,
-            homeassistant_matter_server_virtualenv_path=actual.matter_server_virtualenv_path,
-            homeassistant_manage_matter_server=matter,
-        )
-        assert [env.model_dump() for env in actual.python_security_environments] == expected
 
 
 def report(version: str = "2026.10.19") -> dict[str, Any]:
@@ -199,9 +162,7 @@ def test_service_user_command_preserves_quoted_identity_and_isolation() -> None:
     ]
 
 
-def test_actual_original_lstat_counts_dangling_link_as_existing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_actual_lstat_counts_dangling_link_as_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def read(target: Any, command: str, **kwargs: Any) -> str:
         result = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=10)
         assert result.returncode == 0, result.stderr

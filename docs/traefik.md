@@ -281,7 +281,7 @@ falls back to the system disk:
   busy; a lazily detached one still receives it).
 
 Without the key the engine writes `prechange.tar.gz` exactly as the reference
-engine does (the parity tests run without it). A rebaseline reads the route
+engine did (the scenario tests run without it). A rebaseline reads the route
 files from the external archive the record's transaction names, under the same
 checks as a local one; when it is gone, the changed file names are
 `unavailable`, as before. ops-library's engine does not know the key: a
@@ -328,16 +328,15 @@ phase refusals, the program, runner and transport, and the external archive
 (mount checks, directory checks, the transaction refused before any write,
 the rebaseline reading it).
 
-`tests/test_traefik_tx_parity.py` (`inspect`, `binary`, `resume`) and
+`tests/test_traefik_tx_scenarios.py` (`inspect`, `binary`, `resume`) and
 `tests/test_traefik_tx_config.py` (`enroll`, `alias`, `metrics_bind`,
-`acme_storage`) run this engine and the reference one
-(vendored byte for byte under `tests/parity/traefik_deploy/`;
-`tests/test_traefik_tx_engine.py` checks it against `OPS_LIBRARY_PATH`)
-through the same requests on the same fake host. Results, refusals and the
-files left behind (records, transaction directory, binary) must be identical
-byte for byte, and so must identity, policy, evidence, archive, backup-set,
-probe, command-line, static-config validation, ACME store and TLS probe
-behaviour, compared function by function.
+`acme_storage`) run the engine through requests on a fake host and check the
+results, refusals and the files left behind (records, transaction directory,
+binary). Policy, evidence, record, archive, backup-set, probe, command-line,
+static-config validation, ACME store and TLS probe behaviour are tested
+function by function, their outcomes pinned in `tests/golden/traefik_tx/`
+(they were the reference engine's outcomes when the pins were recorded; a
+changed outcome is re-recorded with `OPS_DEPLOY_UPDATE_GOLDEN=1`, serially).
 
 ## Detached transactions
 
@@ -892,9 +891,8 @@ dropped before their other fields are read.
 The read-only ingress acceptance probes of the transaction workflow: the
 role's `health_probe_capture` and `health_probe` task entries, checked against
 ops-library `3110a0f1`. The probe program `infra/files/traefik_health_probe.py`
-is the role's `files/traefik_health_probe.py` byte for byte
-(`tests/test_ops_library_drift.py` compares it with `OPS_LIBRARY_PATH`), so
-both tools install the same program with the same SHA256 and a transaction
+was the role's `files/traefik_health_probe.py` byte for byte, so hosts keep
+the program and its SHA256 the Ansible role installed, and a transaction
 request can name it either way.
 
 ```python

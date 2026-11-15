@@ -1,0 +1,29 @@
+# Managed by Ansible (recorder_deploy). Do not edit on the host.
+[Unit]
+Description=Recorder application backend (recorderd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=recorder
+Group=recorder
+WorkingDirectory=/var/lib/recorder
+EnvironmentFile=/etc/recorder/recorder.env
+ExecStart=/opt/recorder/recorderd
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+# Hardening — the service writes only under its data dir (SQLite + scratch).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/recorder
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

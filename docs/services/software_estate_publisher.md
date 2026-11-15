@@ -29,7 +29,7 @@ deploy_software_estate_publisher(cfg=config, secrets=secrets)  # secrets["writer
 
 The programs are vendored unchanged from `roles/software_estate/files/` (stored
 as `files/<name>.py.txt`, installed as `<name>.py`), the
-templates from both roles' `templates/` (`tests/test_ops_library_drift.py`). The
+templates from both roles' `templates/`; ops-deploy owns these copies now. The
 release directory is the roles' content address: the sha256 of the five program
 texts, each with trailing whitespace stripped, joined in the order `publish.py`,
 `collect.py`, `emit.py`, `outbox.py`, `send.py` (Ansible's `lookup('file')`).

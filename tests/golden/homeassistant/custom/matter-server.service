@@ -1,0 +1,20 @@
+[Unit]
+Description=Matter Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ha_test
+Group=ha_test
+WorkingDirectory=/srv/ha
+Environment="PATH=/srv/ha/.venv-matter-server/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/ha_test"
+ExecStart=/srv/ha/.venv-matter-server/bin/matter-server --storage-path /srv/ha/data/matter-server --port 5580 --vendorid 65521 --fabricid 1 --log-level info
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

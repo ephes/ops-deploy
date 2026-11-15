@@ -299,7 +299,7 @@ def _names(path: PurePosixPath) -> list[str]:
 
 @cache
 def _spelled() -> dict[str, str]:
-    """Module texts with path segments joined: ``"parity" / "ansible"`` reads ``parity/ansible``."""
+    """Module texts with path segments joined: ``"golden" / "nyxmon"`` reads ``golden/nyxmon``."""
 
     joined = re.compile(r"[\"']\s*/\s*[\"']")
     return {module: joined.sub("/", text) for module, text in texts().items()}

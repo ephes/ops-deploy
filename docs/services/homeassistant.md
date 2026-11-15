@@ -76,8 +76,9 @@ Replacement preserves the original ordering: stop an existing Matter unit before
 an existing Home Assistant unit when replacing the old Home Assistant environment,
 even when Matter management is now disabled. Missing environments do not invent
 existing-unit stop actions. A malformed interpreter response remains an error.
-Tests evaluate the bound original task expressions over all combinations of these
-predicates. This is source parity, not an executed virtualenv or recovery proof;
+Tests check these decisions over all combinations of the predicates (the
+expressions the role used, written out literally). This is not an executed
+virtualenv or recovery proof;
 prepared host probes, UV/security and environment/package composition are
 described below. Service rollout and actual native recovery remain unfinished.
 
@@ -227,7 +228,7 @@ version after environment preparation. It binds the preceding environment
 operation during planning so a soon-to-be-replaced HA/chip environment is not
 imported. Execution queries fresh post-rebuild state. Original force, legacy HA
 rebuild, missing binary, explicit `==` drift and Matter chip-import repair
-predicates are shared with the source-bound policy oracle. Existing unpinned
+predicates are the ones the policy tests cover. Existing unpinned
 applications are not implicitly upgraded. The command preserves original
 service-user/HOME/site, shell-style package-spec argv parsing without a shell,
 and security constraints; invalid quoting fails before registering effects.
@@ -892,7 +893,8 @@ and independent overrides remain independent. These inputs do not disable the
 separate constraints-file write, security preflight or post-install checks.
 Application specifications and the suffix are parsed together with shell-style
 quoting, then executed as quoted argv without evaluating shell substitutions.
-This closes source input parity only; it adds no native or inventory evidence.
+`tests/test_homeassistant_constraint_overrides.py` keeps the resulting argv
+as a golden file; this adds no native or inventory evidence.
 
 The full prepared deployment also forwards `include_files` to the existing
 configuration component. Its original six-file default, explicit empty list,
@@ -966,8 +968,8 @@ The user, group and service name independently default to `homeassistant`. Home
 follows the user; site follows home; config/data/logs/bin and both virtualenv paths
 follow site. The unit path follows the service name. Explicit paths are retained;
 root and traversal paths are refused. The route and udev paths keep the original
-fixed defaults. The bound original defaults and task files live under
-`tests/parity/homeassistant/remove`.
+fixed defaults. Tests check that the removal defaults are the paths the deploy
+writes (the group, which does not follow the user here, excepted).
 
 For the normal systemd unit created by this role, service removal disables before
 stopping. A disable failure skips stop; either service failure permits the later
@@ -1028,11 +1030,7 @@ directory at the path is refused. Nothing restarts: the server starts the progra
 
 A non-default version needs its own checksums (the model refuses the default
 ones). To raise it, take the sha256 of both release assets, set version and
-checksums together, and update the role defaults in ops-library
-(`homeassistant_matter_server_ota_provider_*`) in the same change. The Ansible
-fallback (`tasks/matter_server.yml`) installs the same file with `get_url`, with
-the same guards (architecture, version/checksums, path); a symlink is replaced
-by a verified staged file (`mv -fT`), never removed first.
+checksums together.
 
 ## GPS Timeline and Location Timeline Card
 
@@ -1380,3 +1378,18 @@ the original host check program remains byte-identical, with its existing
 missing/mismatched-drop-in refusals. Stock callers continue using the stock digest.
 This callback preparation is not part of the frozen compatibility native
 full-matrix run and is not yet independently reviewed or qualified for adoption.
+
+## Golden host files
+
+`tests/test_homeassistant_golden.py` keeps the files this deploy writes to a
+host byte for byte under `tests/golden/homeassistant`: both units,
+`configuration.yaml`, `secrets.yaml`, the six include files, the Traefik
+route, the uv system-certificates drop-in and the udev rule, recorded from
+synthetic inputs when they still equalled the retired `homeassistant_deploy`
+role's output. A change to one rewrites that file on the next deploy (and
+restarts Home Assistant or Matter); record an intended change with
+`OPS_DEPLOY_UPDATE_GOLDEN=1` and review the diff. The prepared Assist pipeline
+definitions (`golden/homeassistant/pipelines`) and the uv install argv
+(`golden/homeassistant/install-argv.json`) are kept the same way. The owned
+application matrix (`tests/integration/homeassistant`) still bootstraps its
+guest with the original role; it is not part of `just test`.

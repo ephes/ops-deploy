@@ -37,9 +37,9 @@ clients outside the allowlist get Traefik's 404, never the redirect.
 The role's template is shipped unchanged, including its
 `# Managed by Ansible` header, and rendered like Ansible's `template` module
 (`trim_blocks`, trailing newline kept). The file is byte-identical to the
-role's for the same inputs (`tests/test_zellij_ingress.py` renders the
-vendored copy independently), so a host the role deployed sees no change on
-the first run unless its file differs.
+role's for the same inputs (`tests/test_zellij_ingress.py` pins the renders as
+golden files under `tests/golden/zellij_ingress`), so a host the role deployed
+sees no change on the first run unless its file differs.
 
 ## Configuration (`ZellijIngressConfig`)
 

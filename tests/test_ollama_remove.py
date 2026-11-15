@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from ops_deploy.services.ollama import OllamaRemoveConfig, remove_ollama
 from ops_deploy.testing import run_deploy_fake
 
-PARITY = Path(__file__).parent / "parity/ollama/remove"
 PLIST = "/Library/LaunchDaemons/com.ollama.ollama.plist"
 BREW = "cd / && /usr/bin/sudo -H -u jochen -- /usr/bin/env HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1"
 # What just remove-one ollama passes, with the macstudio inventory.
@@ -30,10 +24,6 @@ RECIPE = {
     "log_dir": "/var/log/ollama",
     "brew_user": "jochen",
 }
-
-
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
 
 
 def confirmed(**values: Any) -> OllamaRemoveConfig:
@@ -70,66 +60,21 @@ def host(
     return responses
 
 
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles() -> None:
-    defaults = role("defaults.yml")
+def test_defaults_keep_everything_but_the_service() -> None:
     cfg = OllamaRemoveConfig()
-    assert cfg.launchd_label == defaults["ollama_launchd_label"]
-    assert defaults["ollama_launchd_plist_path"] == "/Library/LaunchDaemons/{{ ollama_launchd_label }}.plist"
+    assert cfg.launchd_label == "com.ollama.ollama"
     assert cfg.launchd_plist_path == PLIST
     assert OllamaRemoveConfig(launchd_label="x.y").launchd_plist_path == "/Library/LaunchDaemons/x.y.plist"
-    for field in ("service_user", "service_group", "service_home", "models_dir", "log_dir", "brew_package"):
-        assert getattr(cfg, field) == defaults["ollama_" + field]
-    assert defaults["ollama_brew_user"] == defaults["ollama_brew_bin"] == ""
+    assert (cfg.service_user, cfg.service_group, cfg.brew_package) == ("ollama", "ollama", "ollama")
+    assert [str(cfg.service_home), str(cfg.models_dir), str(cfg.log_dir)] == [
+        "/usr/local/var/ollama",
+        "/usr/local/var/ollama/models",
+        "/usr/local/var/ollama/logs",
+    ]
     assert cfg.brew_user is None
     assert cfg.brew_bin is None
     for flag in ("data", "logs", "user", "brew_package"):
-        assert getattr(cfg, "remove_" + flag) is defaults["ollama_remove_" + flag] is False
-
-
-def test_role_task_order_is_the_ported_one() -> None:
-    tasks = role("tasks.yml")
-    names = [task["name"] for task in tasks]
-    assert names == [
-        "Validate macOS target",
-        "Validate required variables",
-        "Validate Homebrew user when running as root",
-        "Resolve Homebrew path when not provided",
-        "Use provided Homebrew binary path",
-        "Validate Homebrew binary path",
-        "Stop and unload launchd service",
-        "Remove launchd plist",
-        "Remove Ollama model data directory",
-        "Remove Ollama log directory",
-        "Remove Ollama service user",
-        "Remove Ollama service group",
-        "Uninstall Ollama Homebrew package",
-        "Display removal summary",
-    ]
-    bootout = tasks[6]
-    assert bootout["ansible.builtin.command"] == "launchctl bootout system {{ ollama_launchd_plist_path }}"
-    assert (bootout["failed_when"], bootout["changed_when"]) == (False, False)
-    assert tasks[10]["ansible.builtin.user"] == {
-        "name": "{{ ollama_service_user }}",
-        "state": "absent",
-        "remove": False,
-    }
-    assert tasks[12]["community.general.homebrew"]["state"] == "absent"
-    assert [
-        path["path"]
-        for path in (tasks[3]["block"][0]["ansible.builtin.stat"], tasks[3]["block"][1]["ansible.builtin.stat"])
-    ] == [
-        "/opt/homebrew/bin/brew",
-        "/usr/local/bin/brew",
-    ]
+        assert getattr(cfg, "remove_" + flag) is False
 
 
 def test_confirmation_precedes_every_probe() -> None:

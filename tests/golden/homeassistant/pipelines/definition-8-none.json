@@ -1,0 +1,16 @@
+{
+ "conversation_engine": "conversation.home_assistant",
+ "conversation_language": "de",
+ "id": "",
+ "language": "de",
+ "name": "Room",
+ "prefer_local_intents": false,
+ "preferred": true,
+ "stt_engine": "stt.first",
+ "stt_language": "de",
+ "tts_engine": "tts.first",
+ "tts_language": "de",
+ "tts_voice": "",
+ "wake_word_entity": null,
+ "wake_word_id": ""
+}

@@ -1,0 +1,1 @@
+deb [signed-by=/usr/share/keyrings/jellyfin-archive-keyring.gpg arch=arm64] https://repo.jellyfin.org/debian trixie main

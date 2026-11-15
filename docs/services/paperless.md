@@ -78,8 +78,9 @@ Historical native qualification below applies to 3.2.1 and the 3.0.4-to-3.2.1
 upgrade only. Neither it nor the original inventory adoption qualifies 3.4.2.
 
 The typed configuration retains the eight original role templates, with the
-removed ImageMagick settings deleted from the environment oracle cases: defaults, authenticated Redis,
-and a custom service account/storage root. Bash parsing of the resulting
+removed ImageMagick settings deleted. `tests/golden/paperless` records their
+renders (equal to the role's when recorded) for three cases: defaults,
+authenticated Redis, and a custom service account/storage root. Bash parsing of the resulting
 environment is also tested. These local checks do not qualify systemd, database,
 scanner or application behavior on Linux. The runtime remains pinned to the
 declared 3.4.2 release and Python 3.14.
@@ -371,8 +372,7 @@ scripts end to end with a fake `manage.py`, `pg_dump`/`psql` and stubbed
 ## Removal
 
 `remove_paperless(PaperlessRemoveConfig(confirm=True, ...))` ports the
-`paperless_remove` role at ops-library `44a532b` (role files under
-`tests/parity/paperless/remove`, digest in the drift manifest). Without
+`paperless_remove` role at ops-library `44a532b`. Without
 `confirm` it fails before any host probe. Every field has the role's default
 (`paperless_` dropped); destructive flags are opt-in as in the role, and
 `home_path`, `site_root`, `remove_virtualenv` and `remove_current_symlink`

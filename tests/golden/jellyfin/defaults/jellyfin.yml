@@ -1,0 +1,67 @@
+# Managed by Ansible - Traefik configuration for Jellyfin
+
+http:
+  routers:
+    jellyfin-int:
+      rule: "Host(`media.example.com`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - jellyfin-headers
+        - jellyfin-gzip
+      service: jellyfin
+      tls: {}
+
+    jellyfin-ext:
+      rule: "Host(`media.example.com`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - jellyfin-auth
+        - jellyfin-headers
+        - jellyfin-gzip
+      service: jellyfin
+      tls: {}
+
+    jellyfin-http:
+      rule: "Host(`media.example.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - jellyfin-redirect
+      service: jellyfin
+
+  middlewares:
+    jellyfin-auth:
+      basicAuth:
+        users:
+          - "ops:$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
+        removeHeader: True
+
+    jellyfin-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "media.example.com"
+
+    jellyfin-gzip:
+      compress: {}
+
+    jellyfin-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    jellyfin:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8096"

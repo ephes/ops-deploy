@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.helpers.traefik import route_guard_command
@@ -20,7 +17,6 @@ from ops_deploy.services.snappymail.remove import FIND, php_services
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/snappymail/remove"
 AVAILABLE = "/etc/nginx/sites-available/snappymail"
 ENABLED = "/etc/nginx/sites-enabled/snappymail"
 ROUTE = "/etc/traefik/dynamic/snappymail.yml"
@@ -28,78 +24,19 @@ POOL = "/etc/php/8.3/fpm/pool.d/snappymail.conf"
 SOCKET = "/run/php/php8.3-fpm-snappymail.sock"
 
 
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
-
-
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles() -> None:
-    defaults = role("defaults.yml")
-    shared = role("shared_defaults.yml")
-    cfg = SnappyMailRemoveConfig()
-    assert cfg.confirm is defaults["snappymail_confirm_removal"] is False
-    assert defaults["snappymail_remove_install_dir"] == "{{ snappymail_install_dir }}"
-    assert defaults["snappymail_remove_data_dir"] == "{{ snappymail_data_dir }}"
-    assert cfg.install_dir == shared["snappymail_install_dir"]
-    assert cfg.data_dir == shared["snappymail_data_dir"]
-    assert (cfg.user, cfg.group) == (shared["snappymail_user"], shared["snappymail_group"])
-    for field in ("nginx_site_path", "nginx_enabled_path", "traefik_config", "php_pools_glob", "php_socket_glob"):
-        assert getattr(cfg, field) == defaults["snappymail_remove_" + field], field
-
-
-def test_role_task_order_and_ignored_failures() -> None:
-    tasks = role("tasks.yml")
-    assert [task["name"] for task in tasks] == [
-        "Fail unless removal is confirmed",
-        "Find SnappyMail PHP-FPM pool configs",
-        "Derive PHP-FPM services from pool paths",
-        "Stop nginx (best effort)",
-        "Stop Traefik (best effort)",
-        "Stop PHP-FPM services (best effort)",
-        "Remove nginx site (available)",
-        "Remove nginx site (enabled)",
-        "Remove Traefik config",
-        "Remove PHP-FPM pool configs",
-        "Remove PHP-FPM sockets",
-        "Delete PHP-FPM sockets",
-        "Remove SnappyMail install directory",
-        "Remove SnappyMail data directory",
-        "Remove SnappyMail system user",
-        "Remove SnappyMail system group",
-        "Report SnappyMail removal completion",
-    ]
-    ignored = [index for index, task in enumerate(tasks) if task.get("ignore_errors")]
-    # The stops (not ported) and everything from the socket find on.
-    assert ignored == [3, 4, 5, 10, 11, 12, 13, 14, 15]
-    assert tasks[1]["ansible.builtin.find"] == {
-        "paths": "/etc/php",
-        "patterns": "{{ snappymail_remove_php_pools_glob | basename }}",
-        "recurse": True,
-        "file_type": "file",
+def test_defaults() -> None:
+    assert SnappyMailRemoveConfig().model_dump(mode="json") == {
+        "confirm": False,
+        "data_dir": "/mnt/cryptdata/snappymail",
+        "group": "snappymail",
+        "install_dir": "/opt/snappymail",
+        "nginx_enabled_path": "/etc/nginx/sites-enabled/snappymail",
+        "nginx_site_path": "/etc/nginx/sites-available/snappymail",
+        "php_pools_glob": "/etc/php/*/fpm/pool.d/snappymail.conf",
+        "php_socket_glob": "/run/php/*snappymail*.sock",
+        "traefik_config": "/etc/traefik/dynamic/snappymail.yml",
+        "user": "snappymail",
     }
-    assert tasks[10]["ansible.builtin.find"]["paths"] == "/run/php"
-    assert tasks[10]["ansible.builtin.find"]["file_type"] == "any"
-    assert tasks[14]["ansible.builtin.user"]["remove"] is True
-    assert [(t["notify"]) for t in tasks if "notify" in t] == [
-        "reload nginx",
-        "reload nginx",
-        "reload traefik",
-        "reload php-fpm",
-    ]
-    handlers = role("handlers.yml")
-    assert [(h["name"], h["ansible.builtin.systemd"]["state"], h["ignore_errors"]) for h in handlers] == [
-        ("reload nginx", "reloaded", True),
-        ("reload traefik", "reloaded", True),
-        ("reload php-fpm", "reloaded", True),
-    ]
 
 
 def test_php_services_are_derived_from_fpm_pools_only() -> None:

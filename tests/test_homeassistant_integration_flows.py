@@ -274,13 +274,7 @@ def test_actual_sdk_plan_apply_shared_readiness_and_strict_repeat(
 
 @pytest.mark.parametrize("domain", ["matter", "otbr", "wyoming"])
 @pytest.mark.parametrize("case", ["missing", "unrelated", "current", "later-current", "wrong-port-type"])
-def test_original_task_selector_expression_matches_host_result(tmp_path: Path, domain: str, case: str) -> None:
-    import base64
-
-    import jinja2
-    import yaml
-    from jinja2.nativetypes import NativeEnvironment
-
+def test_existing_entry_selection_decides_whether_a_flow_is_needed(tmp_path: Path, domain: str, case: str) -> None:
     value = payload(tmp_path, domain)
     current = {"domain": domain, "entry_id": "current", "data": value["desired"]}
     other = {"domain": domain, "entry_id": "other", "data": {"url": "ws://old", "host": "old", "port": 1}}
@@ -293,48 +287,12 @@ def test_original_task_selector_expression_matches_host_result(tmp_path: Path, d
             {"domain": domain, "entry_id": "wrong-type", "data": {"host": "owned-wyoming", "port": "10300"}}
         ],
     }[case]
-    fixture = Path(__file__).parent / "parity/homeassistant/integration-flows"
-    tasks = yaml.safe_load((fixture / f"{domain}.yml").read_text())
-    expression = next(task["ansible.builtin.set_fact"] for task in tasks if task["name"].startswith("Extract existing"))
-    template = next(iter(expression.values()))
-    env = NativeEnvironment(undefined=jinja2.ChainableUndefined)
-    env.filters["b64decode"] = lambda text: base64.b64decode(text).decode()
-    env.filters["from_json"] = json.loads
-    context = {
-        "_ha_config_entries_raw": {
-            "content": base64.b64encode(json.dumps({"data": {"entries": entries}}).encode()).decode()
-        },
-        "homeassistant_wyoming_host": "owned-wyoming",
-        "homeassistant_wyoming_port": 10300,
-    }
-    selected = env.from_string(template).render(**context)
-    expected = len(selected) == 0 if domain == "wyoming" else selected != value["desired"]["url"]
+    # Only the first entry of a URL domain counts; Wyoming accepts any entry with its host and integer port.
+    expected = case not in ("current", "later-current") or (case == "later-current" and domain != "wyoming")
     registry(tmp_path, entries)
     result = flow.run(value)
     assert result["success"]
     assert result["needed"] is expected
-
-
-def test_original_flow_source_hashes_and_ready_defaults() -> None:
-    import hashlib
-    import os
-
-    import yaml
-
-    from ops_deploy.services.homeassistant.integration_flows import HomeAssistantApiConfig
-
-    fixture = Path(__file__).parent / "parity/homeassistant/integration-flows"
-    manifest = json.loads((fixture / "source.json").read_text())
-    for relative, row in manifest["files"].items():
-        assert hashlib.sha256((fixture / row["fixture"]).read_bytes()).hexdigest() == row["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            original = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/homeassistant_deploy" / relative
-            assert hashlib.sha256(original.read_bytes()).hexdigest() == row["sha256"]
-    defaults = yaml.safe_load((fixture / "defaults.yml").read_text())
-    cfg = HomeAssistantApiConfig()
-    for key in ("timeout", "validate_certs", "retries", "retry_delay", "forwarded_for", "forwarded_proto"):
-        assert getattr(cfg, key) == defaults["homeassistant_api_" + key]
-    assert cfg.url.get_secret_value() == "http://localhost:" + str(defaults["homeassistant_app_port"])
 
 
 @pytest.mark.parametrize(

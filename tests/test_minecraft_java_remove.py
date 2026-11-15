@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
@@ -12,14 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from ops_deploy.services.minecraft_java import MinecraftJavaRemoveConfig, remove_minecraft_java
 from ops_deploy.services.minecraft_java.remove import CRON, CRON_NAME
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/minecraft_java/remove"
 UNIT = "/etc/systemd/system/minecraft-java.service"
 CRONTAB = "/var/spool/cron/crontabs/minecraft"
 
@@ -28,62 +25,17 @@ def confirmed(**values: Any) -> MinecraftJavaRemoveConfig:
     return MinecraftJavaRemoveConfig(confirm_removal=True, **values)
 
 
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
-
-
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-def test_defaults_are_the_roles() -> None:
-    defaults = role("defaults.yml")
+def test_defaults() -> None:
     cfg = MinecraftJavaRemoveConfig()
-    assert cfg.confirm_removal is defaults["minecraft_java_confirm_removal"] is False
-    for field in ("user", "group", "home", "service_name", "port", "rcon_port"):
-        assert getattr(cfg, field) == defaults["minecraft_java_" + field]
-    assert list(cfg.firewall_allowed_networks) == defaults["minecraft_java_firewall_allowed_networks"]
-
-
-def test_role_task_order_and_ignored_failures_are_the_ported_ones() -> None:
-    tasks = role("tasks.yml")
-    modules = [next(key for key in task if key.startswith(("ansible.", "community."))) for task in tasks]
-    assert modules == [
-        "ansible.builtin.assert",
-        "ansible.builtin.debug",
-        "ansible.builtin.systemd",  # stop
-        "ansible.builtin.systemd",  # disable
-        "ansible.builtin.file",  # unit
-        "ansible.builtin.systemd",  # daemon_reload
-        "ansible.builtin.cron",
-        "ansible.builtin.shell",  # pkill
-        "ansible.builtin.file",  # home
-        "ansible.builtin.user",
-        "ansible.builtin.group",
-        "community.general.ufw",
-        "community.general.ufw",
-        "ansible.builtin.debug",
-    ]
-    ignored = [index for index, task in enumerate(tasks) if task.get("ignore_errors")]
-    assert ignored == [2, 3, 6, 7, 10, 11, 12]
-    assert tasks[2]["ansible.builtin.systemd"] == {"name": "{{ minecraft_java_service_name }}", "state": "stopped"}
-    assert tasks[3]["ansible.builtin.systemd"] == {"name": "{{ minecraft_java_service_name }}", "enabled": False}
-    assert tasks[4]["notify"] == "reload systemd"
-    assert tasks[6]["ansible.builtin.cron"]["name"] == CRON_NAME
-    assert tasks[9]["ansible.builtin.user"]["remove"] is True
-    assert tasks[11]["community.general.ufw"]["rule"] == "allow"
-    assert tasks[12]["community.general.ufw"] == {
-        "rule": "deny",
-        "port": "{{ minecraft_java_rcon_port }}",
-        "proto": "tcp",
-        "delete": True,
-    }
-    assert role("handlers.yml") == [{"name": "reload systemd", "ansible.builtin.systemd": {"daemon_reload": True}}]
+    assert cfg.confirm_removal is False
+    assert (cfg.user, cfg.group, cfg.home, cfg.service_name) == (
+        "minecraft",
+        "minecraft",
+        "/home/minecraft",
+        "minecraft-java",
+    )
+    assert (cfg.port, cfg.rcon_port) == (25565, 25575)
+    assert list(cfg.firewall_allowed_networks) == ["192.168.0.0/16", "10.0.0.0/8", "100.64.0.0/10"]
 
 
 def test_confirmation_precedes_every_target_probe() -> None:

@@ -1,11 +1,11 @@
 """jellyfin: the Jellyfin media server from its upstream apt repository, behind Traefik.
 
 Port of the ``jellyfin_deploy`` Ansible role (with its ``jellyfin_shared``
-defaults). Deploy only: backup, restore and remove stay with the Ansible
-roles. The role's Traefik template is shipped unchanged and rendered the way
-Ansible's ``template`` module renders it, so the route is byte-identical to
-the role's (``tests/test_jellyfin_parity.py``), and the deployed bcrypt hash
-is kept while it still matches the password, as the role does since
+defaults). Deploy only: backup, restore and remove stay with the Ansible roles.
+The role's Traefik template is shipped unchanged and rendered the way Ansible's
+``template`` module renders it, so the route is byte-identical to the retired
+role's (goldens: ``tests/test_jellyfin_golden.py``), and the deployed bcrypt
+hash is kept while it still matches the password, as the role does since
 ops-library 2.49.1. Jellyfin itself is never restarted (the role has no task
 that notifies its restart handler) and Traefik neither (its file provider
 watches the directory). Not in the role: with ``mounts_required`` the packaged

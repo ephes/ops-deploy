@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pool="tank"
+spindown_device_count=1
+
+spindown_devices=(
+  "/dev/disk/by-id/owned"
+)
+
+if [[ -n "${pool}" ]]; then
+  if command -v zpool >/dev/null 2>&1; then
+    stats=$(zpool iostat -H -p "${pool}" 1 2 | tail -n 1 || true)
+    if [[ -n "${stats}" ]]; then
+      read -r _pool _alloc _free read_ops write_ops read_bytes write_bytes <<<"${stats}"
+      if [[ "${read_ops:-0}" != "0" || "${write_ops:-0}" != "0" || "${read_bytes:-0}" != "0" || "${write_bytes:-0}" != "0" ]]; then
+        logger -t zfs-usb-spindown "Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); skipping spindown."
+        exit 0
+      fi
+    fi
+  fi
+fi
+
+if [[ "${spindown_device_count}" -eq 0 ]]; then
+  logger -t zfs-usb-spindown "No spindown devices configured; skipping."
+  exit 0
+fi
+
+for dev in "${spindown_devices[@]}"; do
+  if [[ -b "${dev}" ]]; then
+    # Avoid redundant standby commands for already-sleeping disks.
+    if command -v smartctl >/dev/null 2>&1; then
+      smart_out="$(smartctl -n standby "${dev}" 2>&1 || true)"
+      if grep -q "STANDBY mode" <<<"${smart_out}"; then
+        continue
+      fi
+    fi
+    if ! hdparm -y "${dev}" >/dev/null 2>&1; then
+      logger -t zfs-usb-spindown "hdparm failed for ${dev}"
+    fi
+  else
+    logger -t zfs-usb-spindown "Device ${dev} not found; skipping."
+  fi
+done

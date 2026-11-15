@@ -1,0 +1,70 @@
+# Managed by Ansible - Traefik configuration for Voxhelm private ingress
+
+http:
+  routers:
+    voxhelm-internal-api:
+      rule: "Host(`voxhelm.example.invalid`) && (Path(`/v1/internal`) || PathPrefix(`/v1/internal/`))"
+      entryPoints:
+        - web-secure
+      priority: 200
+      middlewares:
+        - voxhelm-internal-api-allowlist
+        - voxhelm-headers
+        - voxhelm-gzip
+      service: voxhelm
+      tls:
+        certResolver: letsencrypt
+
+    voxhelm-secure:
+      rule: "Host(`voxhelm.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - voxhelm-headers
+        - voxhelm-gzip
+      service: voxhelm
+      tls:
+        certResolver: letsencrypt
+
+    voxhelm-http:
+      rule: "Host(`voxhelm.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web
+      middlewares:
+        - voxhelm-redirect
+      service: voxhelm
+
+  middlewares:
+    voxhelm-internal-api-allowlist:
+      ipAllowList:
+        sourceRange:
+          - "100.64.0.0/10"
+
+    voxhelm-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # Voxhelm itself answers X-Frame-Options: DENY. Traefik replaces the
+        # backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "voxhelm.example.invalid"
+
+    voxhelm-gzip:
+      compress: {}
+
+    voxhelm-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    voxhelm:
+      loadBalancer:
+        servers:
+          - url: "http://backend.invalid:8787"

@@ -1,0 +1,10 @@
+# Opaq app environment - managed by Ansible, do not edit
+DJANGO_SETTINGS_MODULE=opaq_app.settings
+DJANGO_SECRET_KEY=opaq-parity-key-abcdefghijabcdefghijabcdefghijabcdefghij
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=opaq.example.com,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://opaq.example.com
+OPAQ_DATABASE_PATH=/home/opaq-app/data/db.sqlite3
+DJANGO_STATIC_ROOT=/home/opaq-app/static
+OPAQ_UPLOAD_TOKEN_SHA256=5aa572ccbac9029c4f2413ed2bb6eef2c24d6f722519209ef2e37da3493c5eba
+PYTHONPATH=/home/opaq-app/site/src:/home/opaq-app/site/services/opaq_app

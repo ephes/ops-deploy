@@ -51,7 +51,7 @@ the helper, which emits fixed result categories. The original configured MinIO
 admin alias must already exist. This component does not list objects, read
 object contents, or restart any application or retired LaunchAgent.
 
-Validation includes original role byte/default oracles, managed repeat planning,
+Validation includes managed repeat planning,
 owned identity/drift/failure tests and a disposable Ubuntu fixture. The fixture
 runs the real helper, file operations, private lock and stdin transport against
 a local fake `mc`; it proves these mechanisms without claiming production

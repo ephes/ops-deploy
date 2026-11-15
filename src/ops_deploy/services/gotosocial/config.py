@@ -1,7 +1,6 @@
 """``GotosocialConfig``: the ``gotosocial_deploy`` role's variables, without the prefix.
 
-Defaults follow the role's ``defaults/main.yml`` (``tests/test_gotosocial_parity.py``
-compares them with the role when ``OPS_LIBRARY_PATH`` is set). The role's
+Defaults follow the retired role's ``defaults/main.yml``. The role's
 ``validate.yml`` assertions are model validators here, so a config the role
 would refuse fails on the controller before any connection. Values that end up
 in the unit, the admin wrapper (a ``sh`` script) or the Traefik route are

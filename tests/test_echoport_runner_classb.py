@@ -55,6 +55,7 @@ from ops_deploy.services._echoport_runner.target import (
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests import test_echoport_runner_registration as a1
+from tests.echoport_runner_data import INPUTS
 from tests.test_echoport_runner_target import DB, Field, Manager, Model, QuerySet, Transactions, jwt
 
 # -- a stand-in for Echoport's BackupTarget with every field the scripts write ----------------
@@ -1020,7 +1021,7 @@ def remote(name: str, **changes: Any) -> Any:
     from ops_deploy.services._echoport_runner.access import KnownHost, MinioAccess, WorkDir
     from ops_deploy.services._echoport_runner.registration import DeployRunnerRegistration
 
-    inputs = dict(json.loads((a1.PARITY / "inputs.json").read_text())["runners"][name]["inputs"])
+    inputs = dict(INPUTS[name]["inputs"])
     work = next(v for k, v in inputs.items() if k.endswith("_work_dir"))
     script, values = REMOTE_VALUES[name]
     tasks = REMOTE_TASKS[name]
@@ -1034,7 +1035,7 @@ def remote(name: str, **changes: Any) -> Any:
             service=name,
             description=f"{name} runner",
             steps=("init", "upload", "result"),
-            template=json.loads((a1.PARITY / "inputs.json").read_text())["runners"][name]["template"],
+            template=INPUTS[name]["template"],
         ),
         "access": MinioAccess(
             target=name.removesuffix("-backup"),

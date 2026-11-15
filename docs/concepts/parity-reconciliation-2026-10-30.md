@@ -1,5 +1,10 @@
 # Role parity reconciliation — 2026-10-30
 
+!!! note "Historical record"
+    The drift manifest, the parity tests and `tests/parity/` named below were
+    retired once every deploy ran on pyinfra (see the changelog); rendered host
+    files are now pinned by [golden tests](testing.md#golden-host-files).
+
 Reviewed the twelve baseline failures against ops-library
 `2adca51d` (the immutable full revision is recorded per role in
 `tests/parity/ops_library_roles.json`). Only the ten changed role digests

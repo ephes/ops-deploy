@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect thermal metrics every 300 seconds
+
+[Timer]
+# OnActiveSec= provides an independent activation anchor if the boot trigger is
+# already exhausted or service activation history is unavailable. OnCalendar=
+# is the Persistent= wall-clock backstop.
+OnBootSec=75
+OnActiveSec=300
+OnUnitActiveSec=300
+OnCalendar=*:0/5
+AccuracySec=10
+RandomizedDelaySec=15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

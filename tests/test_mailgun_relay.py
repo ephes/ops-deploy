@@ -1,4 +1,4 @@
-"""Real archive lifecycle failures, retained fallback and authoritative render parity."""
+"""Real archive lifecycle failures, retained fallback and the rendered relay files."""
 
 from __future__ import annotations
 
@@ -118,19 +118,6 @@ def test_role_defaults_and_templates() -> None:
     assert "basicAuth" not in route
     assert "stsPreload" not in route
     assert "maxRequestBodyBytes: 26214400" in route
-
-
-def test_optional_actual_role_template_bytes() -> None:
-    library = os.environ.get("OPS_LIBRARY_PATH")
-    if not library:
-        pytest.skip("OPS_LIBRARY_PATH not set")
-    packaged = Path(__file__).parents[1] / "src/ops_deploy/services/mailgun_relay/templates"
-    count = 0
-    for role in ("mailgun_relay_deploy", "mailgun_relay_ingress_deploy"):
-        for template in (Path(library) / "roles" / role / "templates").glob("*.j2"):
-            assert template.read_bytes() == (packaged / template.name).read_bytes()
-            count += 1
-    assert count == 5
 
 
 def test_ingress_guards_changed_route_and_skips_unchanged() -> None:

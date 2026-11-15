@@ -212,13 +212,6 @@ def test_shell_basics_include_overrides_five_fields() -> None:
 # -- rendering --------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-@pytest.mark.parametrize("name", sorted(path.name for path in PACKAGE_TEMPLATES.iterdir()))
-def test_templates_are_the_roles(name: str) -> None:
-    role = Path(os.environ["OPS_LIBRARY_PATH"], "roles/vibe_coding_deploy/templates", name)
-    assert (PACKAGE_TEMPLATES / name).read_bytes() == role.read_bytes()
-
-
 def test_rendered_files(tmp_path: Path) -> None:
     config = cfg(tmp_path, ssh_authorized_keys=(KEY, "ssh-rsa AAAAB3Nza second"))
     assert render("authorized_keys.j2", config) == (

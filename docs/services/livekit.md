@@ -95,7 +95,8 @@ of the rewritten config files. No image is pulled when the pins are the
 running images, and the route is unchanged. `egress.yaml` goes to `0640` if
 an older role run left it `0644`. The next run changes nothing.
 
-Differences from the role's files (`tests/test_livekit_parity.py`):
+Differences from the role's files (`tests/test_livekit_golden.py` keeps the
+port's files as they are on the host, against `tests/golden/livekit`):
 
 | File | Role | Port |
 |---|---|---|

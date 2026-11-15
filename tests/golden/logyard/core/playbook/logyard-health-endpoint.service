@@ -1,0 +1,27 @@
+[Unit]
+Description=Logyard health endpoint
+After=network-online.target logyard.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=logyard
+Group=logyard
+ExecStart=/usr/bin/python3 /usr/local/bin/logyard_health_httpd.py
+Restart=always
+RestartSec=5
+Environment=LOGYARD_HEALTH_BIND=127.0.0.1
+Environment=LOGYARD_HEALTH_PORT=9105
+Environment=LOGYARD_HEALTH_PATH=/.well-known/logyard
+Environment=LOGYARD_LOKI_URL=http://127.0.0.1:3101
+Environment="LOGYARD_HEALTH_SELECTOR={host=\"macmini\",source_type=\"journald\"}"
+Environment=LOGYARD_WARNING_WINDOW_SECONDS=900
+Environment=LOGYARD_CRITICAL_WINDOW_SECONDS=3600
+Environment=LOGYARD_REQUEST_TIMEOUT_SECONDS=10
+Environment=LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS=5
+# Base64 so the JSON survives systemd verbatim. Environment= resolves `%` specifiers
+# and backslash escapes, either of which would corrupt a raw JSON payload.
+Environment=LOGYARD_HEALTH_UNITS_B64=W3siaWQiOiAidmVjdG9yIiwgInVuaXQiOiAidmVjdG9yLnNlcnZpY2UifV0=
+
+[Install]
+WantedBy=multi-user.target

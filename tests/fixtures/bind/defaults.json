@@ -1,0 +1,12 @@
+{
+  "distribution": "Ubuntu",
+  "major_version": 24,
+  "config": {
+    "zones": [
+      {
+        "name": "example.org",
+        "file": "db.example.org"
+      }
+    ]
+  }
+}

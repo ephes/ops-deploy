@@ -1,16 +1,13 @@
-"""Original role command/order oracle and owned state machine controls only."""
+"""Photos offload command order and the owned state machine controls."""
 
 from __future__ import annotations
 
-import os
 import runpy
 from importlib.resources import files
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import yaml
 
 M: dict[str, Any] = runpy.run_path(
     str(files("ops_deploy.services.daybook_photos_offload").joinpath("files/photos_controls.py"))
@@ -51,25 +48,6 @@ class Runner:
 
 def controls(runner: Runner) -> Any:
     return M["PhotosControls"]({"uid": 501, "label": "example.owned.photos", "plist": "/owned/photos.plist"}, runner)
-
-
-def test_original_role_exact_command_order_oracle() -> None:
-    root = os.environ.get("OPS_LIBRARY_PATH")
-    if not root:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    tasks = yaml.safe_load((Path(root) / "roles/daybook_photos_offload_deploy/tasks/main.yml").read_text())
-    names = [row["name"] for row in tasks]
-    assert names.index("quiesce | Disable Photos offload before changing deployment state") < names.index(
-        "quiesce | Boot out the exact loaded Photos offload service"
-    )
-    activate = next(
-        row for row in tasks if row["name"] == "activate | Enable and verify Photos offload with fail-closed rescue"
-    )
-    assert [row["ansible.builtin.command"]["argv"][1] for row in activate["rescue"][:2]] == ["disable", "bootout"]
-    runner = Runner()
-    controls(runner).quiesce()
-    assert [argv[1] for argv in runner.calls if argv[1] in {"disable", "bootout"}] == ["disable", "bootout"]
-    assert all(argv[-1] == "gui/501/example.owned.photos" for argv in runner.calls if argv[1] in {"disable", "bootout"})
 
 
 def test_disabled_absent_repeat_and_unknown_errors_are_distinct() -> None:

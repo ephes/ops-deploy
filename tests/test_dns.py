@@ -12,6 +12,7 @@ from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.services.dns.config import DnsConfig
 from ops_deploy.services.dns.deploy import configuration_command, validate_secrets
 from ops_deploy.services.dns.render import configuration, render, role_vars
+from tests.goldens import assert_golden
 
 
 def test_root_forwarder_and_record_validation() -> None:
@@ -203,14 +204,37 @@ def test_include_graph_copies_external_and_nonconf_dependencies(tmp_path: Path) 
     assert external.read_text() == 'server:\n include: "/var/lib/unbound/nested.data"\n'
 
 
-def test_shipped_role_resource_bytes_match_recorded_digests() -> None:
-    # Portable default-suite coverage, plus upstream drift checks with OPS_LIBRARY_PATH.
-    manifest = json.loads((Path(__file__).parent / "parity/dns_resources.json").read_text())
-    package = Path(__file__).parents[1] / "src/ops_deploy/services/dns"
-    import hashlib
+GOLDEN = Path(__file__).parent / "golden" / "dns"
+GOLDEN_CONFIGS = {
+    "defaults": DnsConfig(),
+    "ddns-forwards-records": DnsConfig(
+        ddns_enabled=True,
+        endpoint={"secrets": SecretRef("fixture.yml"), "auth_user": "metrics"},
+        local_domain="home.example",
+        split_lan_network="192.0.2.0/24",
+        blocklists=("https://blocklist.example/hosts",),
+        forward_zones=({"name": "corp.example", "forward_addrs": ["192.0.2.53"]},),
+        local_records=({"name": "nas.home.example", "type": "A", "value": "192.0.2.20"},),
+    ),
+}
+# ddns.env carries the TSIG secret; its keys are checked elsewhere.
+GOLDEN_TEMPLATES = sorted(
+    path.name
+    for path in (Path(__file__).parents[1] / "src/ops_deploy/services/dns/templates").glob("*.j2")
+    if path.name != "ddns.env.j2"
+)
 
-    for name, digest in manifest.items():
-        assert hashlib.sha256((package / name).read_bytes()).hexdigest() == digest
+
+@pytest.mark.parametrize("name", GOLDEN_CONFIGS)
+def test_host_files_are_golden(name: str) -> None:
+    """Unbound's config, resolv.conf, the DDNS config and units: a changed byte restarts a resolver."""
+
+    cfg = GOLDEN_CONFIGS[name]
+    variables = role_vars(cfg, "192.0.2.1", "100.64.0.1", 4)
+    for template in GOLDEN_TEMPLATES:
+        if template == "ddns-status-endpoint.service.j2" and cfg.endpoint is None:
+            continue
+        assert_golden(GOLDEN / name / template.removesuffix(".j2"), render(template, variables))
 
 
 def test_native_trace_detects_ephemeral_writes_without_matching_source_argv(monkeypatch: pytest.MonkeyPatch) -> None:

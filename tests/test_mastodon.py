@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import route_guard_command
 from ops_deploy.services.mastodon import MastodonConfig, deploy_mastodon
-from ops_deploy.services.mastodon.render import SECRET_KEYS, render, render_env, role_vars
+from ops_deploy.services.mastodon.render import SECRET_KEYS, render, render_env
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
 TEMPLATES = Path(__file__).parents[1] / "src/ops_deploy/services/mastodon/templates"
+GOLDEN = Path(__file__).parent / "golden" / "mastodon"
 SOURCE_FILES = ("Gemfile.lock", "yarn.lock", "package.json", ".ruby-version", ".nvmrc")
 
 
@@ -149,21 +149,6 @@ def test_environment_keeps_default_account_and_storage_contract() -> None:
     assert "{{" not in text
 
 
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set for fresh-role parity")
-def test_templates_and_selected_defaults_match_fresh_role() -> None:
-    root = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles"
-    for template in TEMPLATES.glob("*.j2"):
-        role = "mastodon_maintenance" if template.name.startswith("maintenance.") else "mastodon_deploy"
-        name = "mastodon-" + template.name if role == "mastodon_maintenance" else template.name
-        assert template.read_bytes() == (root / role / "templates" / name).read_bytes()
-    defaults = yaml.safe_load((root / "mastodon_shared/defaults/main.yml").read_text())
-    defaults.update(yaml.safe_load((root / "mastodon_deploy/defaults/main.yml").read_text()))
-    vendored = json.loads((TEMPLATES / "defaults.json").read_text())
-    for name, value in vendored.items():
-        assert defaults[name] == value
-    assert role_vars(config())["mastodon_runtime_path"].startswith("/srv/mastodon/.nvm/versions/node/v24.17.0/bin:")
-
-
 @pytest.mark.parametrize(
     "template",
     [
@@ -176,15 +161,14 @@ def test_templates_and_selected_defaults_match_fresh_role() -> None:
         "mastodon.env.j2",
     ],
 )
-def test_render_matches_ansible_fixture(template: str) -> None:
-    # ansible-core 2.21, fresh ops-library 3110a0f1 / 2.68.0.
-    fixture = Path(__file__).parent / "parity/mastodon_existing" / (template + ".rendered")
+def test_render_matches_golden(template: str) -> None:
+    # The files on the existing install (recorded from ops-library 3110a0f1 / 2.68.0, as deployed).
     actual = (
         render_env(config(), secrets()).reveal().decode()
         if template == "mastodon.env.j2"
         else render(config(), template)
     )
-    assert actual == fixture.read_text()
+    assert_golden(GOLDEN / template.removesuffix(".j2"), actual)
 
 
 def test_supplied_secret_is_never_interpreted_as_template() -> None:

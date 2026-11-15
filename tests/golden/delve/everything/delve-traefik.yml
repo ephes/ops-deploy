@@ -1,0 +1,53 @@
+# Managed by Ansible (delve_deploy) - Traefik dynamic config for delve
+# HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
+http:
+  routers:
+    delve:
+      # /admin never falls through to this public router: if Traefik drops the
+      # admin router or its allowlist, /admin answers 404 instead of the login.
+      rule: "Host(`delve.example.com`) && !(Path(`/admin`) || PathPrefix(`/admin/`))"
+      service: delve
+      entryPoints:
+        - "web-secure"
+        - "internal"
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - delve-headers
+
+    # The operator dashboard only answers the LAN and the tailnet; any other
+    # source gets 403 from Traefik before the admin login.
+    delve-admin:
+      rule: "Host(`delve.example.com`) && (Path(`/admin`) || PathPrefix(`/admin/`))"
+      priority: 200
+      service: delve
+      entryPoints:
+        - "web-secure"
+        - "internal"
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - delve-admin-allowlist
+        - delve-headers
+
+  middlewares:
+    delve-admin-allowlist:
+      ipAllowList:
+        sourceRange:
+          - "100.64.0.0/10"
+          - "fd7a:115c:a1e0::/48"
+    delve-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
+  services:
+    delve:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10099"

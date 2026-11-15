@@ -1,0 +1,37 @@
+[Unit]
+Description=Read-only static site static-site
+After=network.target
+
+[Service]
+Type=simple
+User=static-site
+Group=static-site
+ExecStart=/usr/bin/python3 /usr/local/libexec/static-site-httpd.py
+Restart=on-failure
+RestartSec=2
+UMask=0027
+TasksMax=128
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadOnlyPaths=/srv/static-sites/static-site
+
+[Install]
+WantedBy=multi-user.target

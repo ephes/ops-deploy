@@ -1,17 +1,12 @@
 """ops_deploy.helpers.rust_release: the pyinfra side of ops-library's rust_release_binary (F4).
 
-Three layers:
+Two layers:
 
 - the host script (``templates/rust_release_host.py.txt`` after the vendored
   decisions) run locally against a temporary install root with fake release
   archives, as root would run it on a host (owner/group are the test user,
   ``--version`` runs without ``runuser``);
-- the operations the helpers plan, against the fake connector;
-- with ``OPS_LIBRARY_PATH`` (an ops-library checkout) and ``ansible-playbook``,
-  the role ``rust_release_binary`` itself on a twin tree with the same steps:
-  the trees must end up byte-identical (version directories, ``.archive-sha256``,
-  current and ``.previous`` pins, modes) and prune must keep and remove the same
-  versions, including ``protect`` entries and the fail-closed cases.
+- the operations the helpers plan, against the fake connector.
 """
 
 from __future__ import annotations
@@ -19,7 +14,6 @@ from __future__ import annotations
 import grp
 import hashlib
 import io
-import json
 import os
 import pwd
 import shlex
@@ -155,7 +149,6 @@ def box(tmp_path: Path) -> Host:
 
 
 def test_host_script_starts_with_the_vendored_decisions() -> None:
-    # tests/test_ops_library_drift.py compares the vendored copy with ops-library's.
     assert HOST_SCRIPT.startswith(VENDORED.read_text())
     assert "def rust_release_prune_plan(" in HOST_SCRIPT
     assert "\nimport ansible" not in HOST_SCRIPT
@@ -828,161 +821,6 @@ def test_install_failed_reads_the_operation_output() -> None:
     assert not Install(Op(True, ["installed /opt/x/1.0.0/x"]), "").failed()  # type: ignore[arg-type]
     assert Install(Op(True, ["failed bad"]), "").failed()  # type: ignore[arg-type]
     assert Install(Op(False, []), "").failed()  # type: ignore[arg-type]
-
-
-# -- the same files and decisions as ops-library's role ------------------------------
-
-OPS_LIBRARY = os.environ.get("OPS_LIBRARY_PATH")
-needs_role = pytest.mark.skipif(
-    not OPS_LIBRARY or shutil.which("ansible-playbook") is None,
-    reason="OPS_LIBRARY_PATH or ansible-playbook not set up",
-)
-
-
-def snapshot(root: Path) -> dict[str, Any]:
-    """Every path below ``root`` with its type, mode and (for files) bytes."""
-
-    tree: dict[str, Any] = {}
-    for path in sorted(root.rglob("*")):
-        info = path.lstat()
-        kind = "link" if path.is_symlink() else "dir" if path.is_dir() else "file"
-        tree[str(path.relative_to(root))] = (kind, info.st_mode & 0o7777, path.read_bytes() if kind == "file" else None)
-    return tree
-
-
-class Role:
-    """``ansible-playbook`` runs of ops-library's rust_release_binary against localhost."""
-
-    def __init__(self, base: Path, root: Path) -> None:
-        assert OPS_LIBRARY is not None
-        self.base, self.root, self.runs = base, root, 0
-        collections = base / "collections/ansible_collections/local"
-        collections.mkdir(parents=True)
-        (collections / "ops_library").symlink_to(Path(OPS_LIBRARY).resolve())
-        path = os.environ.get("PATH", "")
-        probe = subprocess.run(["mv", "--version"], capture_output=True, text=True, check=False)
-        if "GNU" not in probe.stdout:  # the role targets GNU coreutils (macOS: Homebrew's gmv)
-            gmv = shutil.which("gmv")
-            if gmv is None:
-                pytest.skip("GNU mv (gmv) not found")
-            (base / "gnu-bin").mkdir()
-            (base / "gnu-bin" / "mv").symlink_to(gmv)
-            path = f"{base / 'gnu-bin'}{os.pathsep}{path}"
-        self.env = {
-            **os.environ,
-            "PATH": path,
-            "ANSIBLE_COLLECTIONS_PATH": str(base / "collections"),
-            "ANSIBLE_NOCOLOR": "1",
-            "ANSIBLE_LOCALHOST_WARNING": "0",
-            "ANSIBLE_INVENTORY_UNPARSED_WARNING": "0",
-            "ANSIBLE_RETRY_FILES_ENABLED": "0",
-            "ANSIBLE_LOCAL_TEMP": str(base / "ansible-local"),
-            "ANSIBLE_REMOTE_TEMP": str(base / "ansible-remote"),
-            "ANSIBLE_PYTHON_INTERPRETER": sys.executable,
-        }
-
-    def play(self, *tasks: dict[str, Any]) -> dict[str, Any]:
-        self.runs += 1
-        facts = self.base / f"facts-{self.runs}.json"
-        dump = {
-            "name": "dump",
-            "ansible.builtin.copy": {
-                "dest": str(facts),
-                "content": "{{ rust_release_binary_prune | default(None) | to_json }}",
-            },
-        }
-        play = {
-            "hosts": "localhost",
-            "gather_facts": False,
-            "vars": {
-                "rust_release_binary_name": NAME,
-                "rust_release_binary_install_root": str(self.root),
-                "rust_release_binary_owner": OWNER,
-                "rust_release_binary_group": GROUP,
-                "rust_release_binary_validate_user": "",
-            },
-            "tasks": [*tasks, dump],
-        }
-        path = self.base / f"play-{self.runs}.json"
-        path.write_text(json.dumps([play]))  # JSON is YAML
-        argv = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(path)]
-        result = subprocess.run(argv, capture_output=True, text=True, env=self.env, timeout=600, check=False)
-        assert result.returncode == 0, result.stdout + result.stderr
-        prune: dict[str, Any] = json.loads(facts.read_text()) or {}
-        return prune
-
-    @staticmethod
-    def task(tasks_from: str, **params: Any) -> dict[str, Any]:
-        return {
-            "name": f"rust_release_binary {tasks_from}",
-            "ansible.builtin.include_role": {"name": "local.ops_library.rust_release_binary", "tasks_from": tasks_from},
-            "vars": {f"rust_release_binary_{k}": v for k, v in params.items()},
-        }
-
-
-@needs_role
-def test_same_files_and_prune_decisions_as_the_role(tmp_path: Path) -> None:
-    ours = Host(tmp_path / "pyinfra")
-    ours.base.mkdir()
-    theirs = tmp_path / "ansible" / "opt" / NAME
-    role = Role(tmp_path, theirs)
-    versions = ("1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0", "6.0.0")
-    archives = {v: ours.archive(v) for v in versions}
-
-    # Install everything, then the pin moves: v1 -> v2 -> v1 (roll back) -> v3, a second consumer, a switch to Python.
-    pins = [("a", "1.0.0"), ("a", "2.0.0"), ("a", "1.0.0"), ("a", "3.0.0"), ("b", "4.0.0"), ("c", "2.0.0"), ("c", None)]
-    tasks = [
-        Role.task("install", version=v, local_archive=str(archives[v][0]), sha256=archives[v][1]) for v in versions
-    ]
-    for consumer, version in pins:
-        state = {"state": "absent"} if version is None else {"version": version}
-        tasks.append(Role.task("pin", consumer=consumer, **state))
-    role.play(*tasks)
-    for version in versions:
-        assert ours.install(version).returncode == 0
-    for consumer, version in pins:
-        ours.pin(consumer, version)
-    assert snapshot(ours.root) == snapshot(theirs)
-    assert ours.pins() == {"a": "3.0.0\n", "a.previous": "1.0.0\n", "b": "4.0.0\n", "c.previous": "2.0.0\n"}
-
-    def age(root: Path) -> None:
-        for index, version in enumerate(versions):
-            if (root / version).exists():
-                os.utime(root / version, (1_600_000_000 + index * 1000,) * 2)
-
-    def both(prepare: Callable[[Path], None], protect: list[str], unknown: bool = False) -> dict[str, Any]:
-        for root in (ours.root, theirs):
-            age(root)
-            prepare(root)
-        params: dict[str, Any] = {"keep_versions": 1, "protect": protect, "live_state_unknown": unknown}
-        reported = role.play(Role.task("prune", **params))
-        options = [x for entry in protect for x in ("--protect", entry.replace(str(theirs), str(ours.root)))]
-        out = ours.prune("--keep-versions", "1", *options, *(["--live-state-unknown"] if unknown else []))
-        assert snapshot(ours.root) == snapshot(theirs)
-        assert [line.removeprefix("remove ") for line in out.splitlines() if line.startswith("remove ")] == reported[
-            "removed"
-        ]
-        assert bool(reported["skipped"]) == out.startswith("blocked ")
-        return reported
-
-    def nothing(root: Path) -> None:
-        pass
-
-    def garbage(root: Path) -> None:
-        (root / ".pins" / "z").write_text("garbage\n")
-
-    def clean(root: Path) -> None:
-        (root / ".pins" / "z").unlink()
-
-    # Fail closed first (nothing removed), then the real prune.
-    assert both(nothing, [], unknown=True)["removed"] == []
-    assert both(garbage, [])["removed"] == []
-    assert both(clean, [f"{theirs}/1.0.0/sub/{NAME}"])["removed"] == []
-    assert both(nothing, [f"/elsewhere/9.0.0/{NAME}"])["removed"] == []
-    # Kept: 6.0.0 newest, 3.0.0/1.0.0 a's pins, 4.0.0 b's pin, 2.0.0 c's previous pin; 5.0.0 protected by path.
-    assert both(nothing, [f"{theirs}/5.0.0/{NAME} (deleted)", "/usr/bin/python3"])["removed"] == []
-    assert both(nothing, ["2.0.0"])["removed"] == ["5.0.0"]
-    assert ours.versions() == ["1.0.0", "2.0.0", "3.0.0", "4.0.0", "6.0.0"]
 
 
 @pytest.mark.parametrize("probe_result", [[], ["change layout"], ["unknown"], ["ops-deploy-probe-failed"]])

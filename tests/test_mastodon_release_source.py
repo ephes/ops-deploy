@@ -195,26 +195,6 @@ def test_current_propshaft_vite_build_rejects_stale_legacy_manifests(tmp_path: P
     assert module.assets_output(cfg) is False
 
 
-@pytest.mark.skipif(not __import__("os").environ.get("OPS_LIBRARY_PATH"), reason="fresh role checkout not configured")
-def test_new_release_defaults_match_the_actual_roles() -> None:
-    import os
-
-    import yaml
-
-    root = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles"
-    expected = {}
-    for role in ("mastodon_shared", "mastodon_deploy", "mastodon_maintenance"):
-        expected.update(yaml.safe_load((root / role / "defaults/main.yml").read_text()))
-    cfg = release_config()
-    for name, field in type(cfg).model_fields.items():
-        key = "mastodon_" + name
-        if field.is_required() or name in {"git_repo", "maintenance_tootctl_commands"} or key not in expected:
-            continue
-        if "{{" in repr(expected[key]):
-            continue
-        assert getattr(cfg, name) == expected[key], name
-
-
 @pytest.mark.parametrize(
     "settings",
     [

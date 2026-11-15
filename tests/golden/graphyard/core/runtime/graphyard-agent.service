@@ -1,0 +1,20 @@
+[Unit]
+Description=graphyard agent (HA polling + condition evaluation)
+After=network-online.target gy-runtime.service
+Wants=network-online.target
+# Wants=, not Requires=/PartOf=/BindsTo=: a stop, restart or failed start of
+# the runtime leaves this unit running (role README, "Unit dependencies").
+Wants=gy-runtime.service
+
+[Service]
+Type=simple
+User=graphyard
+Group=graphyard
+WorkingDirectory=/opt/apps/graphyard/site/src/django
+EnvironmentFile=/etc/graphyard/graphyard.env
+ExecStart=/opt/apps/graphyard/site/.venv/bin/python manage.py start_agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,158 @@
+{
+  "hdparm": {
+    "devices": [
+      {
+        "device": "/dev/disk/by-id/owned-a",
+        "apm": 127,
+        "spindown_time": 241
+      },
+      {
+        "device": "/dev/disk/by-id/owned-b",
+        "apm": 127,
+        "acoustic_management": 128,
+        "spindown_time": 241
+      }
+    ],
+    "apply_now": true
+  },
+  "sanoid": {
+    "templates": {
+      "owned0": {
+        "autosnap": "yes",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 1,
+        "weekly": 0,
+        "monthly": 12
+      },
+      "owned1": {
+        "autosnap": "yes",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 2,
+        "weekly": 1,
+        "monthly": 11
+      },
+      "owned2": {
+        "autosnap": "yes",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 3,
+        "weekly": 2,
+        "monthly": 10
+      },
+      "owned3": {
+        "autosnap": "yes",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 4,
+        "weekly": 3,
+        "monthly": 9
+      },
+      "owned4": {
+        "autosnap": "no",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 5,
+        "weekly": 4,
+        "monthly": 8
+      },
+      "owned5": {
+        "autosnap": "no",
+        "autoprune": "yes",
+        "hourly": 0,
+        "daily": 6,
+        "weekly": 5,
+        "monthly": 7
+      }
+    },
+    "datasets": [
+      {
+        "name": "owned/d0",
+        "template": "owned0"
+      },
+      {
+        "name": "owned/d1",
+        "template": "owned1"
+      },
+      {
+        "name": "owned/d2",
+        "template": "owned2"
+      },
+      {
+        "name": "owned/d3",
+        "template": "owned3"
+      },
+      {
+        "name": "owned/d4",
+        "template": "owned4"
+      },
+      {
+        "name": "owned/d5",
+        "template": "owned5"
+      },
+      {
+        "name": "owned/d6",
+        "template": "owned0"
+      },
+      {
+        "name": "owned/d7",
+        "template": "owned1"
+      },
+      {
+        "name": "owned/d8",
+        "template": "owned2"
+      },
+      {
+        "name": "owned/skip-a",
+        "sanoid_skip": true
+      },
+      {
+        "name": "owned/skip-b",
+        "sanoid_skip": true
+      }
+    ],
+    "on_calendar": "01:00",
+    "randomized_delay_sec": "10m"
+  },
+  "tm": {
+    "users": [
+      "owned_tm"
+    ]
+  },
+  "shares": {
+    "shares": [
+      {
+        "name": "owned0",
+        "path": "/srv/owned0",
+        "valid_users": [
+          "owned_share"
+        ]
+      },
+      {
+        "name": "owned1",
+        "path": "/srv/owned1",
+        "valid_users": [
+          "owned_share"
+        ]
+      },
+      {
+        "name": "owned2",
+        "path": "/srv/owned2",
+        "valid_users": [
+          "owned_share"
+        ]
+      },
+      {
+        "name": "owned3",
+        "path": "/srv/owned3",
+        "valid_users": [
+          "owned_share"
+        ]
+      }
+    ],
+    "users": [
+      "owned_share"
+    ]
+  }
+}

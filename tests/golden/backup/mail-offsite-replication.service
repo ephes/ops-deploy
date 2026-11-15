@@ -1,0 +1,10 @@
+[Unit]
+Description=Mail offsite replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+OnFailure=mail-offsite-replication-failure@%n.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=4h
+ExecStart=/usr/local/bin/mail-offsite-replication.sh

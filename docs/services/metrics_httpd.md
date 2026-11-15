@@ -122,8 +122,9 @@ installed release, its `--check-config`, and the check of step 6.
 
 ## Tests
 
-`tests/test_metrics_httpd_switch.py`: the packaged and vendored template
-are equal and render like Ansible; the release grammar is the vendored
+`tests/test_metrics_httpd_switch.py`: the drop-in, and each port's drop-in
+(thermal, static site, logyard), against golden renders
+(`tests/golden/metrics_httpd`); the release grammar is the vendored
 `rust_release` one; the config refusals; the plans of select and verify on
 the fake connector (Python with no, an installed and a new release, an
 ignored refusal, a failed soft install, a malformed pin, inputs Rust would
@@ -133,8 +134,7 @@ deploy's inputs against its unit (thermal: argv, IP filter; static: the
 sandbox is the unit's `[Service]` lines; logyard: its `Environment=` lines,
 the probe timeout) and a switch to Rust on a converged host of each deploy
 (only the install, the drop-in, `daemon-reload`, the unit's restart, pin and
-prune change). With `OPS_LIBRARY_PATH`: the drop-ins equal the role's
-goldens and each role's switch inputs equal the deploy's. `verify_host.py`
+prune change). `verify_host.py`
 runs locally against a fake `systemctl`, a fake `/proc` and a local HTTP
 server (every probe expectation, wrong executables, inactive units, no
 credentials even with a `.netrc`).

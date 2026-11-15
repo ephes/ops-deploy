@@ -92,8 +92,7 @@ production bootstrap implementation.
 ## Removal
 
 `remove_unifi(UnifiRemoveConfig(confirm=True, ...), secrets)` ports the
-`unifi_remove` role at ops-library `d4039a71` (role files under
-`tests/parity/unifi/remove`, digest in the drift manifest). Without `confirm`
+`unifi_remove` role at ops-library `d4039a71`. Without `confirm`
 it fails before any host probe. Every field is the role's `unifi_*` /
 `unifi_remove_*` variable with its default, including the derived paths
 (`home_dir` `/home/<user>`, `cache_dir`, `data_dir`, `logs_dir`,

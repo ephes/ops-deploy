@@ -1,0 +1,115 @@
+sources:
+  host_metrics:
+    type: host_metrics
+    scrape_interval_secs: 60
+    collectors:
+      - "cpu"
+      - "disk"
+      - "filesystem"
+      - "load"
+      - "memory"
+      - "network"
+
+transforms:
+  host_metrics_to_log:
+    type: metric_to_log
+    inputs:
+      - host_metrics
+
+  graphyard_payload:
+    type: remap
+    inputs:
+      - host_metrics_to_log
+    source: |
+      metric_name = to_string(.name) ?? ""
+      if metric_name == "" {
+        abort
+      }
+
+      wanted = false
+      if starts_with(metric_name, "filesystem_") {
+        wanted = true
+      }
+      if starts_with(metric_name, "disk_") {
+        wanted = true
+      }
+      if starts_with(metric_name, "memory_") {
+        wanted = true
+      }
+      if starts_with(metric_name, "cpu_") {
+        wanted = true
+      }
+      if starts_with(metric_name, "load") {
+        wanted = true
+      }
+      if starts_with(metric_name, "network_") {
+        wanted = true
+      }
+      if !wanted {
+        abort
+      }
+
+      raw_value = null
+      if exists(.gauge) && exists(.gauge.value) {
+        raw_value = .gauge.value
+      } else if exists(.counter) && exists(.counter.value) {
+        raw_value = .counter.value
+      }
+      if is_null(raw_value) {
+        abort
+      }
+
+      metric_value = to_float(raw_value) ?? null
+      if is_null(metric_value) {
+        abort
+      }
+
+      tags = {}
+      if is_object(.tags) {
+        tags = .tags
+      }
+      tags.collector = "vector.host_metrics"
+      if exists(.counter) && exists(.counter.value) {
+        tags.metric_kind = "counter"
+      } else {
+        tags.metric_kind = "gauge"
+      }
+      tags.host_id = "studio"
+      tags.source = "vector-host-metrics"
+
+      . = {
+        "ts": format_timestamp!(.timestamp, "%FT%TZ"),
+        "host": "studio",
+        "service": "host_metrics",
+        "metric": "host." + metric_name,
+        "value": metric_value,
+        "tags": tags,
+      }
+
+sinks:
+  graphyard_ingest:
+    type: http
+    inputs:
+      - graphyard_payload
+    uri: "http://127.0.0.1:8051/v1/metrics"
+    method: post
+    encoding:
+      codec: json
+    request:
+      timeout_secs: 15
+      concurrency: 1
+      retry_initial_backoff_secs: 1
+      retry_max_duration_secs: 3600
+      headers:
+        Authorization: "Bearer graphyard-fixture-vector-ingest-token"
+        Content-Type: "application/json"
+        X-Forwarded-Proto: "https"
+    batch:
+      max_events: 50
+      timeout_secs: 5
+    buffer:
+      type: disk
+      max_size: 268435488
+    # Graphyard's ingest endpoint has no dedicated sink healthcheck route.
+    healthcheck:
+      enabled: false

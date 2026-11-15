@@ -1,0 +1,29 @@
+[Unit]
+Description=Chesslab trainer
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=chesslab
+Group=chesslab
+WorkingDirectory=/home/chesslab/site
+EnvironmentFile=/home/chesslab/site/.env
+ExecStart=/home/chesslab/site/.venv/bin/granian \
+    --workers 2 \
+    --interface wsgi \
+    --host 127.0.0.1 \
+    --port 10019 \
+    --access-log \
+    chesslab.djangoapp.wsgi:application
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/chesslab /home/chesslab/data /home/chesslab/data
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

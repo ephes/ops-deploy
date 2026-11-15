@@ -4,9 +4,8 @@ Port of the ``graphyard_deploy`` Ansible role (rsync method) and ops-control's
 ``playbooks/deploy-graphyard-core.yml``, including the roles it pulls in
 (``docker_install``, ``uv_install``). The role's templates are shipped
 unchanged and rendered the way Ansible's ``template`` module renders them, so
-every file written is byte-identical to the role's
-(``tests/test_graphyard_parity.py``) and Ansible and ops-deploy can take turns
-on a host without rewriting or restarting anything.
+every file written is byte-identical to the retired role's (goldens:
+``tests/test_graphyard_golden.py``).
 
 Unlike the role, steps that would change nothing are skipped instead of run:
 migrate, collectstatic and ``uv sync`` run when code, dependencies or the env

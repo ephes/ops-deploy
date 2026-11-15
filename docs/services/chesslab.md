@@ -99,12 +99,12 @@ Defaults follow the role's `defaults/main.yml`.
 
 ## Parity with the role and playbook
 
-`tests/test_chesslab_parity.py` renders the vendored role templates
-(`tests/parity/ansible/chesslab_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, unit and Traefik route (which is why the route
-still says "Managed by Ansible"). With the route hash reused, Ansible and
-ops-deploy take turns on a host without rewriting files or restarting
-chesslab or Traefik.
+The `.env`, unit and Traefik route are **byte-identical** to the retired
+role's output (which is why the route still says "Managed by Ansible"), so
+hosts the role set up were taken over without rewriting files or restarting
+chesslab or Traefik. `tests/test_chesslab_golden.py` keeps them so: it
+compares the renders with goldens recorded while they equalled the role's
+(`tests/golden/chesslab`).
 
 Differences:
 

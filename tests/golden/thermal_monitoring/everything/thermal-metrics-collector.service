@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect thermal metrics and write to JSON file
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/opt/thermal/exporter > /srv/thermal/thermal.json.tmp && mv /srv/thermal/thermal.json.tmp /srv/thermal/thermal.json'
+
+User=root
+Group=root
+
+ExecStartPre=/bin/mkdir -p /srv/thermal
+ExecStartPre=/bin/chown root:thermgrp /srv/thermal
+ExecStartPre=/bin/chmod 0750 /srv/thermal
+
+ExecStartPost=/bin/chown root:thermgrp /srv/thermal/thermal.json
+ExecStartPost=/bin/chmod 0640 /srv/thermal/thermal.json

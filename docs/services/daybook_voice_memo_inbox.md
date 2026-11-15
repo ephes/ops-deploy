@@ -52,13 +52,6 @@ installed-old-ref pin, new activation marker, bypass flag or engine confirmation
 is added. A source transition for an active keeper needs its existing functional
 window and a concrete source/lock/effect review before inventory execution.
 
-Paired declaration/resource checks use the actual collection:
-
-```sh
-OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core pytest \
-  tests/test_daybook_inbox_declaration.py tests/test_daybook_inbox_controls.py
-```
-
 Owned fixtures use inert code and unusable credentials. They do not read real
 Voice Memos, call private app status, activate an Inbox or change TCC/auth policy.
 Mechanism and source proofs are recorded separately from actual inventory

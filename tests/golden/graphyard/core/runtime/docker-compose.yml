@@ -1,0 +1,45 @@
+services:
+  influxdb:
+    image: "influxdb:2.8"
+    container_name: "influx-x"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: "setup"
+      DOCKER_INFLUXDB_INIT_USERNAME: "root-x"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "graphyard-fixture-influx-token"
+      DOCKER_INFLUXDB_INIT_ORG: "graphyard"
+      DOCKER_INFLUXDB_INIT_BUCKET: "bkt"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "graphyard-fixture-influx-token"
+    volumes:
+      - "/data/influx:/var/lib/influxdb2"
+      - "/data/influx-config:/etc/influxdb2"
+    networks:
+      - monitoring
+
+  grafana:
+    image: "grafana/grafana-oss:12.4.0"
+    container_name: "grafana-x"
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:4300:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "boss"
+      GF_SECURITY_ADMIN_PASSWORD: "graphyard-fixture-grafana-admin"
+      GF_USERS_ALLOW_SIGN_UP: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/etc/grafana/provisioning/dashboards-json/overview/graphyard-home.json"
+      GRAPHYARD_INFLUX_DB: "bkt"
+      GRAPHYARD_INFLUX_USER: "reader"
+      GRAPHYARD_INFLUX_PASSWORD: "graphyard-fixture-grafana-influx"
+    volumes:
+      - "/srv/prov:/etc/grafana/provisioning"
+      - "/srv/dash:/etc/grafana/provisioning/dashboards-json"
+      - "/data/grafana:/var/lib/grafana"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: "net-x"

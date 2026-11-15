@@ -9,8 +9,7 @@ fetches it from there (``download_base_url``), checksum-verified as always.
 It checks what the fake connector cannot: the release unpacks, GoToSocial
 starts behind its hardened unit and answers ``/readyz`` and WebFinger, a
 converged run restarts nothing, drift restarts once, a changed domain layout
-is refused before anything changes, and (with ``OPS_LIBRARY_PATH``) the role
-and this deploy take turns on one instance without a restart or a change.
+is refused before anything changes.
 """
 
 from __future__ import annotations
@@ -143,38 +142,6 @@ class Fixture:
         paths += "/etc/traefik/dynamic/gotosocial.yml"
         return self.sh(f"stat -c '%n %U:%G %a %i %Y' {paths} && cat {paths} && readlink /opt/gotosocial/current")
 
-    def ansible(self, **extra: str) -> str:
-        """The role from ``OPS_LIBRARY_PATH`` with Ansible inside the container, on the same inputs."""
-
-        role = Path(os.environ["OPS_LIBRARY_PATH"], "roles", "gotosocial_deploy")
-        assert role.is_dir()
-        base = "/opt/gotosocial-role"
-        self.sh(f"rm -rf {base} && mkdir -p {base}/roles")
-        self.docker("cp", str(role), f"{self.identifier}:{base}/roles/gotosocial_deploy")
-        variables = {
-            "gotosocial_host": CFG.host,
-            "gotosocial_account_domain": CFG.account_domain,
-            "gotosocial_download_base_url": SERVER,
-            "gotosocial_traefik_cert_resolver": CFG.traefik_cert_resolver,
-            **extra,
-        }
-        play = "- hosts: localhost\n  roles:\n    - role: gotosocial_deploy\n      vars:\n"
-        play += "".join(f"        {key}: {json.dumps(value)}\n" for key, value in variables.items())
-        self.sh(f"printf %s {shlex.quote(play)} > {base}/play.yml")
-        # The image's apt lists are current; without a network the role's hour-old refresh must not run.
-        self.sh("mkdir -p /var/lib/apt/periodic && touch /var/lib/apt/periodic/update-success-stamp")
-        result = self.docker(
-            "exec",
-            "-i",
-            self.identifier,
-            "sh",
-            "-c",
-            f"cd {base} && ANSIBLE_ROLES_PATH=roles ansible-playbook -c local -i localhost, play.yml",
-            check=False,
-        )
-        assert result.returncode == 0, result.stdout[-4000:]
-        return result.stdout
-
 
 def mutating(ops: list[OpResult]) -> list[str]:
     return [op.name for op in ops if op.changed and not op.read_only]
@@ -277,26 +244,3 @@ def test_drift_and_a_lost_restart_restart_once(fixture: Fixture) -> None:
     assert made_up != restarted
     assert mutating(fixture.deploy(CFG)) == []
     assert fixture.service() == made_up
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_role_and_deploy_take_turns_without_a_change(fixture: Fixture) -> None:
-    recap = fixture.ansible()
-    assert re.search(r"localhost\s+: ok=\d+\s+changed=[1-9]\d*\s+unreachable=0\s+failed=0", recap), recap
-    by_role = fixture.service()
-    snapshot = fixture.files()
-
-    # pyinfra over the role: nothing to do, the same process keeps running.
-    assert mutating(fixture.deploy(CFG)) == []
-    assert fixture.service() == by_role
-    assert fixture.files() == snapshot
-
-    # The role over pyinfra: no restart and the same files.
-    fixture.ansible()
-    assert fixture.service() == by_role
-    assert fixture.files() == snapshot
-
-    # The role refuses the changed layout the deploy recorded and kept.
-    with pytest.raises(AssertionError):
-        fixture.ansible(gotosocial_account_domain="social.example.test")
-    assert fixture.service() == by_role

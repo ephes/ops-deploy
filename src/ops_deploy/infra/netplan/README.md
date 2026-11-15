@@ -42,8 +42,8 @@ setup state. DHCP observed before or after apply invokes the original
 networkd-restart recovery. Fixture substitutions do not attest physical LAN,
 boot/initramfs recovery, hardware or real inventory continuity.
 
-The four vendored templates are byte-identical to selected source role cf3a0c7;
-`tests/parity/netplan_sources.json` records this narrow provenance without
-rebasing the repository's unrelated original-role baseline. Model, controller
+The four templates were vendored byte for byte from source role cf3a0c7; the
+rendered netplan YAML and the route guard's files are pinned by
+`tests/test_netplan.py` (literal and golden renders). Model, controller
 failure and owned native tests are separate evidence. Inventory adoption and
 live qualification remain separate from this implementation.

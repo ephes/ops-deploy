@@ -1,0 +1,19 @@
+[Unit]
+Description=Graphyard public software release comparison cache
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=graphyard
+Group=graphyard
+WorkingDirectory=/opt/apps/graphyard/site/src/django
+EnvironmentFile=/etc/graphyard/graphyard.env
+ExecStart=/opt/apps/graphyard/site/.venv/bin/python manage.py refresh_inventory_releases --file /etc/graphyard/inventory-releases.json --force
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/apps/graphyard/site/src/django

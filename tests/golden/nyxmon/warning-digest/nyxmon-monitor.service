@@ -1,0 +1,27 @@
+[Unit]
+Description=Nyxmon Monitoring Service
+After=network.target nyxmon.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=nyxmon
+Group=nyxmon
+WorkingDirectory=/home/nyxmon/site
+EnvironmentFile=/home/nyxmon/site/.env
+
+ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db /home/nyxmon/site/db.sqlite3 --enable-telegram
+
+Restart=always
+RestartSec=30
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Need access to /home/nyxmon
+ProtectHome=false
+ReadWritePaths=/home/nyxmon /home/nyxmon/site/cache
+
+[Install]
+WantedBy=multi-user.target

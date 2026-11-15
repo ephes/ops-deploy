@@ -1,0 +1,19 @@
+[Unit]
+Description=Collect Tailscale login and key-expiry metrics
+After=tailscaled.service network-online.target
+Wants=tailscaled.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/usr/local/bin/tailscale-metrics-exporter > /var/lib/tailscale-metrics/tailscale.json.tmp && mv /var/lib/tailscale-metrics/tailscale.json.tmp /var/lib/tailscale-metrics/tailscale.json'
+
+User=root
+Group=root
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+ExecStartPre=/bin/mkdir -p /var/lib/tailscale-metrics
+ExecStartPre=/bin/chown root:metrics /var/lib/tailscale-metrics
+ExecStartPre=/bin/chmod 0750 /var/lib/tailscale-metrics
+
+ExecStartPost=/bin/chown root:metrics /var/lib/tailscale-metrics/tailscale.json
+ExecStartPost=/bin/chmod 0640 /var/lib/tailscale-metrics/tailscale.json

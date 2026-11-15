@@ -1,12 +1,8 @@
-"""Exact original role resources with retired timers and separate activation."""
+"""Sessions resources with retired timers and separate activation."""
 
 from __future__ import annotations
 
 import hashlib
-import importlib
-import os
-from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,8 +10,7 @@ from pydantic import ValidationError
 
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.services.daybook_sessions import DaybookSessionsConfig
-from ops_deploy.services.daybook_sessions.config import DEFAULTS, PACKAGE
-from ops_deploy.services.daybook_sessions.render import SECRET_DEFAULTS, render_template, resources, role_values
+from ops_deploy.services.daybook_sessions.render import resources
 
 
 def config(**values: Any) -> DaybookSessionsConfig:
@@ -169,36 +164,3 @@ def test_malformed_or_missing_private_metadata_never_enters_error_text() -> None
         with pytest.raises(ValueError, match=r"credentials|metadata") as error:
             resources(studio(), values)
         assert "PRIVATE-NOT-JSON" not in str(error.value)
-
-
-def test_entire_defaults_and_template_sets_are_exact_actual_role_oracles() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("Paired original role oracle is run explicitly for qualification")
-    import jinja2
-    import yaml
-
-    role = Path(source) / "roles/daybook_sessions_deploy"
-    assert yaml.safe_load((role / "defaults/main.yml").read_text()) == {**DEFAULTS, **SECRET_DEFAULTS}
-    tasks = yaml.safe_load((role / "tasks/weeknotes_reconcile.yml").read_text())
-    checksum_task = next(
-        t["ansible.builtin.stat"] for t in tasks if t.get("register") == "daybook_weeknotes_reconcile_env_metadata"
-    )
-    assert checksum_task["checksum_algorithm"] == "sha256"
-    assert set(DEFAULTS).isdisjoint(SECRET_DEFAULTS)
-    assert set(DaybookSessionsConfig.model_fields) == set(DEFAULTS)
-    packaged = files(PACKAGE).joinpath("templates")
-    templates = sorted((role / "templates").glob("*.j2"))
-    assert {p.name for p in templates} == {p.name for p in packaged.iterdir()}
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(role / "templates"),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters.update(importlib.import_module("ansible.plugins.filter.core").FilterModule().filters())
-    for cfg in (config(), studio()):
-        values = role_values(cfg, secrets())
-        for path in templates:
-            assert packaged.joinpath(path.name).read_bytes() == path.read_bytes()
-            assert render_template(path.name, values) == env.get_template(path.name).render(values)

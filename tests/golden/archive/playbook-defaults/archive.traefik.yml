@@ -1,0 +1,46 @@
+# Managed by Ansible - Archive Traefik configuration
+
+http:
+  routers:
+    archive-secure:
+      rule: "Host(`archive.home.example.invalid`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - archive-headers
+      service: archive
+      tls: {}
+
+    archive-http:
+      rule: "Host(`archive.home.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - archive-redirect
+      service: archive
+
+  middlewares:
+    archive-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "archive.home.example.invalid"
+
+    archive-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    archive:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10041"

@@ -1,8 +1,7 @@
-"""Original maintenance ordering and real owned HTTP requests; no service actions."""
+"""Maintenance ordering and real owned HTTP requests; no service actions."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import runpy
@@ -15,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import SecretStr
 from pyinfra.api import Config, DeployError
 from pyinfra.operations import server, systemd
@@ -24,33 +22,6 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.services.homeassistant import trust_maintenance as maintenance
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
 from ops_deploy.testing import run_deploy_fake
-
-
-def test_bound_original_maintenance_task_sequence() -> None:
-    root = Path(__file__).parent / "parity/homeassistant/trust-maintenance"
-    receipt = json.loads((root / "source.json").read_text())
-    body = (root / "maintenance.yml").read_bytes()
-    assert hashlib.sha256(body).hexdigest() == receipt["sha256"]
-    if os.environ.get("OPS_LIBRARY_PATH"):
-        assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / receipt["path"]).read_bytes()
-    rows = yaml.safe_load(body)
-    assert rows[1]["vars"] == {"_ha_uv_certs_mode": "preflight"}
-    assert rows[4]["ansible.builtin.systemd"] == {
-        "name": "{{ homeassistant_service_name }}",
-        "state": "restarted",
-        "daemon_reload": True,
-    }
-    assert rows[4]["when"] == "_ha_uv_certs_dropin is changed"
-    assert rows[5]["ansible.builtin.uri"] == {
-        "url": "{{ homeassistant_uv_system_certs_health_url }}",
-        "status_code": 200,
-        "validate_certs": False,
-    }
-    assert rows[6]["vars"] == {"_ha_uv_certs_mode": "verify"}
-    defaults = yaml.safe_load((Path(__file__).parent / "parity/homeassistant/defaults.yml").read_text())
-    cfg = maintenance.HomeAssistantTrustMaintenanceConfig()
-    assert cfg.health_retries == defaults["homeassistant_uv_system_certs_health_retries"]
-    assert cfg.health_delay == defaults["homeassistant_uv_system_certs_health_delay"]
 
 
 @pytest.mark.parametrize("current", [False, True])

@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from importlib.resources import files
-from pathlib import Path
 from typing import Any
 
 import pyinfra.api.facts as sdk_facts
 import pytest
-import yaml
 from pydantic import ValidationError
 from pyinfra.facts.files import Directory, File, Link, Sha1File
 from pyinfra.facts.server import Command, Os
@@ -75,18 +72,6 @@ def test_invalid_credentials_refuse_without_echo(values: dict[str, str]) -> None
 def test_original_role_path_constraints(values: dict[str, str]) -> None:
     with pytest.raises(ValidationError):
         DaybookVoiceMemoAttentionReaderConfig(**values)
-
-
-def test_packaged_provisioner_and_defaults_match_actual_original_role() -> None:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; paired original-role check is separate")
-    root = Path(source) / "roles/daybook_voice_memo_attention_reader_deploy"
-    helper = files(PACKAGE).joinpath("files/provision_reader.py").read_bytes()
-    assert helper == (root / "files/provision_reader.py").read_bytes()
-    defaults = yaml.safe_load((root / "defaults/main.yml").read_text())
-    cfg = DaybookVoiceMemoAttentionReaderConfig()
-    assert cfg.model_dump() == {key: defaults["daybook_voice_memo_attention_reader_" + key] for key in cfg.model_dump()}
 
 
 def install_facts(monkeypatch: pytest.MonkeyPatch, facts: dict[Any, Any]) -> None:

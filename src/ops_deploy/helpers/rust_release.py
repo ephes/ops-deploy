@@ -14,8 +14,7 @@ take turns on a host::
 
 The decisions (pin moves, prune plan, the version and consumer grammar) are
 ops-library's ``plugins/filter/rust_release.py``, vendored byte for byte as
-``templates/rust_release.py.txt`` (``tests/test_ops_library_drift.py``
-compares it). The steps run on the host, at execution time, in
+``templates/rust_release.py.txt`` (ops-deploy owns it now). The steps run on the host, at execution time, in
 ``templates/rust_release_host.py.txt``: the helper sends both texts on stdin
 to ``/usr/bin/python3 -I -`` as root (standard library only). While planning,
 read-only ``--check`` probes decide whether a step is needed, so a converged

@@ -1,0 +1,21 @@
+# Environment configuration for Homelab
+# This file is managed by Ansible - do not edit manually
+
+DJANGO_SETTINGS_MODULE=config.settings.production
+DJANGO_SECRET_KEY=homelab-parity-key_with-symbols!@#%^*=+-0123456789
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=127.0.0.1,home.example.org
+DJANGO_ADMIN_URL=admin/
+
+# Cache location
+DJANGO_CACHE_LOCATION=/home/homelab/site/cache
+
+# Database (SQLite)
+DATABASE_URL=sqlite:////home/homelab/site/db.sqlite3
+
+# Static and media files
+DJANGO_STATIC_ROOT=/home/homelab/site/staticfiles
+DJANGO_MEDIA_ROOT=/home/homelab/site/media
+
+# Disable SSL redirect for internal health checks
+DJANGO_SECURE_SSL_REDIRECT=False

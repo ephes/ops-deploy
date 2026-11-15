@@ -2,7 +2,7 @@
 
 The templates are shipped unchanged (headers included), so ``config.yaml``, the
 unit, the admin wrapper and the Traefik route are byte-identical to the role's
-for the same inputs (``tests/test_gotosocial_parity.py`` compares them with
+for the same inputs (``tests/test_gotosocial_golden.py`` compares them with
 files rendered by Ansible itself). Ansible renders with ``trim_blocks``, strips
 the template's final newline like Jinja2 does by default and then restores one
 when the template ended in a newline and the result does not; ``config.yaml``

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib
 import json
 import os
@@ -12,9 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
-import yaml
 
 from ops_deploy.core.secrets import SecretRef, SecretValues
 from ops_deploy.helpers.traefik import route_guard_command
@@ -23,7 +20,6 @@ from ops_deploy.services.unifi.remove import HOST
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/unifi/remove"
 PASSWORD = "fixture-mongo-password"  # pragma: allowlist secret
 # What both normal ops-control recipes pass (`-e unifi_remove_*=true`).
 RECIPE = dict.fromkeys(
@@ -46,106 +42,87 @@ def secrets(**values: str) -> SecretValues:
     return SecretValues(SecretRef("secrets/unifi.yml"), values)
 
 
-def role(name: str) -> Any:
-    return yaml.safe_load((PARITY / name).read_text())
-
-
-def test_fixtures_are_the_recorded_role_files() -> None:
-    manifest = json.loads((PARITY / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (PARITY / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-        if os.environ.get("OPS_LIBRARY_PATH"):
-            assert body == (Path(os.environ["OPS_LIBRARY_PATH"]) / entry["source"]).read_bytes()
-
-
-@pytest.mark.parametrize("overrides", [{}, {"user": "owned", "service_name": "owned-ui"}, {"install_dir": "/srv/ui"}])
-def test_defaults_and_dependent_paths_are_the_roles(overrides: dict[str, Any]) -> None:
-    cfg = UnifiRemoveConfig(**overrides)
-    context = {"unifi_" + key: value for key, value in cfg.model_dump().items()}
-    context.update(
-        unifi_remove_confirm=cfg.confirm,
-        unifi_remove_services=list(cfg.services),
-        unifi_firewall_rules=[rule.model_dump() for rule in cfg.firewall_rules],
-    )
-    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    fields = {
-        "unifi_remove_confirm": "confirm",
-        "unifi_remove_trigger_backup": "trigger_backup",
-        "unifi_remove_services": "services",
-        "unifi_remove_unifi_packages": "unifi_packages",
-        "unifi_remove_mongodb_packages": "mongodb_packages",
-        "unifi_remove_java_packages": "java_packages",
-        "unifi_remove_service_units": "remove_service_units",
-        "unifi_remove_packages": "remove_packages",
-        "unifi_remove_user": "remove_user",
-        "unifi_remove_group": "remove_group",
+def test_defaults() -> None:
+    assert UnifiRemoveConfig().model_dump(mode="json") == {
+        "backup_dir": "/usr/lib/unifi/data/backup",
+        "cache_dir": "/home/unifi/cache",
+        "confirm": False,
+        "data_dir": "/usr/lib/unifi/data",
+        "delete_backup_dir": False,
+        "delete_cache": True,
+        "delete_data": False,
+        "delete_home": False,
+        "delete_logs": False,
+        "drop_mongodb_database": False,
+        "drop_mongodb_user": False,
+        "firewall_rules": [
+            {"comment": "UniFi device communication", "port": 8080, "proto": "tcp"},
+            {"comment": "UniFi web admin", "port": 8443, "proto": "tcp"},
+            {"comment": "UniFi STUN", "port": 3478, "proto": "udp"},
+            {"comment": "UniFi discovery", "port": 10001, "proto": "udp"},
+            {"comment": "UniFi speed test", "port": 6789, "proto": "tcp"},
+        ],
+        "group": "unifi",
+        "home_dir": "/home/unifi",
+        "install_dir": "/usr/lib/unifi",
+        "java_packages": ["openjdk-17-jre-headless"],
+        "logs_dir": "/usr/lib/unifi/logs",
+        "manage_firewall": True,
+        "manage_traefik": True,
+        "mongodb_auth_db": "admin",
+        "mongodb_database": "unifi",
+        "mongodb_host": "127.0.0.1",
+        "mongodb_jvm_args_path": "/etc/unifi-secrets/mongodb.jvmargs",
+        "mongodb_packages": [
+            "mongodb-org",
+            "mongodb-org-server",
+            "mongodb-org-shell",
+            "mongodb-org-mongos",
+            "mongodb-org-tools",
+        ],
+        "mongodb_port": 27017,
+        "mongodb_state_dirs": ["/var/lib/mongodb", "/var/log/mongodb"],
+        "mongodb_tool_packages": ["mongodb-database-tools", "mongodb-mongosh", "mongodb-org-database-tools-extra"],
+        "mongodb_user": "unifi",
+        "remove_group": False,
+        "remove_packages": True,
+        "remove_service_units": True,
+        "remove_user": False,
+        "service_name": "unifi",
+        "services": ["unifi"],
+        "stop_mongod": True,
+        "stop_services": True,
+        "systemd_unit_path": "/etc/systemd/system/unifi.service",
+        "traefik_config_path": "/etc/traefik/dynamic/unifi.yml",
+        "trigger_backup": False,
+        "unifi_packages": ["unifi"],
+        "user": "unifi",
     }
-    for name, value in role("defaults.yml").items():
-        if name == "unifi_remove_cleanup_summary":
-            continue  # a debug message only
-        if name == "unifi_mongodb_password":
-            assert value == ""  # a secret: remove_unifi's secrets argument
-            continue
-        field = fields.get(name) or name.removeprefix("unifi_remove_").removeprefix("unifi_")
-        if isinstance(value, str):
-            value = env.from_string(value).render(**context)
-        elif isinstance(value, list):
-            value = [env.from_string(item).render(**context) if isinstance(item, str) else item for item in value]
-        actual = getattr(cfg, field)
-        if field == "firewall_rules":
-            actual = [rule.model_dump() for rule in actual]
-        elif isinstance(actual, tuple):
-            actual = list(actual)
-        assert actual == overrides.get(field, value), name
 
 
-def test_role_order_and_ignored_failures() -> None:
-    names = [task["name"] for task in role("tasks.yml")]
-    assert names == [
-        "Display UniFi removal banner",
-        "Require explicit confirmation",
-        "Run UniFi backup before removal",
-        "Stop UniFi related services",
-        "Remove systemd unit file",
-        "Remove MongoDB JVM argument file",
-        "Remove default MongoDB credentials directory",
-        "Reload systemd",
-        "Remove Traefik config",
-        "Remove UniFi firewall rules",
-        "main | Run mongosh with a private credential script",
-        "main | Run mongosh with a private credential script",
-        "Stop MongoDB service post-cleanup",
-        "Purge UniFi packages",
-        "Purge MongoDB packages",
-        "Purge Java runtime packages",
-        "Remove UniFi directories",
-        "Remove UniFi user",
-        "Remove UniFi group",
-        "UniFi removal summary",
-    ]
-    tasks = role("tasks.yml")
-    assert tasks[3]["ansible.builtin.systemd"] == {"name": "{{ item }}", "state": "stopped", "enabled": False}
-    assert tasks[3]["failed_when"] is False
-    assert tasks[12]["failed_when"] is False
-    for index in (10, 11):
-        drop = tasks[index]["block"][2]
-        assert drop["failed_when"] is False
-        assert "unifi_mongodb_password | length > 0" in drop["when"]
-    for index in (13, 14, 15):
-        assert tasks[index]["ansible.builtin.apt"]["state"] == "absent"
-        assert tasks[index]["ansible.builtin.apt"]["purge"] is True
-    assert tasks[17]["ansible.builtin.user"]["remove"] == "{{ unifi_remove_delete_home | bool }}"
-    assert "ignore_errors" not in tasks[17]
-    assert "ignore_errors" not in tasks[18]
-    assert [item["path"] for item in tasks[16]["loop"]] == [
-        "{{ unifi_cache_dir }}",
-        "{{ unifi_logs_dir }}",
-        "{{ unifi_backup_dir }}",
-        "{{ unifi_data_dir }}",
-        "{{ unifi_install_dir }}",
-        "{{ unifi_home_dir }}",
-    ]
+@pytest.mark.parametrize(
+    ("overrides", "derived"),
+    [
+        (
+            {"user": "owned", "service_name": "owned-ui"},
+            {
+                "home_dir": "/home/owned",
+                "cache_dir": "/home/owned/cache",
+                "systemd_unit_path": "/etc/systemd/system/owned-ui.service",
+                "mongodb_jvm_args_path": "/etc/owned-ui-secrets/mongodb.jvmargs",
+                "services": ["owned-ui"],
+            },
+        ),
+        (
+            {"install_dir": "/srv/ui"},
+            {"data_dir": "/srv/ui/data", "logs_dir": "/srv/ui/logs", "backup_dir": "/srv/ui/data/backup"},
+        ),
+    ],
+)
+def test_dependent_paths_follow_the_given_names(overrides: dict[str, Any], derived: dict[str, Any]) -> None:
+    defaults = UnifiRemoveConfig().model_dump(mode="json")
+    cfg = UnifiRemoveConfig(**overrides).model_dump(mode="json")
+    assert {key: value for key, value in cfg.items() if value != defaults[key]} == {**overrides, **derived}
 
 
 def test_confirmation_precedes_every_target_probe() -> None:
@@ -465,22 +442,18 @@ def test_a_failed_client_is_reported_without_output_and_exit_zero(tmp_path: Path
     assert PASSWORD not in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("action", ["drop-database", "drop-user"])
-def test_the_script_is_the_roles_template(action: str) -> None:
+@pytest.mark.parametrize(
+    ("action", "statement"),
+    [
+        ("drop-database", 'printjson(db.getSiblingDB("unifi").dropDatabase());'),
+        ("drop-user", 'printjson(db.getSiblingDB("admin").dropUser("unifi"));'),
+    ],
+)
+def test_the_mongosh_script(action: str, statement: str) -> None:
     payload = {"action": action, "auth_db": "admin", "database": "unifi", "user": "unifi", "password": PASSWORD}
-    template = jinja2.Environment(undefined=jinja2.StrictUndefined)
-    template.filters["to_json"] = json.dumps
-    task = role("tasks.yml")[10 if action == "drop-database" else 11]["block"][1]
-    variables = task["vars"]
-    rendered_script = template.from_string(variables["task_mongo_script"]).render(
-        unifi_mongodb_database="unifi", unifi_mongodb_auth_db="admin", unifi_mongodb_user="unifi"
+    assert host_module.script(payload) == (
+        'const authDb = db.getSiblingDB("admin");\n'
+        f'if (!authDb.auth("unifi", "{PASSWORD}")) {{ quit(1); }}\n'
+        'db = db.getSiblingDB("admin");\n'
+        f"{statement}\n"
     )
-    expected = template.from_string((PARITY / "task-mongosh.js.j2").read_text()).render(
-        task_mongo_auth_db="admin",
-        task_mongo_database="admin",
-        task_mongo_script=rendered_script,
-        unifi_mongodb_user="unifi",
-        unifi_mongodb_password=PASSWORD,
-    )
-    # The role quotes names with '...'; the port JSON-encodes them.
-    assert host_module.script(payload).replace('"', "'") == expected.replace('"', "'").rstrip("\n") + "\n"

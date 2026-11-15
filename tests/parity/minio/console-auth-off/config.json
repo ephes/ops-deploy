@@ -1,9 +1,0 @@
-{
-  "console_basic_auth_enabled": false,
-  "traefik_host": "console.example.test",
-  "traefik_api_host": "storage.example.test",
-  "data_dirs": [
-    "/srv/minio/one",
-    "/srv/minio/two"
-  ]
-}

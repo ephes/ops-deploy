@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import hashlib
 import io
 import json
-import os
 import sys
 from importlib.resources import files
 from pathlib import Path
@@ -28,7 +26,6 @@ from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntim
 from tests.fakehost import command_host
 
 PROGRAM = Path(str(files("ops_deploy.services.homeassistant").joinpath("files/custom_conversation.py")))
-FIXTURE = Path(__file__).parent / "parity/homeassistant/custom-conversation"
 DEFAULT = (
     "You are a voice assistant for Home Assistant.\n"
     "Answer questions about the world truthfully.\n"
@@ -88,30 +85,6 @@ def load_helper(data: dict[str, Any]) -> dict[str, Any]:
     with patch("sys.stdin", io.StringIO(json.dumps(data))):
         exec(compile(tree, str(PROGRAM), "exec"), namespace)
     return namespace
-
-
-def test_original_protocol_function_and_source_bindings() -> None:
-    source = json.loads((FIXTURE / "source.json").read_text())
-    assert hashlib.sha256((FIXTURE / "integration.yml").read_bytes()).hexdigest() == source["integration_sha256"]
-    assert (
-        hashlib.sha256((FIXTURE / "original-program.py.txt").read_bytes()).hexdigest()
-        == source["original_program_sha256"]
-    )
-
-    def functions(body: str) -> dict[str, str]:
-        return {
-            node.name: ast.dump(node, include_attributes=False)
-            for node in ast.parse(body).body
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-        }
-
-    original = functions((FIXTURE / "original-program.py.txt").read_text())
-    actual = functions(PROGRAM.read_text())
-    assert set(original) == set(actual)
-    assert sorted(name for name in original if original[name] == actual[name]) == sorted(
-        source["unchanged_function_asts"]
-    )
-    assert sorted(name for name in original if original[name] != actual[name]) == sorted(source["changed_functions"])
 
 
 @pytest.mark.parametrize("field", ["primary_provider", "primary_base_url", "primary_api_key", "primary_chat_model"])
@@ -531,14 +504,6 @@ def test_options_absent_and_empty_match_qualified_version(tmp_path: Path, versio
     data = payload(tmp_path / "entries")
     data["settings"]["HA_CC_VERSION"] = version
     actual = load_helper(data)
-    tree = ast.parse((FIXTURE / "original-program.py.txt").read_text())
-    tree.body.pop()
-    original: dict[str, Any] = {"__name__": "owned_original"}
-    with (
-        patch.dict(os.environ, {**data["settings"], "HA_RESULT_PATH": "/unused-owned-result"}),
-        patch("sys.stdin", io.StringIO(json.dumps(data["secrets"]))),
-    ):
-        exec(compile(tree, "<original-custom>", "exec"), original)
     current = entry()["options"]
     current.pop("ignored_intents_section")
     if ignored is not None:
@@ -559,12 +524,14 @@ def test_options_absent_and_empty_match_qualified_version(tmp_path: Path, versio
         await helper["set_options"](object(), "owned-entry", current)
         return calls[1]
 
-    before = asyncio.run(submitted(original))
     after = asyncio.run(submitted(actual))
-    if version != "1.7.0" or isinstance(ignored, list):
-        assert after == before
+    assert sorted(after) == ["agents", "custom_prompts", "ignored_intents_section", "langfuse", "llm_hass_api"]
+    if isinstance(ignored, list):
+        assert after["ignored_intents_section"] == {"ignored_intents": ignored}
+    elif version == "1.7.0":
+        assert after["ignored_intents_section"] == {}
     else:
-        assert after == {**before, "ignored_intents_section": {}}
+        assert after["ignored_intents_section"] == {"ignored_intents": []}
 
 
 def test_unknown_explicit_instructions_still_reach_original_protocol(tmp_path: Path) -> None:

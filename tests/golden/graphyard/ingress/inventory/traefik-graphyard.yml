@@ -1,0 +1,169 @@
+# Traefik configuration for Graphyard + Grafana
+# Managed by Ansible - do not edit manually
+# Dual-router pattern: LAN/Tailscale bypass basic auth, public requires basic auth
+
+http:
+  routers:
+    # Match all sources here so untrusted callers cannot fall through to UI auth.
+    graphyard-inventory:
+      rule: "Host(`graphyard.example.invalid`) && Path(`/v1/inventory`)"
+      entryPoints:
+        - web-secure
+      priority: 200
+      middlewares:
+        - graphyard-inventory-sources
+        - graphyard-inventory-rate
+        - graphyard-inventory-inflight
+        - graphyard-inventory-body
+        - graphyard-headers
+      service: graphyard
+      tls:
+        certResolver: letsencrypt
+    # Graphyard internal router (LAN + Tailscale) - no auth
+    graphyard-int:
+      rule: "Host(`graphyard.example.invalid`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - graphyard-headers
+        - graphyard-gzip
+      service: graphyard
+      tls:
+        certResolver: letsencrypt
+
+    # Graphyard external router (public) - basic auth
+    graphyard-ext:
+      rule: "Host(`graphyard.example.invalid`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - graphyard-stack-auth
+        - graphyard-headers
+        - graphyard-gzip
+      service: graphyard
+      tls:
+        certResolver: letsencrypt
+
+    # Grafana internal router (LAN + Tailscale) - no auth
+    grafana-int:
+      rule: "Host(`grafana.example.invalid`) && (ClientIP(`192.168.0.0/16`) || ClientIP(`10.0.0.0/8`) || ClientIP(`172.16.0.0/12`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`) || ClientIP(`fd50:3e45:c454:0::/64`))"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - grafana-headers
+        - grafana-gzip
+      service: grafana
+      tls:
+        certResolver: letsencrypt
+
+    # Grafana external router (public) - basic auth
+    grafana-ext:
+      rule: "Host(`grafana.example.invalid`)"
+      entryPoints:
+        - web-secure
+      priority: 100
+      middlewares:
+        - graphyard-stack-auth
+        - grafana-headers
+        - grafana-gzip
+      service: grafana
+      tls:
+        certResolver: letsencrypt
+
+    # HTTP routers (HTTPS redirect handled by Traefik static entrypoint config)
+    graphyard-http:
+      rule: "Host(`graphyard.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: graphyard
+
+    grafana-http:
+      rule: "Host(`grafana.example.invalid`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: grafana
+
+  middlewares:
+    graphyard-inventory-sources:
+      ipAllowList:
+        sourceRange:
+          - "192.168.0.0/16"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "100.64.0.0/10"
+          - "fd7a:115c:a1e0::/48"
+          - "fd50:3e45:c454:0::/64"
+    graphyard-inventory-rate:
+      rateLimit:
+        average: 6
+        period: 1m
+        burst: 4
+    graphyard-inventory-inflight:
+      inFlightReq:
+        amount: 2
+        sourceCriterion:
+          requestHost: true
+    graphyard-inventory-body:
+      buffering:
+        maxRequestBodyBytes: 8388608
+        memRequestBodyBytes: 1048576
+    graphyard-stack-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        removeHeader: true
+
+    graphyard-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    graphyard-gzip:
+      compress: {}
+
+    grafana-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    grafana-gzip:
+      compress: {}
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    graphyard:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:8051"
+
+    grafana:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:3300"

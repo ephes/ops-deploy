@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.services.homeassistant.ota_provider import install_ota_provider, install_script
@@ -22,7 +21,6 @@ from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntim
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
-PARITY = Path(__file__).parent / "parity/homeassistant"
 DEST = "/usr/local/bin/chip-ota-provider-app"
 X86 = OTA_PROVIDER_CHECKSUMS["x86-64"]
 
@@ -31,25 +29,11 @@ def cfg(**values: Any) -> HomeAssistantRuntimeConfig:
     return HomeAssistantRuntimeConfig(manage_matter_server=True, **values)
 
 
-def test_defaults_match_the_ansible_role() -> None:
-    defaults = yaml.safe_load((PARITY / "defaults.yml").read_text())
-    runtime = HomeAssistantRuntimeConfig()
-    for field in ("version", "url_template", "checksums", "path"):
-        assert (
-            getattr(runtime, "matter_server_ota_provider_" + field)
-            == defaults["homeassistant_matter_server_ota_provider_" + field]
-        )
-    remove = yaml.safe_load((PARITY / "remove/defaults.yml").read_text())
-    assert (
-        HomeAssistantRemoveConfig().matter_server_ota_provider_path
-        == remove["homeassistant_matter_server_ota_provider_path"]
-    )
-    assert remove["homeassistant_remove_matter_ota_provider"] is True
-    # The Ansible task fills the same template; python-matter-server's Dockerfile pins this release.
-    tasks = yaml.safe_load((PARITY / "matter_server.yml").read_text())
-    (install,) = [task for task in tasks if task["name"] == "Install chip-ota-provider-app"]
-    assert install["ansible.builtin.get_url"]["mode"] == "0755"
-    assert OTA_PROVIDER_VERSION == "2025.9.0"
+def test_removal_removes_the_installed_path() -> None:
+    runtime, remove = HomeAssistantRuntimeConfig(), HomeAssistantRemoveConfig()
+    assert remove.matter_server_ota_provider_path == runtime.matter_server_ota_provider_path == DEST
+    # python-matter-server's Dockerfile pins this release.
+    assert OTA_PROVIDER_VERSION == runtime.matter_server_ota_provider_version == "2025.9.0"
 
 
 @pytest.mark.parametrize(
@@ -168,27 +152,3 @@ def test_directory_in_place_is_refused() -> None:
 def test_paths_on_the_matter_unit_path_accepted() -> None:
     for path in ("/usr/local/bin/chip-ota-provider-app", "/usr/bin/chip-ota-provider-app"):
         assert cfg(matter_server_ota_provider_path=path).matter_server_ota_provider_path == path
-
-
-def test_ansible_fallback_guards_match() -> None:
-    tasks = yaml.safe_load((PARITY / "matter_server.yml").read_text())
-    names = [task["name"] for task in tasks]
-    for guard in (
-        "Require a pinned chip-ota-provider-app checksum for this architecture",
-        "Require chip-ota-provider-app checksums for a non-default version",
-        "Require chip-ota-provider-app on the Matter server PATH",
-    ):
-        assert names.index(guard) < names.index("Install chip-ota-provider-app")
-    # A symlink is replaced only by a verified staged file, never deleted first.
-    assert not any(
-        "chip-ota" in t["name"] and t.get("ansible.builtin.file", {}).get("state") == "absent" for t in tasks
-    )
-    assert names.index("Stage chip-ota-provider-app to replace a symlink") < names.index(
-        "Replace chip-ota-provider-app symlink with the verified file"
-    )
-    (version_guard,) = [
-        t for t in tasks if t["name"] == "Require chip-ota-provider-app checksums for a non-default version"
-    ]
-    text = version_guard["ansible.builtin.assert"]["that"][0]
-    assert f"== '{OTA_PROVIDER_VERSION}'" in text
-    assert all(value in text for value in OTA_PROVIDER_CHECKSUMS.values())

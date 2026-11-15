@@ -1,0 +1,33 @@
+# Ansible managed
+# Time Machine share configuration
+# Include this in smb.conf with: include = /etc/samba/smb.conf.d/timemachine.conf
+
+[timemachine]
+    comment = Time Machine Backups
+    path = /fast/timemachine
+
+    # Access control
+    valid users = owned_tm
+    read only = no
+    browseable = yes
+
+    # Permissions
+    create mask = 0660
+    directory mask = 0770
+    force user = timemachine
+    force group = timemachine
+
+    # Time Machine specific settings (vfs_fruit)
+    vfs objects = fruit streams_xattr
+    fruit:time machine = yes
+    fruit:time machine max size = 6T
+
+    # Spotlight (disabled for Time Machine - not needed)
+    spotlight = no
+
+    # macOS compatibility (vfs_fruit share options)
+    fruit:metadata = stream
+    fruit:posix_rename = yes
+    fruit:veto_appledouble = no
+    fruit:wipe_intentionally_left_blank_rfork = yes
+    fruit:delete_empty_adfiles = yes

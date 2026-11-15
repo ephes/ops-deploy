@@ -43,13 +43,6 @@ aggregate read path before expiry/contact/write transactions; no local Journal
 constructor is used. Actual endpoint use requires that same source boundary and
 the existing monitor credential purpose, without permission or policy changes.
 
-Run the paired resource oracle explicitly with the actual original role:
-
-```sh
-OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core \
-  pytest tests/test_daybook_runtime_contract.py tests/test_daybook_runtime_status_tls.py
-```
-
 The owned local HTTPS fixture checks certificate denial, exact route, monitor vs
 executor purpose, repeated reads, redirect denial and oversized-response failure.
 It has synthetic operational metadata and no personal data or inventory access.

@@ -146,8 +146,7 @@ Monitoring mailboxes/probes/timers belong to the separate mail-monitoring servic
 ## Validation
 
 `tests/test_mailgun_relay.py` exercises malformed inputs, secret redaction,
-archive rejection/cleanup and retention. Set `OPS_LIBRARY_PATH` for exact template
-byte parity. `tests/smoke/test_mailgun_relay_smoke.py` opts into a disposable
+archive rejection/cleanup and retention. `tests/smoke/test_mailgun_relay_smoke.py` opts into a disposable
 systemd Linux target with actual 0.2.1/0.2.2 release archives, a Python source
 checkout and an owned STARTTLS/AUTH sink. It checks installation/update, repeats,
 preserved fallback, interrupted config recovery, policy/MIME/envelope, temporary

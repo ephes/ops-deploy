@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Tests: the Ansible parity and role-oracle tests are retired. Every deploy
+  runs on pyinfra, so they only kept a frozen Ansible render that nothing
+  produces any more. Gone: `tests/parity/` (475 files, 1.2 MB: vendored role
+  templates, tasks and defaults, recorded role renders, digests and the
+  generators), `tests/test_ops_library_drift.py` and its role manifest, every
+  `OPS_LIBRARY_PATH`-gated oracle, every test that rendered a vendored
+  template, the hash pins of `src/` templates against role digests, and
+  `just test-parity` with its `.venv-parity` (delete a leftover
+  `.venv-parity/`; the suite no longer uses ansible-core). The pyproject
+  ruff/mypy excludes and the `ansible` mypy override for the parity data are
+  gone too. Where a parity test protected host state (a file whose bytes
+  hosts carry, so that the next deploy neither rewrites it nor restarts a
+  service), a golden test replaces it: `tests/goldens.py`'s
+  `assert_golden` compares the current render with `tests/golden/<service>/`
+  (recorded from unchanged `src/` after the parity tests passed, so the bytes
+  equal the role's output; `OPS_DEPLOY_UPDATE_GOLDEN=1` re-records after an
+  intended change, see [Testing deploys](concepts/testing.md#golden-host-files)).
+  The `*_parity.py` modules became `*_golden.py` (`test_traefik_parity` is
+  `test_traefik_route_golden`; `test_traefik_tx_parity` is
+  `test_traefik_tx_scenarios`, run against the port engine only, with its
+  former two-engine comparisons pinned as recorded outcomes). Behavioural
+  tests stay; where one derived its expectation from vendored role YAML
+  (removal and backup defaults, directory order, selectors), the expectation
+  is now literal. Files vendored from ops-library under `src/`
+  (`services/*/files`, `infra/files`, `*.py.txt`, the software estate
+  templates) stay and are ops-deploy's own. Fixtures that held a home LAN
+  address, domain or tailnet name (openclaw, Home Assistant, vaultwarden) now
+  use documentation addresses and `example` names. `just test`: 16,273
+  collected (15,502 passed, 771 skipped) before, 15,251 (14,875 passed, 376
+  skipped) after.
 - Tests: faster again without testing less. `just test` uses
   `--dist worksteal` (tests, not files, are handed out, so
   `tests/test_drive_fan_control.py` no longer bounds the wall time) and keeps

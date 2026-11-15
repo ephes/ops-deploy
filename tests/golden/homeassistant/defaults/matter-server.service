@@ -1,0 +1,20 @@
+[Unit]
+Description=Matter Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homeassistant
+Group=homeassistant
+WorkingDirectory=/home/homeassistant/site
+Environment="PATH=/home/homeassistant/site/.venv-matter-server/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/homeassistant"
+ExecStart=/home/homeassistant/site/.venv-matter-server/bin/matter-server --storage-path /home/homeassistant/site/data/matter-server --port 5580 --vendorid 65521 --fabricid 1 --log-level info --log-file /home/homeassistant/site/logs/matter-server.log
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

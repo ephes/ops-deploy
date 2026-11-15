@@ -1,0 +1,40 @@
+[Unit]
+Description=Storage metrics HTTP endpoint
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=metrics
+Group=metrics
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 /usr/local/bin/storage_metrics_httpd.py \
+  --bind 127.0.0.1 \
+  --port 9101 \
+  --path /.well-known/storage \
+  --json-path /var/lib/storage-metrics/storage.json \
+  --htpasswd-file /etc/storage-metrics-endpoint/htpasswd
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=100.64.0.0/10
+
+# Read access to the metrics data file
+ReadOnlyPaths=/var/lib/storage-metrics
+
+[Install]
+WantedBy=multi-user.target

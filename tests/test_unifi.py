@@ -1,4 +1,4 @@
-"""Existing-install admission, config parity, no-op and secret regression tests."""
+"""Existing-install admission, rendered files, no-op and secret regression tests."""
 
 from __future__ import annotations
 
@@ -13,9 +13,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-import jinja2
 import pytest
-import yaml
 from pydantic import ValidationError
 from pyinfra.api import Config
 
@@ -30,12 +28,14 @@ from ops_deploy.services.unifi.deploy import (
     TIGHTEN_LOGS,
     payload,
 )
-from ops_deploy.services.unifi.render import render_template, role_vars
+from ops_deploy.services.unifi.render import render_template
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
 PACKAGE = ROOT / "src/ops_deploy/services/unifi"
+GOLDEN = Path(__file__).parent / "golden" / "unifi"
 CFG = UnifiConfig(
     installed_package_version="9.5.21-31260-1",
     controller_bind_address="10.2.3.4",
@@ -337,35 +337,11 @@ def test_host_failure_never_prints_child_credentials(
     assert output.out == "refused:preflight_failed_use_ansible\n"
 
 
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_templates_and_supported_defaults_match_current_role() -> None:
-    source = Path(os.environ["OPS_LIBRARY_PATH"]) / "roles/unifi_deploy"
-    defaults = yaml.safe_load((source / "defaults/main.yml").read_text())
-    cfg = CFG
-    # Qualification stays tied to the role release, not a configurable no-op.
-    assert defaults["unifi_version"] == "9.5.21"
-    for field in (
-        "jvm_min_heap_mb",
-        "jvm_max_heap_mb",
-        "traefik_entrypoints",
-        "mongodb_log_max_size_mb",
-        "mongodb_logrotate_enabled",
-        "mongodb_monitor_script_enabled",
-        "manage_firewall",
-        "create_homeassistant_user",
-    ):
-        found = getattr(cfg, field)
-        assert (list(found) if isinstance(found, tuple) else found) == defaults[f"unifi_{field}"]
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(source / "templates"),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    for template in (PACKAGE / "templates").iterdir():
-        assert template.read_bytes() == (source / "templates" / template.name).read_bytes()
-        expected = env.get_template(template.name).render(**role_vars(cfg), unifi_mongodb_password=SENTINEL)
-        assert render_template(cfg, template.name, mongodb_password=SENTINEL) == expected
+@pytest.mark.parametrize("template", sorted(path.name for path in (PACKAGE / "templates").iterdir()))
+def test_templates_match_golden(template: str) -> None:
+    # Recorded when they equalled the unifi_deploy role's renders, as deployed.
+    rendered = render_template(CFG, template, mongodb_password=SENTINEL)
+    assert_golden(GOLDEN / template.removesuffix(".j2"), rendered)
 
 
 def mongodb_state() -> dict[str, Any]:

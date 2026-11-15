@@ -107,11 +107,11 @@ root-anchored excludes, so the database survives `--delete`.
 
 ## Parity with the role
 
-`tests/test_nyxmon_parity.py` renders the vendored role templates
-(`tests/parity/ansible/nyxmon_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, `.env.shell` and unit files. That is why the env
-file still says "Managed by Ansible": identical bytes let Ansible and
-ops-deploy take turns on a host without rewriting files or restarting nyxmon.
+The `.env`, `.env.shell` and unit files are **byte-identical** to the
+retired role's output. That is why the env file still says "Managed by
+Ansible": identical bytes let hosts the role set up be taken over without
+rewriting files or restarting nyxmon. `tests/test_nyxmon_golden.py` keeps
+them so (goldens recorded while they equalled the role's, `tests/golden/nyxmon`).
 The only file that differs is the Traefik route (comments; see
 [helpers](../concepts/helpers.md#parity-differences-from-the-ansible-roles)).
 
@@ -152,7 +152,7 @@ without `agent_rust_version` stops before any operation.
 3. **Never in place.** An installed version whose `.archive-sha256` is not
    the pinned checksum (or is missing) stops the deploy before any change.
 4. **Select.** The unit file names the versioned binary
-   (byte-identical to the role's, see `tests/test_nyxmon_parity.py`), so a
+   (byte-identical to the role's, see `tests/test_nyxmon_golden.py`), so a
    version change reloads systemd and restarts the monitor, and a deploy that
    changes nothing restarts nothing for it. When the version the unit ran so
    far differs from the pin and its directory still exists, it is written to

@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on MinIO offsite replication failure (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/minio-offsite-alert.sh "%i"

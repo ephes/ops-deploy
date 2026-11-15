@@ -1,0 +1,49 @@
+# Managed by Ansible - Traefik configuration for OpsGate private ingress
+
+http:
+  routers:
+    opsgate-secure:
+      rule: "Host(`opsgate.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - opsgate-headers
+        - opsgate-gzip
+      service: opsgate
+      tls:
+        certResolver: letsencrypt
+
+    opsgate-http:
+      rule: "Host(`opsgate.example.invalid`) && (ClientIP(`127.0.0.1/32`) || ClientIP(`::1/128`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`))"
+      entryPoints:
+        - web
+      middlewares:
+        - opsgate-redirect
+      service: opsgate
+
+  middlewares:
+    opsgate-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "opsgate.example.invalid"
+
+    opsgate-gzip:
+      compress: {}
+
+    opsgate-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    opsgate:
+      loadBalancer:
+        servers:
+          - url: "http://backend.invalid:8787"

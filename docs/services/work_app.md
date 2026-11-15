@@ -104,12 +104,12 @@ only use `A-Za-z0-9._:/@%+~*-`.
 
 ## Parity with the role and playbook
 
-`tests/test_work_app_parity.py` renders the vendored role templates
-(`tests/parity/ansible/work_app_deploy__*`) the way Ansible does and requires
-**byte-identical** `.env`, unit and Traefik route (which is why the route
-still says "Managed by Ansible"). With the route hash reused, Ansible and
-ops-deploy take turns on a host without rewriting these files or restarting
-work-app or Traefik.
+The `.env`, unit and Traefik route are **byte-identical** to the retired
+role's output (which is why the route still says "Managed by Ansible"). With
+the route hash reused, hosts the role set up were taken over without
+rewriting these files or restarting work-app or Traefik;
+`tests/test_work_app_golden.py` keeps them so, against goldens in
+`tests/golden/work_app`.
 
 Differences:
 

@@ -36,10 +36,9 @@ from ops_deploy.services._echoport_runner.registration import (
 from ops_deploy.services.vibe_coding.render import known_hosts as apply_known_host
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
+from tests.echoport_runner_data import INPUTS, runner_sha256
 
-PARITY = Path(__file__).parent / "parity/echoport_runner"
-INPUTS = json.loads((PARITY / "inputs.json").read_text())["runners"]
-EXPECTED = json.loads((PARITY / "expected.json").read_text())["runners"]
+EXPECTED = runner_sha256()
 SECRET = "fixture-account-secret-0123456789abcdef"  # pragma: allowlist secret
 PRIVATE = "-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-private-key\n-----END OPENSSH PRIVATE KEY-----\n"
 PUBLIC = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKeyFixturePublicKeyFixtureP deploy@macmini\n"
@@ -250,11 +249,11 @@ def ops(run: Any) -> list[str]:
     return [name.removeprefix("Echoport backup runner registration | ") for name in run.changed_ops]
 
 
-# -- parity -------------------------------------------------------------------------
+# -- rendered files -------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", RUNNERS)
-def test_the_runner_renders_as_ansible_rendered_it(name: str) -> None:
+def test_the_runner_renders_the_recorded_script(name: str) -> None:
     cfg = registration(name)
 
     assert hashlib.sha256(runner_script(cfg.runner, _variables(cfg)).encode()).hexdigest() == EXPECTED[name]

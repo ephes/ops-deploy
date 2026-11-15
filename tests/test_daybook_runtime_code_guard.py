@@ -205,45 +205,6 @@ def test_original_interpreter_home_must_match_exact_managed_selector(
     assert driver.runtime_current() is False
 
 
-def test_actual_original_role_uses_same_replacement_and_in_use_predicates() -> None:
-    from pathlib import Path
-
-    import jinja2.nativetypes
-    import yaml
-
-    role = os.environ.get("OPS_LIBRARY_PATH")
-    if not role:
-        pytest.skip("Actual role oracle is qualified explicitly")
-    tasks = yaml.safe_load((Path(role) / "roles/daybook_operations_runtime_deploy/tasks/code.yml").read_text())
-    facts = {key: value for task in tasks for key, value in task.get("ansible.builtin.set_fact", {}).items()}
-    env = jinja2.nativetypes.NativeEnvironment()
-    replacing: Any = env.from_string(facts["daybook_operations_runtime_code_replacing"])
-    in_use: Any = env.from_string(facts["daybook_operations_runtime_code_in_use"])
-    desired = "a" * 40
-    for rc, installed, expected in [(0, desired, False), (0, "b" * 40, True), (1, "", False)]:
-        assert (
-            replacing.render(
-                daybook_operations_runtime_code_revision={"rc": rc, "stdout": installed},
-                daybook_operations_runtime_revision=desired,
-            )
-            is expected
-        )
-    for loaded, serving, expected in [(113, 1, False), (0, 1, True), (113, 0, True), (0, 0, True)]:
-        assert (
-            in_use.render(
-                daybook_operations_runtime_code_label={"rc": loaded},
-                daybook_operations_runtime_code_serving={"rc": serving},
-            )
-            is expected
-        )
-    pinned = next(task for task in tasks if task["name"] == "code | Install the pinned interpreter")
-    assert pinned["ansible.builtin.command"]["argv"][1:4] == ["python", "install", "--no-bin"]
-    assert pinned["environment"]["UV_PYTHON_PREFERENCE"] == "only-managed"
-    sync = next(task for task in tasks if task["name"] == "code | Synchronize the locked environment")
-    assert sync["environment"]["UV_PYTHON_DOWNLOADS"] == "never"
-    assert sync["ansible.builtin.command"]["argv"][1:4] == ["sync", "--frozen", "--no-dev"]
-
-
 def test_uv_find_check_install_sync_keep_same_inherited_location_context(helper: Any, monkeypatch: Any) -> None:
     driver = helper.RuntimeCodeProbes.__new__(helper.RuntimeCodeProbes)
     driver.account = types.SimpleNamespace(pw_uid=os.geteuid())

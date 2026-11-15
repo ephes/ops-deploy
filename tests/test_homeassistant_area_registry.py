@@ -1,10 +1,9 @@
-"""Real owned loopback WebSockets and original-script oracle; no HA inventory."""
+"""Real owned loopback WebSockets against the area-registry helper; no HA inventory."""
 
 from __future__ import annotations
 
 import asyncio
 import copy
-import hashlib
 import importlib.util
 import json
 import os
@@ -15,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from aiohttp import web
 from pydantic import SecretStr
 
@@ -32,13 +30,6 @@ assert SPEC.loader is not None
 areas = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(areas)
 TOKEN = "synthetic-owned-area-token-00000000"
-ORIGINAL = Path(__file__).parent / "parity/homeassistant/area-registry/original.yml"
-
-
-def original_script() -> str:
-    tasks = yaml.safe_load(ORIGINAL.read_text())
-    task = next(item for item in tasks if item["name"] == "Update Home Assistant area registry via WebSocket API")
-    return str(task["ansible.builtin.command"]["argv"][-1])
 
 
 def initial() -> list[dict[str, Any]]:
@@ -112,61 +103,6 @@ async def endpoint(state: list[dict[str, Any]], outcome: str = "normal") -> Any:
 
 def value(url: str, updates: list[dict[str, Any]], action: str = "apply") -> dict[str, Any]:
     return {"url": url, "token": TOKEN, "timeout": 3, "updates": updates, "action": action}
-
-
-@pytest.mark.parametrize(
-    "desired",
-    [
-        [{"name": "Room", "aliases": ["  New ", "new", 4, "", "Second"], "humidity_entity_id": " sensor.humidity "}],
-        [{"area_id": "owned", "temperature_entity_id": "", "name": "Not-the-name"}],
-        [{"area_id": "owned", "aliases": ["Before"], "humidity_entity_id": None}],
-        [{"area_id": "owned", "aliases": ["New"]}, {"area_id": "owned", "aliases": ["New"]}],
-        [{"area_id": "owned", "aliases": ["New"]}, {"area_id": "missing", "aliases": []}],
-        [{"area_id": "missing", "name": "Room", "aliases": []}],
-    ],
-)
-def test_actual_original_script_and_typed_exchange_match_owned_state(
-    tmp_path: Path, desired: list[dict[str, Any]]
-) -> None:
-    async def scenario() -> None:
-        old_state, new_state = initial(), initial()
-        result_file = tmp_path / "original-result.json"
-        async with endpoint(old_state) as (url, old_calls):
-            env = dict(
-                os.environ,
-                HA_API_URL=url,
-                HA_TIMEOUT="3",
-                HA_AREA_UPDATES=json.dumps(desired),
-                HA_RESULT_PATH=str(result_file),
-            )
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-I",
-                "-B",
-                "-c",
-                original_script(),
-                env=env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await asyncio.wait_for(proc.communicate(json.dumps({"HA_TOKEN": TOKEN}).encode()), 10)
-            old_result = json.loads(result_file.read_text())
-        async with endpoint(new_state) as (url, new_calls):
-            report = await areas.run(value(url, desired), areas.new_report())
-        assert new_state == old_state
-        assert new_calls == old_calls
-        assert report["success"] == (old_result["status"] == "success")
-        attempts = len([item for item in new_calls if item["type"].endswith("/update")])
-        assert report["mutation_attempts"] == attempts
-        assert report["changed"] == bool(attempts)
-        assert new_state[1] == initial()[1]
-        for key in ("floor_id", "icon"):
-            assert new_state[0][key] == initial()[0][key]
-        assert "private" not in json.dumps(report)
-        assert TOKEN not in json.dumps(report)
-
-    asyncio.run(scenario())
 
 
 def test_inspect_first_repeat_and_whole_unrelated_state() -> None:
@@ -297,55 +233,6 @@ def test_original_aggregate_selector_edge_and_alias_type() -> None:
     with pytest.raises(ValueError, match="list"):
         validate_updates([{"name": "Room", "aliases": "bad"}])
     validate_updates([{"name": "Room", "aliases": [1, None, "ok"]}])
-
-
-def test_captured_original_source_hash() -> None:
-    receipt = json.loads(ORIGINAL.with_name("source.json").read_text())
-    assert hashlib.sha256(ORIGINAL.read_bytes()).hexdigest() == receipt["sha256"]
-    assert receipt["path"] == "roles/homeassistant_deploy/tasks/area_registry.yml"
-
-
-@pytest.mark.parametrize(
-    "updates",
-    [
-        [{"area_id": "owned", "aliases": ["New"]}, {}],
-        [{"area_id": "owned", "name": "Room"}, {}],
-        [{"name": "Room", "aliases": "invalid"}],
-        [{"name": "Room", "aliases": [1, None, "fine"]}],
-    ],
-)
-def test_original_preceding_validation_matches_actual_payload(updates: list[dict[str, Any]]) -> None:
-    from jinja2.nativetypes import NativeEnvironment
-
-    tasks = yaml.safe_load(ORIGINAL.with_name("validate.yml").read_text())
-    check = next(
-        item["ansible.builtin.assert"]["that"]
-        for item in tasks
-        if item["name"] == "Validate Home Assistant area registry updates"
-    )
-    env = NativeEnvironment()
-    env.filters["type_debug"] = lambda item: type(item).__name__
-    context = {
-        "homeassistant_api_url": "http://owned",
-        "homeassistant_api_token": TOKEN,
-        "homeassistant_virtualenv_path": "/srv/owned/.venv",
-        "homeassistant_area_registry_updates": updates,
-    }
-    original_pass = all(env.from_string("{{ " + expression + " }}").render(**context) for expression in check)
-    api = HomeAssistantApiConfig(token=SecretStr(TOKEN))
-    if original_pass:
-        area_payload(api, updates, "apply", app_port=10020)
-    else:
-        with pytest.raises(ValueError, match=r"selectors|list"):
-            area_payload(api, updates, "apply", app_port=10020)
-
-
-def test_validation_is_original_role_prelude_and_sources_bound() -> None:
-    manifest = json.loads(ORIGINAL.with_name("source.json").read_text())
-    for name, digest in manifest["additional_sources"].items():
-        assert hashlib.sha256(ORIGINAL.with_name(name).read_bytes()).hexdigest() == digest
-    original_main = ORIGINAL.with_name("main.yml").read_text()
-    assert original_main.index("validate.yml") < original_main.index("area_registry.yml")
 
 
 @pytest.mark.parametrize(

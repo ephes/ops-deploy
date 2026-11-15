@@ -1,4 +1,4 @@
-"""thermal_monitoring: role template parity, config validation and the deploy's plans on the fake connector."""
+"""thermal_monitoring: golden host files, config validation and the deploy's plans on the fake connector."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 
 from ops_deploy.core import ConfigValidationError
@@ -26,10 +25,10 @@ from ops_deploy.services.thermal_monitoring import (
 from ops_deploy.services.thermal_monitoring import deploy as thermal
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
+from tests.goldens import assert_golden
 from tests.metrics_httpd_fixtures import verify_op, without_switch
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
-PACKAGED = Path(__file__).parents[1] / "src/ops_deploy/services/thermal_monitoring/templates"
+GOLDEN = Path(__file__).parent / "golden" / "thermal_monitoring"
 PASSWORD = "fixture-endpoint-password"
 SECRETS = SecretValues(SecretRef("secrets/fixture.yml"), {PASSWORD_KEY: PASSWORD})
 TAILSCALE_IP = "100.64.0.7"
@@ -111,133 +110,58 @@ def make_cfg(**changes: Any) -> ThermalMonitoringConfig:
 CFG = make_cfg()
 
 
-# -- parity with the roles' templates -----------------------------------------------
+# -- the host files, byte for byte -------------------------------------------------
 
-
-def render_ansible(role: str, template: str, variables: dict[str, Any]) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    env.filters["to_json"] = json.dumps
-    return env.get_template(f"{role}__{template}").render(**variables)
-
-
-# thermal_metrics_exporter/defaults/main.yml (the template's variables)
-EXPORTER_DEFAULTS: dict[str, Any] = {
-    "thermal_metrics_exporter_lm_sensors": [],
-    "thermal_metrics_exporter_sysfs_sensors": [],
-    "thermal_metrics_exporter_ipmi_sensors": [],
+VARIANTS: dict[str, dict[str, Any]] = {
+    "defaults": {"auth_user": "nyxmon", "secrets": "secrets/fixture.yml"},
+    "the-monitoring-play": {
+        "auth_user": "nyxmon",
+        "secrets": "secrets/fixture.yml",
+        "timer_on_boot_sec": 75,
+        "timer_randomized_delay_sec": 15,
+        "exporter": {"packages": ["python3"], "sysfs_sensors": SYSFS},
+    },
+    "everything": {
+        "auth_user": "monitor",
+        "secrets": "secrets/fixture.yml",
+        "service_name": "thermal-x",
+        "user": "thermo",
+        "group": "thermgrp",
+        "site_path": "/srv/thermal",
+        "port": 9200,
+        "path": "/x/thermal",
+        "server_path": "/opt/thermal/httpd.py",
+        "htpasswd_dir": "/etc/thermal-x",
+        "timer_name": "thermal-x-collector",
+        "timer_interval": 120,
+        "timer_on_boot_sec": 5,
+        "timer_on_calendar": "*:0/2",
+        "timer_accuracy_sec": 1,
+        "timer_randomized_delay_sec": 0,
+        "exporter": {
+            "bin_path": "/opt/thermal/exporter",
+            "lm_sensors": LM,
+            "sysfs_sensors": SYSFS,
+            "ipmi_sensors": IPMI,
+        },
+    },
 }
-# thermal_metrics_endpoint/defaults/main.yml, the derived paths resolved
-ENDPOINT_DEFAULTS: dict[str, Any] = {
-    "thermal_metrics_endpoint_user": "metrics",
-    "thermal_metrics_endpoint_group": "metrics",
-    "thermal_metrics_endpoint_bind": "127.0.0.1",
-    "thermal_metrics_endpoint_port": 9104,
-    "thermal_metrics_endpoint_path": "/.well-known/thermal",
-    "thermal_metrics_endpoint_data_dir": "/var/lib/thermal-metrics",
-    "thermal_metrics_endpoint_json_path": "/var/lib/thermal-metrics/thermal.json",
-    "thermal_metrics_endpoint_server_path": "/usr/local/bin/thermal_metrics_httpd.py",
-    "thermal_metrics_endpoint_htpasswd_path": "/etc/thermal-metrics-endpoint/htpasswd",
-    "thermal_metrics_endpoint_exporter_path": "/usr/local/bin/thermal-metrics-exporter",
-    "thermal_metrics_endpoint_timer_interval": 300,
-    "thermal_metrics_endpoint_timer_name": "thermal-metrics-collector",
-    "thermal_metrics_endpoint_timer_on_boot_sec": 30,
-    "thermal_metrics_endpoint_timer_on_calendar": "*:0/5",
-    "thermal_metrics_endpoint_timer_accuracy_sec": 10,
-    "thermal_metrics_endpoint_timer_randomized_delay_sec": 30,
-}
-# (config fields, role variables overriding the defaults), written out independently of role_vars().
-VARIANTS: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
-    "defaults": ({"auth_user": "nyxmon", "secrets": "secrets/fixture.yml"}, {}),
-    "the monitoring play": (
-        {
-            "auth_user": "nyxmon",
-            "secrets": "secrets/fixture.yml",
-            "timer_on_boot_sec": 75,
-            "timer_randomized_delay_sec": 15,
-            "exporter": {"packages": ["python3"], "sysfs_sensors": SYSFS},
-        },
-        {
-            "thermal_metrics_exporter_sysfs_sensors": SYSFS,
-            "thermal_metrics_endpoint_timer_on_boot_sec": 75,
-            "thermal_metrics_endpoint_timer_randomized_delay_sec": 15,
-        },
-    ),
-    "everything": (
-        {
-            "auth_user": "monitor",
-            "secrets": "secrets/fixture.yml",
-            "service_name": "thermal-x",
-            "user": "thermo",
-            "group": "thermgrp",
-            "site_path": "/srv/thermal",
-            "port": 9200,
-            "path": "/x/thermal",
-            "server_path": "/opt/thermal/httpd.py",
-            "htpasswd_dir": "/etc/thermal-x",
-            "timer_name": "thermal-x-collector",
-            "timer_interval": 120,
-            "timer_on_boot_sec": 5,
-            "timer_on_calendar": "*:0/2",
-            "timer_accuracy_sec": 1,
-            "timer_randomized_delay_sec": 0,
-            "exporter": {
-                "bin_path": "/opt/thermal/exporter",
-                "lm_sensors": LM,
-                "sysfs_sensors": SYSFS,
-                "ipmi_sensors": IPMI,
-            },
-        },
-        {
-            "thermal_metrics_exporter_lm_sensors": LM,
-            "thermal_metrics_exporter_sysfs_sensors": SYSFS,
-            "thermal_metrics_exporter_ipmi_sensors": IPMI,
-            "thermal_metrics_endpoint_user": "thermo",
-            "thermal_metrics_endpoint_group": "thermgrp",
-            "thermal_metrics_endpoint_port": 9200,
-            "thermal_metrics_endpoint_path": "/x/thermal",
-            "thermal_metrics_endpoint_data_dir": "/srv/thermal",
-            "thermal_metrics_endpoint_json_path": "/srv/thermal/thermal.json",
-            "thermal_metrics_endpoint_server_path": "/opt/thermal/httpd.py",
-            "thermal_metrics_endpoint_htpasswd_path": "/etc/thermal-x/htpasswd",
-            "thermal_metrics_endpoint_exporter_path": "/opt/thermal/exporter",
-            "thermal_metrics_endpoint_timer_interval": 120,
-            "thermal_metrics_endpoint_timer_on_boot_sec": 5,
-            "thermal_metrics_endpoint_timer_on_calendar": "*:0/2",
-            "thermal_metrics_endpoint_timer_accuracy_sec": 1,
-            "thermal_metrics_endpoint_timer_randomized_delay_sec": 0,
-        },
-    ),
-}
-TEMPLATES: dict[tuple[str, str], Callable[[ThermalMonitoringConfig], str]] = {
-    ("thermal_metrics_exporter", "thermal-metrics-exporter.py.j2"): lambda cfg: thermal.render_exporter(cfg),
-    ("thermal_metrics_endpoint", "thermal_metrics_httpd.py.j2"): lambda cfg: thermal.render_httpd(cfg),
-    ("thermal_metrics_endpoint", "thermal-metrics-collector.service.j2"): thermal.render_collector_service,
-    ("thermal_metrics_endpoint", "thermal-metrics-collector.timer.j2"): thermal.render_collector_timer,
-    ("thermal_metrics_endpoint", "thermal-metrics-endpoint.service.j2"): lambda cfg: thermal.render_endpoint_unit(
-        cfg, "127.0.0.1"
-    ),
+FILES: dict[str, Callable[[ThermalMonitoringConfig], str]] = {
+    "thermal-metrics-exporter.py": lambda cfg: thermal.render_exporter(cfg),
+    "thermal_metrics_httpd.py": lambda cfg: thermal.render_httpd(cfg),
+    "thermal-metrics-collector.service": thermal.render_collector_service,
+    "thermal-metrics-collector.timer": thermal.render_collector_timer,
+    "thermal-metrics-endpoint.service": lambda cfg: thermal.render_endpoint_unit(cfg, "127.0.0.1"),
 }
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
-@pytest.mark.parametrize("template", TEMPLATES, ids=lambda key: key[1])
-def test_files_are_the_roles_templates_rendered(template: tuple[str, str], variant: str) -> None:
-    fields, overrides = VARIANTS[variant]
-    cfg = ThermalMonitoringConfig.model_validate(fields)
+def test_host_files_are_golden(variant: str) -> None:
+    """The exporter, the endpoint and their units: a changed byte reruns the collector or restarts the endpoint."""
 
-    expected = render_ansible(*template, {**EXPORTER_DEFAULTS, **ENDPOINT_DEFAULTS, **overrides})
-    assert TEMPLATES[template](cfg) == expected
-
-
-@pytest.mark.parametrize("template", sorted(p.name for p in PACKAGED.glob("*.j2")))
-def test_shipped_templates_are_the_vendored_role_templates(template: str) -> None:
-    role = "thermal_metrics_exporter" if template.startswith("thermal-metrics-exporter") else "thermal_metrics_endpoint"
-    assert (PACKAGED / template).read_bytes() == (VENDORED / f"{role}__{template}").read_bytes()
+    cfg = ThermalMonitoringConfig.model_validate(VARIANTS[variant])
+    for name, render in FILES.items():
+        assert_golden(GOLDEN / variant / name, render(cfg))
 
 
 def test_the_exporter_reads_back_the_sensor_lists_with_their_types() -> None:

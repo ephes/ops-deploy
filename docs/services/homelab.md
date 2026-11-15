@@ -39,9 +39,7 @@ never values. `.env` reaches the host only on stdin.
 
 ## Configuration (`HomelabConfig`)
 
-Defaults follow `homelab_shared/defaults/main.yml`
-(`tests/test_homelab_parity.py` compares them with the role when
-`OPS_LIBRARY_PATH` is set).
+Defaults follow the retired role's `homelab_shared/defaults/main.yml`.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -148,12 +146,11 @@ group `group` (as the `django_site` port does) is not part of this port.
 
 ## Parity with the role and playbook
 
-`tests/test_homelab_parity.py` renders the vendored role templates
-(`tests/parity/ansible/homelab_deploy__*`, last checked against ops-library
-main `540ede2b`, 2.56.0) the way Ansible does and requires **byte-identical**
-`.env`, unit and Traefik route; the templates the deploy ships are the same
-files. `tests/parity/ops_library_roles.json` records `homelab_deploy`,
-`homelab_shared` and `uv_install`.
+The `.env`, unit and Traefik route are **byte-identical** to the retired
+role's output (its templates, last checked against ops-library main
+`540ede2b`, 2.56.0, are the ones the deploy ships);
+`tests/test_homelab_golden.py` keeps them so, against goldens in
+`tests/golden/homelab`.
 
 Differences:
 
@@ -184,9 +181,7 @@ Differences:
 ## Removal
 
 `remove_homelab(HomelabRemoveConfig(confirm=True))` ports the
-`homelab_remove` role at ops-library `44a532ba` (the role files and
-`homelab_shared`'s defaults are recorded under
-`tests/parity/homelab/remove`). The defaults are the role's and destructive:
+`homelab_remove` role at ops-library `44a532ba`. The defaults are the role's and destructive:
 `remove_user`, `remove_home`, `remove_database`, `remove_media` and
 `remove_traefik_config` are all `True`; the paths are `homelab_shared`'s
 (`/home/homelab`, `/home/homelab/site/db.sqlite3`, `/home/homelab/site/media`,

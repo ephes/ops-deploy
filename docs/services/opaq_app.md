@@ -85,9 +85,9 @@ it; the migration/collectstatic step never runs on a converged host.
 
 ## Parity with the role
 
-`tests/test_opaq_app_parity.py` renders the vendored role templates
-(`tests/parity/ansible/opaq_app_deploy__*`) the way Ansible does and requires
-byte-identical environment file, unit and Traefik route.
+The environment file, unit and Traefik route are byte-identical to the
+retired role's output; `tests/test_opaq_app_golden.py` keeps them so
+(goldens in `tests/golden/opaq_app`).
 
 Known role quirk: `DJANGO_ALLOWED_HOSTS` is built with the `union` filter, a
 set whose order depends on the controller's hash seed, so the role itself may
@@ -113,7 +113,7 @@ Differences kept on purpose:
   Echoport and Nyxmon upserts (pending, unchanged, missing service), route
   checks, leak checks (no secret or digest in commands, op names, arguments or
   uploads; the environment file only on stdin), validation.
-- `tests/test_opaq_app_parity.py`: byte parity with the role.
+- `tests/test_opaq_app_golden.py`: the host files against their goldens.
 - `tests/smoke/test_opaq_app_smoke.py` (`just smoke`, needs `DAYBOOK_SOURCE` or
   `PROJECTS_ROOT`): two real deploys of the committed `HEAD` of a daybook
   checkout plus a fresh-clone run; second run converged, unit hardened,

@@ -1,7 +1,7 @@
 """Release-bound index expectations; no application/backend import or database I/O.
 
 The schema fingerprint is derived from unmodified 3.4.2 release source with its
-locked whoosh-compat types (tests/parity/paperless/index-schema-3.4.2.json).
+locked whoosh-compat types (tests/fixtures/paperless/index-schema-3.4.2.json).
 Actual full-application/native validation remains part of the deployment fixture.
 """
 

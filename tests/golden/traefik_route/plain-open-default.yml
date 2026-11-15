@@ -1,0 +1,43 @@
+# Traefik configuration for Nyxmon
+# Managed by ops-deploy - do not edit manually
+
+http:
+  routers:
+    nyxmon-secure:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web-secure
+      middlewares:
+        - nyxmon-headers
+        - nyxmon-gzip
+      service: nyxmon
+      tls: {}
+
+    # Plain HTTP; the static config redirects the web entrypoint to web-secure.
+    nyxmon-http:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web
+      service: nyxmon
+
+  middlewares:
+
+    nyxmon-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    nyxmon-gzip:
+      compress: {}
+
+  services:
+    nyxmon:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:10017"

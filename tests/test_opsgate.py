@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import plistlib
 from importlib.resources import files
 from pathlib import Path
@@ -117,31 +115,6 @@ def test_invalid_credentials_never_disclose_values(tmp_path: Path) -> None:
     assert synthetic not in str(error.value)
 
 
-def role_oracle(relative: str) -> Path:
-    source = os.environ.get("OPS_LIBRARY_PATH")
-    if not source:
-        pytest.skip("OPS_LIBRARY_PATH unset; paired role oracle parity is run explicitly")
-    return Path(source) / "roles/opsgate_deploy" / relative
-
-
-def test_templates_are_exact_authoritative_role_resources() -> None:
-    role = role_oracle("templates")
-    assert role.is_dir()
-    packaged = files("ops_deploy.services.opsgate").joinpath("templates")
-    for path in role.iterdir():
-        assert packaged.joinpath(path.name).read_bytes() == path.read_bytes()
-
-
-def test_default_resource_manifest_matches_role_variables() -> None:
-    role = role_oracle("defaults/main.yml")
-    import yaml
-
-    expected = yaml.safe_load(role.read_text())
-    assert json.loads(files("ops_deploy.services.opsgate").joinpath("defaults.json").read_text()) == {
-        key: value for key, value in expected.items() if key not in SECRET_DEFAULTS
-    }
-
-
 def test_current_native_deploy_does_not_sync_stage_or_send_secrets(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text('[project]\nname="opsgate"\nversion="0.2.0"\n')
     cfg = configuration(tmp_path)
@@ -193,7 +166,7 @@ def test_retired_flag_defaults_off_and_is_strict(tmp_path: Path) -> None:
     assert configuration(tmp_path, opsgate_retired=True).opsgate_retired is True
     with pytest.raises(ValidationError):
         configuration(tmp_path, opsgate_retired="yes")
-    # The switch is not a role variable, so the role-default parity stays exact.
+    # The switch is not part of the recorded defaults.
     assert "opsgate_retired" not in DEFAULTS
 
 

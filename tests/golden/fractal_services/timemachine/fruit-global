@@ -1,0 +1,4 @@
+# macOS/Time Machine compatibility (vfs_fruit global-only options;
+# the share options are in the Time Machine snippet)
+   fruit:model = MacSamba
+   fruit:nfs_aces = no

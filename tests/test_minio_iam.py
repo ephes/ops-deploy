@@ -17,7 +17,7 @@ assert SPEC
 assert SPEC.loader
 HOST = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HOST)
-RESPONSES = json.loads((ROOT / "tests/parity/minio/mc-responses.json").read_text())
+RESPONSES = json.loads((ROOT / "tests/fixtures/minio/mc-responses.json").read_text())
 
 
 def reply(name: str) -> Any:

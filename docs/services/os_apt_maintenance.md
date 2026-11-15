@@ -125,7 +125,9 @@ Git exactly. Healthy repeats and the full cf3 Ansible coexistence repeat kept
 managed files, PID, timer state, package versions, apt policy and reboot flags
 unchanged, including the actual Rust release/pin tree. The damaged-unit oracle
 retains the distinct systemd 255/257 outcomes described in the harness README;
-it does not establish identical cached-unit metadata. Earlier failed fixture
+it does not establish identical cached-unit metadata. (The harness has since
+dropped the Ansible repeat and the role's fault run; the rendered files are pinned
+by `tests/test_os_apt_maintenance_golden.py`.) Earlier failed fixture
 runs remain part of the evidence, including their missing Rust-tree coverage.
 The coordinated four-host inventory plan, default first deployment and explicit
 macmini repeat also passed on immutable artifact `db2d4d3`. Each deployment

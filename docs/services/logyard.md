@@ -35,10 +35,10 @@ Four entry points, as there are four playbooks: `deploy_logyard` (stack),
 `deploy_logyard_vector(cfg)`. The roles' dependencies are ported as
 [`deploy_docker_install` and `deploy_vector_apt_install`](../infra.md).
 
-All files are byte-identical to the roles' (templates shipped unchanged,
-`tests/test_logyard_parity.py` renders the vendored copies independently), so
-Ansible and ops-deploy can take turns on a host without rewriting anything or
-restarting anything.
+All files are byte-identical to what the retired roles wrote (templates
+shipped unchanged; `tests/test_logyard_golden.py` keeps them so, against
+goldens in `tests/golden/logyard`), so the takeover rewrote and restarted
+nothing.
 
 ## Secret
 
@@ -144,7 +144,7 @@ guess before it reaches the running service, and the next run corrects it.
 
 ## Tests
 
-`tests/test_logyard_parity.py`, `tests/test_logyard.py`,
+`tests/test_logyard_golden.py`, `tests/test_logyard.py`,
 `tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
 (fake connector: first runs, converged no-ops, each kind of change and what it
 restarts, secret handling, config validation). The Ansible/pyinfra coexistence

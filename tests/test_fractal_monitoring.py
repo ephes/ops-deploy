@@ -20,6 +20,7 @@ from ops_deploy.infra.smartd.render import render as smartd_render
 from ops_deploy.infra.zed import ZedConfig
 from ops_deploy.services.fractal_monitoring.config import BackupEndpointConfig, SchemaRule, StorageEndpointConfig
 from ops_deploy.services.fractal_monitoring.render import render
+from tests.goldens import assert_golden
 
 ROOT = Path(__file__).parents[1]
 FILES = ROOT / "src/ops_deploy/services/fractal_monitoring/files"
@@ -389,11 +390,42 @@ def test_wrong_mc_download_checksum_preserves_prior_binary_and_cleans_staging(
     assert list(tmp_path.glob(".monitoring-mc-*")) == []
 
 
-def test_original_collector_and_unit_source_bytes_are_retained() -> None:
-    oracle = json.loads((ROOT / "tests/parity/fractal_monitoring_sources.json").read_text())
-    for name, digest in oracle["sha256"].items():
-        path = ROOT / "src/ops_deploy" / name
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, name
+GOLDEN = Path(__file__).parent / "golden" / "fractal_monitoring"
+MONITORING_TEMPLATES = sorted(
+    path.name.removesuffix(".j2")
+    for path in (ROOT / "src/ops_deploy/services/fractal_monitoring/templates").glob("*.j2")
+)
+
+
+def test_host_files_are_golden() -> None:
+    """Collectors, endpoints, units, smartd.conf and the scrub units, as the storage host has them.
+
+    A changed byte reruns a collector, restarts an endpoint or smartd, or reschedules a scrub.
+    """
+
+    from ops_deploy.infra.zed.render import render as zed_render
+    from ops_deploy.services.fractal_monitoring.config import ReplicationLagConfig, StorageExporterConfig
+
+    configs: dict[str, StorageExporterConfig | StorageEndpointConfig | BackupEndpointConfig | ReplicationLagConfig] = {
+        "backup": BackupEndpointConfig(),
+        "minio": ReplicationLagConfig(),
+        "nyxmon": StorageExporterConfig(),
+        "storage": StorageEndpointConfig(),
+    }
+    for name in MONITORING_TEMPLATES:
+        cfg = configs[name.replace("_", "-").split("-")[0]]
+        assert_golden(GOLDEN / name, render(cfg, name))
+    smartd = SmartdConfig(
+        mail_to="root",
+        devices=(
+            SmartdDevice(name="owned", device="/dev/owned", type="sat", no_spinup=True, short_schedule="S/../.././05"),
+        ),
+        opts="--interval=7200",
+    )
+    assert_golden(GOLDEN / "smartd.conf", smartd_render(smartd))
+    zed = ZedConfig(email_to="root")
+    for unit in ("zpool-scrub@.service", "zpool-scrub@.timer"):
+        assert_golden(GOLDEN / unit, zed_render(zed, unit + ".j2"))
 
 
 @pytest.mark.parametrize("pending", [False, True])
@@ -516,26 +548,3 @@ def test_enabled_exporter_is_independent_of_disabled_endpoint(monkeypatch: pytes
     assert any(path == cfg.exporter.bin_path for path, body in run.uploads)
     assert any(op.name.endswith("Ensure original exporter pool-cache directory") for op in run.ops)
     assert not any("Reconcile storage cached resources" in op.name for op in run.ops)
-
-
-@pytest.mark.parametrize(
-    "role",
-    [
-        "mail_relay_client",
-        "smartd",
-        "zed",
-        "nyxmon_storage_exporter",
-        "storage_metrics_endpoint",
-        "backup_metrics_endpoint",
-    ],
-)
-def test_s4_original_role_behavior_provenance(role: str) -> None:
-    import os
-
-    from tests.test_ops_library_drift import role_digest
-
-    path = os.environ.get("OPS_LIBRARY_PATH")
-    if not path:
-        pytest.skip("paired S4 role provenance requires explicit OPS_LIBRARY_PATH")
-    oracle = json.loads((ROOT / "tests/parity/fractal_monitoring_sources.json").read_text())
-    assert role_digest(Path(path) / "roles" / role) == oracle["role_behavior_sha256"][role]

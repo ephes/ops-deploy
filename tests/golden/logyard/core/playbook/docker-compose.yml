@@ -1,0 +1,23 @@
+services:
+  loki:
+    image: "grafana/loki:3.5.11"
+    container_name: "logyard-loki"
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3101:3100"
+    volumes:
+      - "/etc/logyard/loki-config.yml:/etc/loki/config.yml:ro"
+      - "/var/lib/logyard/loki:/var/lib/loki"
+    logging:
+      driver: journald
+      options:
+        tag: "logyard-loki"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: "graphyard-monitoring"

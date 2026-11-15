@@ -1,12 +1,12 @@
-"""``enroll`` and the static configuration actions against ops-library's engine (3110a0f1).
+"""``enroll`` and the static configuration actions of the Traefik transaction engine.
 
-As in ``test_traefik_tx_parity``: both engines run the same requests on the same fake
-host (``traefik_tx_fixtures``) and must return the same results and refusals and leave
-the same files behind, byte for byte; each scenario also checks what the port did. The
-validators (``validate_alias``, ``validate_metrics_bind``, ``validate_acme_storage``),
+As in ``test_traefik_tx_scenarios``: each scenario runs a request on the fake host
+(``traefik_tx_fixtures``) and checks the result or refusal and the files left behind.
+The validators (``validate_alias``, ``validate_metrics_bind``, ``validate_acme_storage``),
 the ACME store reading (``certificate_set``, ``acme_preflight``) and the TLS probe of
 local Traefik (``tls_fingerprints``, ``verify_tls_fingerprints``), which the fake host
-replaces or relaxes in ``execute``, are compared function by function.
+replaces or relaxes in ``execute``, are tested function by function, their outcomes
+pinned in ``tests/golden/traefik_tx/test_traefik_tx_config.json`` (``OutcomePins``).
 """
 
 from __future__ import annotations
@@ -30,11 +30,12 @@ from tests.traefik_tx_fixtures import (
     ACME_NAMES,
     ACME_SOURCE,
     ACME_TARGET,
-    ENGINES,
     NOW,
     OLD,
+    PORT,
     FakeHost,
     Outcome,
+    OutcomePins,
     Setup,
     acme_store,
     enrolled_state,
@@ -45,7 +46,7 @@ from tests.traefik_tx_fixtures import (
     static_configs,
 )
 
-PORT, REFERENCE = ENGINES["ops-deploy"], ENGINES["ops-library"]
+PINS = OutcomePins("test_traefik_tx_config")
 ENROLLED = "11111111"
 DYNAMIC = Path("/etc/traefik/dynamic")
 Scenario = Callable[[Setup], None]
@@ -59,12 +60,16 @@ def outcome_of(call: Callable[[], Any]) -> tuple[str, Any]:
         return (type(exc).__name__, str(exc))
 
 
-def both(call: Callable[[types.ModuleType], Any]) -> tuple[str, Any]:
-    """``call`` with each engine; the outcomes must agree."""
+@pytest.fixture(autouse=True)
+def _pins(request: pytest.FixtureRequest, tmp_path: Path) -> None:
+    PINS.start(request.node.name, tmp_path)
 
-    port = outcome_of(lambda: call(PORT))
-    assert port == outcome_of(lambda: call(REFERENCE))
-    return port
+
+def pinned(call: Callable[[types.ModuleType], Any]) -> tuple[str, Any]:
+    """``call`` with the engine; the outcome must be the pinned one."""
+
+    outcome: tuple[str, Any] = PINS.check(outcome_of(lambda: call(PORT)))
+    return outcome
 
 
 def configs(action: str) -> tuple[bytes, bytes, dict[str, str]]:
@@ -638,12 +643,8 @@ CASES = alias_cases() + metrics_cases() + acme_cases() + enroll_cases()
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case.name)
-def test_engines_agree(case: Case, tmp_path: Path) -> None:
-    port = run_scenario(PORT, tmp_path / "host", case.setup, case.action)
-    reference = run_scenario(REFERENCE, tmp_path / "host", case.setup, case.action)
-
-    assert port == reference
-    case.check(port)
+def test_scenario(case: Case, tmp_path: Path) -> None:
+    case.check(run_scenario(PORT, tmp_path / "host", case.setup, case.action))
 
 
 CLI_CASES = {
@@ -656,19 +657,17 @@ CLI_CASES = {
 
 
 @pytest.mark.parametrize("case", CLI_CASES.values(), ids=CLI_CASES.keys())
-def test_exit_codes_and_output_agree(case: tuple[str, Scenario, int, str], tmp_path: Path) -> None:
+def test_exit_codes_and_output(case: tuple[str, Scenario, int, str], tmp_path: Path) -> None:
     action, scenario, code, phase = case
     port = run_scenario(PORT, tmp_path / "host", scenario, action, cli=True)
-    reference = run_scenario(REFERENCE, tmp_path / "host", scenario, action, cli=True)
 
-    assert port == reference
     assert port.error is None
     assert port.result is not None
     assert port.result["exit"] == code
     assert port.result["output"].get("state", {}).get("phase", "") == phase
 
 
-# -- the replaced functions, compared on their own ---------------------------------------------
+# -- the replaced functions, on their own ---------------------------------------------
 
 
 def alias_pairs() -> list[tuple[bytes, bytes, dict[str, str]]]:
@@ -693,7 +692,7 @@ def alias_pairs() -> list[tuple[bytes, bytes, dict[str, str]]]:
 
 @pytest.mark.parametrize("pair", alias_pairs())
 def test_validate_alias(pair: tuple[bytes, bytes, dict[str, str]]) -> None:
-    both(lambda engine: engine.validate_alias(*pair))
+    pinned(lambda engine: engine.validate_alias(*pair))
 
 
 def metrics_pairs() -> list[tuple[bytes, bytes, dict[str, str]]]:
@@ -716,7 +715,7 @@ def metrics_pairs() -> list[tuple[bytes, bytes, dict[str, str]]]:
 
 @pytest.mark.parametrize("pair", metrics_pairs())
 def test_validate_metrics_bind(pair: tuple[bytes, bytes, dict[str, str]]) -> None:
-    both(lambda engine: engine.validate_metrics_bind(*pair))
+    pinned(lambda engine: engine.validate_metrics_bind(*pair))
 
 
 ACME_POLICY = {"acme_source": ACME_SOURCE, "acme_target": ACME_TARGET}
@@ -746,7 +745,7 @@ def acme_pairs() -> list[tuple[bytes, bytes, dict[str, Any]]]:
 
 @pytest.mark.parametrize("pair", acme_pairs())
 def test_validate_acme_storage(pair: tuple[bytes, bytes, dict[str, Any]]) -> None:
-    both(lambda engine: engine.validate_acme_storage(*pair))
+    pinned(lambda engine: engine.validate_acme_storage(*pair))
 
 
 def fake_openssl(argv: list[str], timeout: int = 30, **kwargs: Any) -> str:
@@ -780,7 +779,7 @@ def test_certificate_set(store: bytes) -> None:
         with patch.object(engine, "run", fake_openssl):
             return engine.certificate_set(store)
 
-    both(call)
+    pinned(call)
 
 
 @pytest.fixture
@@ -792,9 +791,8 @@ def acme_host(tmp_path: Path) -> Iterator[FakeHost]:
     host.acme_target.parent.mkdir()
     with ExitStack() as stack:
         stack.enter_context(patch.object(Path, "lstat", host.lstat_as_root(Path.lstat)))
-        for engine in ENGINES.values():
-            stack.enter_context(patch.object(engine, "trusted_file", relaxed_trusted_file))
-            stack.enter_context(patch.object(engine, "run", fake_openssl))
+        stack.enter_context(patch.object(PORT, "trusted_file", relaxed_trusted_file))
+        stack.enter_context(patch.object(PORT, "run", fake_openssl))
         yield host
 
 
@@ -821,7 +819,7 @@ def test_acme_preflight(change: Callable[[FakeHost], object], acme_host: FakeHos
     change(acme_host)
     policy = {"acme_source": str(acme_host.acme_source), "acme_target": str(acme_host.acme_target)}
 
-    both(lambda engine: engine.acme_preflight(policy))
+    pinned(lambda engine: engine.acme_preflight(policy))
 
 
 class FakeTls:
@@ -878,7 +876,7 @@ def test_tls_fingerprints(served: dict[str, bytes | None]) -> None:
         ):
             return engine.tls_fingerprints(list(ACME_NAMES)), connected
 
-    both(call)
+    pinned(call)
 
 
 @pytest.mark.parametrize("failures", [0, 1, 4, 5])
@@ -907,12 +905,13 @@ def test_verify_tls_fingerprints_settles_but_never_accepts_another_leaf(failures
                 return ("refused", str(exc), type(exc.__cause__).__name__, sleeps)
             return ("ok", sleeps)
 
-    assert both(call)[1][0] == ("refused" if failures == 5 else "ok")
+    assert pinned(call)[1][0] == ("refused" if failures == 5 else "ok")
 
 
-def test_the_reference_actions_are_all_ported() -> None:
-    assert PORT.PORTED == PORT.ACTIONS == REFERENCE_ACTIONS
+def test_the_actions() -> None:
+    assert (
+        PORT.PORTED
+        == PORT.ACTIONS
+        == ("inspect", "enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")
+    )
     assert set(PORT.CONFIG_ACTIONS) == {"alias", "metrics_bind", "acme_storage"}
-
-
-REFERENCE_ACTIONS = ("inspect", "enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")

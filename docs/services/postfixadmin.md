@@ -123,8 +123,8 @@ and restore round trip against a throwaway local PostgreSQL 16/17 when
 ## Removal
 
 `remove_postfixadmin(PostfixAdminRemoveConfig(confirm=True))` ports the
-`postfixadmin_remove` role at ops-library `44a532b` with its defaults (role
-and `postfixadmin_shared` files under `tests/parity/postfixadmin/remove`).
+`postfixadmin_remove` role at ops-library `44a532b` with its and
+`postfixadmin_shared`'s defaults.
 Without `confirm` it fails before any host probe. It removes the enabled and
 available nginx site, the Traefik route (behind the transaction guard), the
 PHP-FPM pool of the version `php -r` reports (skipped when php is missing or

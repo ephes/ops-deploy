@@ -1,8 +1,7 @@
 # mail removal
 
 `ops_deploy.services.mail_remove`: `remove_mail(MailRemoveConfig(...))` ports
-the `mail_remove` role at ops-library `44a532ba` (recorded under
-`tests/parity/mail/remove`). The defaults are the role's: no component
+the `mail_remove` role at ops-library `44a532ba`. The defaults are the role's: no component
 selected, packages purged, config and state directories removed, and the
 Maildir/backups (`remove_data`), the vmail account (`remove_vmail_user`) and
 the PostgreSQL database and role (`drop_database`, `drop_db_user`) kept.

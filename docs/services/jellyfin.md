@@ -41,9 +41,8 @@ password.
 
 ## Configuration (`JellyfinConfig`)
 
-Defaults follow `jellyfin_shared/defaults/main.yml` and
-`jellyfin_deploy/defaults/main.yml` (`tests/test_jellyfin_parity.py`
-compares them with the roles when `OPS_LIBRARY_PATH` is set).
+Defaults follow the retired roles' `jellyfin_shared/defaults/main.yml` and
+`jellyfin_deploy/defaults/main.yml`.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -151,14 +150,10 @@ health checks): no download, no `apt-get`, no upload.
 
 ## Parity with the role
 
-`tests/test_jellyfin_parity.py` renders the vendored role template
-(`tests/parity/ansible/jellyfin_deploy__jellyfin-traefik.yml.j2`, checked
-against ops-library main `540ede2b`, 2.56.0) the way Ansible does and
-requires a **byte-identical** route for several configs; the template the
-deploy ships is the same file. With `OPS_LIBRARY_PATH` it also compares the
-defaults, the repository line and key URL, the ffmpeg pick and the task
-layout with the roles. `tests/parity/ops_library_roles.json` records
-`jellyfin_deploy` and `jellyfin_shared`.
+The route is **byte-identical** to the retired role's (the deploy ships its
+template, checked against ops-library main `540ede2b`, 2.56.0).
+`tests/test_jellyfin_golden.py` keeps the route and the repository line as
+they are on hosts, against goldens in `tests/golden/jellyfin`.
 
 Differences:
 

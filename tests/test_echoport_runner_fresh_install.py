@@ -12,8 +12,8 @@ back) instead of failing on a missing snapshot. A snapshot source that is
 present but cannot be snapshotted still fails the restore before anything is
 changed.
 
-The scripts are the runners rendered with the parity fixture's values
-(``tests/parity/echoport_runner/inputs.json``), loaded as modules, with the
+The scripts are the runners rendered with the fixture's values
+(``tests/fixtures/echoport_runner/inputs.json``), loaded as modules, with the
 host's commands replaced.
 """
 
@@ -31,10 +31,8 @@ from typing import Any
 import pytest
 
 from ops_deploy.services._echoport_runner.render import render_runner
+from tests.echoport_runner_data import INPUTS
 
-INPUTS: dict[str, Any] = json.loads((Path(__file__).parent / "parity/echoport_runner/inputs.json").read_text())[
-    "runners"
-]
 CHECKSUM = "0" * 64
 RESTORE_ENV = {
     "ECHOPORT_ACTION": "restore",

@@ -1,0 +1,261 @@
+{
+ "0 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/home/homeassistant/site/.python-security-constraints.txt"
+ ],
+ "0 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/home/homeassistant/site/.python-security-constraints.txt"
+ ],
+ "0 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/home/homeassistant/site/.python-security-constraints.txt",
+  "owned; python_version >= '3.12'"
+ ],
+ "1 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant"
+ ],
+ "1 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]"
+ ],
+ "1 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "owned; python_version >= '3.12'"
+ ],
+ "2 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/srv/owned-constraints.txt"
+ ],
+ "2 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/srv/owned-constraints.txt"
+ ],
+ "2 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/srv/owned-constraints.txt",
+  "owned; python_version >= '3.12'"
+ ],
+ "3 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant"
+ ],
+ "3 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]"
+ ],
+ "3 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "owned; python_version >= '3.12'"
+ ],
+ "4 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant"
+ ],
+ "4 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]"
+ ],
+ "4 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/home/homeassistant/site/.python-security-constraints.txt",
+  "owned; python_version >= '3.12'"
+ ],
+ "5 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/srv/other constraints.txt",
+  "--no-deps"
+ ],
+ "5 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/srv/other constraints.txt",
+  "--no-deps"
+ ],
+ "5 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/srv/other constraints.txt",
+  "--no-deps",
+  "owned; python_version >= '3.12'"
+ ],
+ "6 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/srv/application only.txt",
+  "--no-deps"
+ ],
+ "6 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/srv/application only.txt",
+  "--no-deps"
+ ],
+ "6 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/home/homeassistant/site/.python-security-constraints.txt",
+  "owned; python_version >= '3.12'"
+ ],
+ "7 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/srv/application only.txt"
+ ],
+ "7 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/srv/application only.txt"
+ ],
+ "7 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/srv/extras only.txt",
+  "owned; python_version >= '3.12'"
+ ],
+ "8 homeassistant": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "homeassistant",
+  "--constraint",
+  "/srv/literal$(id); app"
+ ],
+ "8 matter": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv-matter-server",
+  "python-matter-server[server]",
+  "--constraint",
+  "/srv/literal$(id); app"
+ ],
+ "8 extras": [
+  "/usr/local/bin/uv",
+  "pip",
+  "install",
+  "--python",
+  "/home/homeassistant/site/.venv",
+  "--constraint",
+  "/srv/literal$(id); constraints",
+  "owned; python_version >= '3.12'"
+ ]
+}

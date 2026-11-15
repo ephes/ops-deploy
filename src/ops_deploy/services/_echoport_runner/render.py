@@ -1,20 +1,17 @@
-"""The runner templates of ops-library's ``echoport_backup`` role, rendered as Ansible's ``template`` renders them.
+"""The Echoport runner templates (from ops-library's ``echoport_backup`` role), rendered as Ansible rendered them.
 
-``templates/`` holds the role's ``templates/*.py.j2`` unchanged (with the
-includes ``_work_dir.py.j2``, ``_sqlite_backup.py.j2`` and ``_restore_scratch.py.j2``). The ops-library
-templates remain the source of runner code; ``tests/test_ops_library_drift.py``
-fails when one of them changes. The templates in :data:`FORKED` are the
-exception: they have moved on from ops-library's, ops-deploy is their source,
-and ops-library's copy serves only the Ansible rollback of their register
-playbook (the drift test then notices a change of that copy instead).
+``templates/`` holds the runner templates ``templates/*.py.j2`` (with the
+includes ``_work_dir.py.j2``, ``_sqlite_backup.py.j2`` and ``_restore_scratch.py.j2``),
+taken over from the role; ops-deploy is now their source. The templates in
+:data:`FORKED` had already moved on from the role's before that.
 
 Ansible renders with ``trim_blocks``, strips the template's final newline as
 Jinja2 does by default and restores one when the template ended in a newline
 and the result does not. The filters the templates use beyond plain Jinja2
 (``to_json``, ``bool``, ``regex_replace``) behave as ansible-core's for the
 values a runner config holds: strings, numbers, booleans, lists and mappings
-of them. ``tests/test_echoport_runner_parity.py`` compares the renderings with
-files rendered by ``ansible-playbook`` itself. A playbook's inline text
+of them. ``tests/test_echoport_runner_golden.py`` compares the renderings with
+the recorded scripts hosts have. A playbook's inline text
 (:func:`render_text`) may also use ``quote`` (ansible-core's, ``shlex.quote``).
 """
 

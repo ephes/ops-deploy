@@ -1,11 +1,9 @@
-"""Normal-role composition and actual SDK handler boundaries; no inventory."""
+"""Deploy composition and actual SDK handler boundaries; no inventory."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib
 import json
-import os
 import subprocess
 import sys
 from importlib.resources import files
@@ -14,7 +12,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.services.homeassistant.deploy_config import HomeAssistantDeployConfig
@@ -34,16 +31,7 @@ def test_system_packages_are_real_packages() -> None:
     assert "libfreetype6-dev" not in packages
 
 
-def test_original_defaults_and_dependent_inputs() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant/deployment/defaults.yml"
-    original = yaml.safe_load(fixture.read_text())
-    cfg = HomeAssistantDeployConfig()
-    assert cfg.additional_packages == tuple(original["homeassistant_additional_packages"])
-    assert cfg.include_files == tuple(original["homeassistant_include_files"])
-    assert cfg.runtime.python_version == original["homeassistant_python_version"]
-    assert cfg.runtime.package_spec == original["homeassistant_package_spec"]
-    assert cfg.custom.enabled == original["homeassistant_custom_conversation_enabled"]
-    assert cfg.assist.definitions() == original["homeassistant_assist_pipelines"]
+def test_dependent_inputs_follow_the_app_and_matter_ports() -> None:
     changed = HomeAssistantDeployConfig(values={"app_port": 12345}, runtime={"matter_server_port": 6789})
     assert changed.api.url.get_secret_value() == "http://localhost:12345"
     assert changed.ingress.app_port == 12345
@@ -351,29 +339,6 @@ def test_real_sdk_multiple_flushes_consume_only_new_notifications(monkeypatch: p
             ]
     finally:
         disconnect_all(state)
-
-
-def test_original_composition_fixtures_are_hash_bound() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant/deployment"
-    manifest = json.loads((fixture / "source.json").read_text())
-    for name, entry in manifest["files"].items():
-        body = (fixture / name).read_bytes()
-        assert hashlib.sha256(body).hexdigest() == entry["sha256"]
-    original = yaml.safe_load((fixture / "main.yml").read_text())
-    imports = [task.get("ansible.builtin.import_tasks") for task in original]
-    assert imports.index("llama_cpp_prepare.yml") < imports.index("python.yml")
-    assert imports.index("custom_conversation_component.yml") < imports.index("llama_cpp_integration.yml")
-    nested = yaml.safe_load((fixture / "builtin.yml").read_text())
-    assert nested[0]["ansible.builtin.meta"] == "flush_handlers"
-    assert nested[1]["ansible.builtin.set_fact"]["_ha_api_ready_once"] is False
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="paired original collection not configured")
-def test_original_composition_fixtures_match_actual_paired_source() -> None:
-    root = Path(os.environ["OPS_LIBRARY_PATH"])
-    fixture = Path(__file__).parent / "parity/homeassistant/deployment"
-    for name, entry in json.loads((fixture / "source.json").read_text())["files"].items():
-        assert (fixture / name).read_bytes() == (root / entry["source"]).read_bytes()
 
 
 @pytest.mark.parametrize("side", ["api", "ingress"])

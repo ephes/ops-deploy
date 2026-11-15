@@ -1,0 +1,8 @@
+[Unit]
+Description=ZFS scrub for pool %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/zpool scrub %i

@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import itertools
-import json
-import os
 import re
-from pathlib import Path
 
 import pytest
-import yaml
 from pydantic import ValidationError
 
 from ops_deploy.services.homeassistant.configuration import (
@@ -31,18 +26,6 @@ MONITOR = (
     "    - type: processor_temperature\n    - type: last_boot\n\n"
 )
 USER = "# user document\ncustom: !include custom.yaml\nquoted: 'keep # exact'\n"
-
-
-def test_exact_library_patterns() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant"
-    source = json.loads((fixture / "configuration-source.json").read_text())
-    body = (fixture / "configuration.yml").read_bytes()
-    assert hashlib.sha256(body).hexdigest() == source["sha256"]
-    tasks = yaml.safe_load(body)
-    met = next(task for task in tasks if task["name"] == "Remove legacy MET weather YAML platform")
-    obsolete = next(task for task in tasks if task["name"] == "Remove obsolete role-generated YAML integration blocks")
-    assert met["ansible.builtin.replace"]["regexp"] == LEGACY_MET
-    assert tuple(obsolete["loop"]) == OBSOLETE
 
 
 @pytest.mark.parametrize(("manage", "overwrite", "remove"), tuple(itertools.product((False, True), repeat=3)))
@@ -109,11 +92,3 @@ def test_include_and_secret_guards(manage: bool, overwrite: bool, existing: str 
 def test_policy_rejects_ambiguous_untyped_flags(value: object) -> None:
     with pytest.raises(ValidationError):
         ConfigurationPolicy.model_validate({"overwrite_config": value})
-
-
-@pytest.mark.skipif(not os.environ.get("OPS_LIBRARY_PATH"), reason="OPS_LIBRARY_PATH not set")
-def test_actual_current_library_matches_bound_original() -> None:
-    fixture = Path(__file__).parent / "parity/homeassistant"
-    source = json.loads((fixture / "configuration-source.json").read_text())
-    body = (Path(os.environ["OPS_LIBRARY_PATH"]) / source["path"]).read_bytes()
-    assert body == (fixture / "configuration.yml").read_bytes()

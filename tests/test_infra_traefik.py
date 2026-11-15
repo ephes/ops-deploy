@@ -1,10 +1,9 @@
-"""``deploy_traefik`` against the fake connector, and parity with the role's templates."""
+"""``deploy_traefik`` against the fake connector, and its host files against golden renders."""
 
 import subprocess
 from pathlib import Path
 from typing import Any
 
-import jinja2
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -19,6 +18,7 @@ from ops_deploy.infra.traefik_deploy import (
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
+from tests.goldens import assert_golden
 
 CHECKSUM = "sha256:" + "a" * 64
 CFG = TraefikDeployConfig(version="3.7.13", checksum=CHECKSUM, letsencrypt_email="ops@example.org")
@@ -336,20 +336,16 @@ def test_config_validation() -> None:
     assert "traefik" not in without_traefik.alias_policy
 
 
-# -- parity with the role -----------------------------------------------------
+# -- the host files, byte for byte -------------------------------------------
 
-VENDORED = Path(__file__).parent / "parity" / "ansible"
+GOLDEN = Path(__file__).parent / "golden" / "traefik"
 ALL_ALIASES = {"web": "delete", "web-secure": "delete", "traefik": "delete"}
-PARITY = {
+GOLDEN_CASES = {
     "defaults": CFG,
-    "macmini-like": CFG.model_copy(
+    "aliases-and-certificates": CFG.model_copy(
         update={"version": "3.7.14", "alias_policy": ALL_ALIASES, "file_certificates": (CERT, CERT)}
     ),
-    "metrics only, no redirect": CFG.model_copy(
-        update={"dashboard_enabled": False, "http_redirect_to_https": False, "alias_policy": ALL_ALIASES}
-    ),
-    "thirty days of logs": CFG.model_copy(update={"logrotate_days": 30, "log_dir": "/var/log/t"}),
-    "nothing on the traefik entrypoint": CFG.model_copy(
+    "nothing-on-the-traefik-entrypoint": CFG.model_copy(
         update={
             "dashboard_enabled": False,
             "metrics_enabled": False,
@@ -365,59 +361,16 @@ PARITY = {
 }
 
 
-def role_vars(cfg: TraefikDeployConfig) -> dict[str, Any]:
-    return {
-        "traefik_dashboard_enabled": cfg.dashboard_enabled,
-        "traefik_log_level": cfg.log_level,
-        "traefik_log_format": cfg.log_format,
-        "traefik_log_dir": cfg.log_dir,
-        "traefik_logrotate_days": cfg.logrotate_days,
-        "traefik_dynamic_dir": cfg.dynamic_path,
-        "traefik_alias_policy": dict(cfg.alias_policy),
-        "traefik_http_port": cfg.http_port,
-        "traefik_https_port": cfg.https_port,
-        "traefik_http_redirect_to_https": cfg.http_redirect_to_https,
-        "traefik_dashboard_port": cfg.dashboard_port,
-        "traefik_metrics_enabled": cfg.metrics_enabled,
-        "traefik_metrics_bind_address": cfg.metrics_bind_address,
-        "traefik_metrics_port": cfg.metrics_port,
-        "traefik_letsencrypt_email": cfg.letsencrypt_email,
-        "traefik_acme_storage": cfg.acme_storage_path,
-        "traefik_binary_path": cfg.binary_path,
-        "traefik_static_config": cfg.static_path,
-        "traefik_config_dir": cfg.config_dir,
-        "traefik_file_certificates": [cert.model_dump() for cert in cfg.file_certificates],
-    }
+@pytest.mark.parametrize("name", GOLDEN_CASES)
+def test_host_files_are_golden(name: str) -> None:
+    """The static config, the unit and logrotate: a changed byte restarts Traefik on every host."""
 
-
-def render_ansible(template: str, cfg: TraefikDeployConfig) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(VENDORED),
-        undefined=jinja2.StrictUndefined,
-        trim_blocks=True,
-        keep_trailing_newline=True,
-    )
-    return env.get_template(template).render(**role_vars(cfg))
-
-
-@pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
-def test_static_config_matches_the_role(cfg: TraefikDeployConfig) -> None:
-    assert render_static(cfg) == render_ansible("traefik_deploy__traefik.toml.j2", cfg)
-
-
-@pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
-def test_unit_matches_the_role(cfg: TraefikDeployConfig) -> None:
-    assert render_unit(cfg) == render_ansible("traefik_deploy__traefik.service.j2", cfg)
-
-
-def test_certificates_match_the_role() -> None:
-    cfg = PARITY["macmini-like"]
-    assert render_certificates(cfg) == render_ansible("traefik_deploy__dynamic__certificates.yml.j2", cfg)
-
-
-@pytest.mark.parametrize("cfg", PARITY.values(), ids=PARITY.keys())
-def test_logrotate_matches_the_role(cfg: TraefikDeployConfig) -> None:
-    assert render_logrotate(cfg) == render_ansible("traefik_deploy__traefik.logrotate.j2", cfg)
+    cfg = GOLDEN_CASES[name]
+    assert_golden(GOLDEN / name / "traefik.toml", render_static(cfg))
+    assert_golden(GOLDEN / name / "traefik.service", render_unit(cfg))
+    assert_golden(GOLDEN / name / "traefik.logrotate", render_logrotate(cfg))
+    if cfg.file_certificates:
+        assert_golden(GOLDEN / name / "certificates.yml", render_certificates(cfg))
 
 
 def test_default_release_upgrades_old_binary_with_verified_checksum() -> None:

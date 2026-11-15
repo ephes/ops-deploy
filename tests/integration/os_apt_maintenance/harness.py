@@ -34,12 +34,10 @@ from ops_deploy.services.os_apt_maintenance import (
     deploy_os_apt_maintenance,
     deploy_os_apt_maintenance_nyxmon,
 )
-from ops_deploy.services.os_apt_maintenance.deploy import role_vars
 from ops_deploy.testing.harness import collect_ops
 
 ROOT = Path("/opt/os-apt-fixture")
 EVIDENCE = Path(sys.argv[1])
-LIBRARY = ROOT / "collections/ansible_collections/local/ops_library"
 REF = SecretRef("fixture.yml")
 VALUE = secrets.token_urlsafe(24)
 RUST_VERSION = "0.1.0"
@@ -80,7 +78,7 @@ def cfg(**changes: Any) -> OsAptMaintenanceConfig:
             "service_name": "fixture-apt-endpoint",
             "apt_get_path": str(ROOT / "fake-apt"),
             "systemctl_path": str(ROOT / "fake-systemctl"),
-            # Avoid fixture timer expiry and persistent catch-up. Original cadence has independent Ansible parity tests.
+            # Avoid fixture timer expiry and persistent catch-up; the cadence has its own golden tests.
             "timer_on_calendar": "2099-01-01 04:00:00",
             "refresh_timer_on_calendar": "2099-01-01 06:00:00",
             "timer_persistent": False,
@@ -289,111 +287,6 @@ def health(secret: str = "") -> dict[str, Any]:
     raise AssertionError("no HTTP response")
 
 
-def ansible_repeat(config: OsAptMaintenanceConfig, *, fault: bool = False) -> None:
-    import yaml
-
-    label = "ansible-unlinked-fault" if fault else "ansible-repeat"
-    variables = role_vars(config, "127.0.0.1")
-    for name in (
-        "enabled",
-        "run_on_deploy",
-        "run_on_first_deploy",
-        "timer_enabled",
-        "timer_state",
-        "refresh_enabled",
-        "refresh_timer_enabled",
-        "refresh_timer_state",
-    ):
-        variables["os_apt_maintenance_" + name] = getattr(config, name)
-    variables.update(
-        {
-            "os_apt_maintenance_endpoint_service_name": config.service_name,
-            "os_apt_maintenance_endpoint_htpasswd_dir": str(config.htpasswd_dir),
-            "os_apt_maintenance_endpoint_auth_user": "fixture",
-            "os_apt_maintenance_endpoint_auth_password": VALUE,
-            "os_apt_maintenance_endpoint_impl": config.httpd_impl,
-            "metrics_httpd_rust_version": RUST_VERSION,
-            "metrics_httpd_rust_sha256": RUST_SHA,
-            "ansible_python_interpreter": "/usr/bin/python3",
-        }
-    )
-    path = ROOT / "ansible.yml"
-    path.write_text(
-        yaml.safe_dump(
-            [
-                {
-                    "hosts": "localhost",
-                    "gather_facts": True,
-                    "vars": variables,
-                    "roles": ["local.ops_library.os_apt_maintenance"],
-                }
-            ]
-        )
-    )
-    path.chmod(0o600)
-    before = endpoint_snapshot()
-
-    def retain(stdout: str | bytes | None, stderr: str | bytes | None) -> str:
-        def redacted(value: str | bytes | None) -> str:
-            text = value.decode(errors="replace") if isinstance(value, bytes) else value or ""
-            return text.replace(VALUE, "<synthetic-password>")
-
-        output = redacted(stdout)
-        (EVIDENCE / (label + ".log")).write_text(output)
-        (EVIDENCE / (label + ".stderr")).write_text(redacted(stderr))
-        return output
-
-    try:
-        try:
-            completed = subprocess.run(
-                [str(Path(sys.executable).parent / "ansible-playbook"), "-i", "localhost,", "-c", "local", str(path)],
-                env={**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(ROOT / "collections")},
-                text=True,
-                capture_output=True,
-                timeout=900,
-            )
-        except subprocess.TimeoutExpired as exc:
-            retain(exc.stdout, exc.stderr)
-            raise
-        output = retain(completed.stdout, completed.stderr)
-        if not fault:
-            assert completed.returncode == 0, f"Ansible exit {completed.returncode}; retained stdout/stderr"
-    finally:
-        path.unlink()
-    after = endpoint_snapshot()
-    write(
-        label + ".json",
-        {
-            "library_sha": sh("git", "-C", str(LIBRARY), "rev-parse", "HEAD"),
-            "classification": "actual-role-fault-oracle" if fault else "healthy-ansible-repeat",
-            "returncode": completed.returncode,
-            "before": before,
-            "after": after,
-            "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
-        },
-    )
-    PHASES.append(
-        {
-            "label": label,
-            "classification": "unadjudicated-actual-role-fault-oracle" if fault else "healthy-ansible-repeat",
-            "returncode": completed.returncode,
-            "physical_changed_sections": sorted(key for key in before if before[key] != after[key]),
-        }
-    )
-    if not fault:
-        assert "changed=0" in output, output
-        # Ansible intentionally daemon-reloads; current resources/state/PID stay exact.
-        assert before == after, {"before": before, "after": after}
-    else:
-        # Only the injected refresh unit fault may vary. Keep every other
-        # protected resource strict even while recording the oracle outcome.
-        for key in before.keys() - {"timer_state"}:
-            assert before[key] == after[key], (label, key)
-        assert before["timer_state"]["fixture-apt.timer"] == after["timer_state"]["fixture-apt.timer"]
-        # This phase is not accepted as a successful/zero-mutation deploy.
-        print(label, "unadjudicated fault oracle recorded", completed.returncode, flush=True)
-
-
 def nyxmon() -> None:
     sh("useradd", "--system", "--home-dir", str(ROOT / "nyxmon"), "--shell", "/usr/sbin/nologin", "fixture-nyxmon")
     DB.parent.mkdir()
@@ -476,8 +369,6 @@ def main() -> None:
     assert not (ROOT / "reboot-events").exists()
     write("http-first.json", {"anonymous": health(), "authenticated": health(VALUE)})
     deploy("endpoint-repeat", config, zero=True, fish=True)
-    ansible_repeat(config)
-    deploy("endpoint-after-ansible", config, zero=True)
     timer = cfg(timer_on_calendar="2099-01-02 04:00:00")
     result = deploy("timer-change", timer)
     assert result["before"]["pid"] == result["after"]["pid"]
@@ -498,11 +389,7 @@ def main() -> None:
         Path("/etc/systemd/system/fixture-apt-refresh.service").unlink()
         assert sh("systemctl", "is-active", "fixture-apt-refresh.timer") == "active"
 
-    # Run the actual cf3 role on the owned fault, restore, then inject the same
-    # fault for pyinfra. Preserve both raw results, including partial changes.
-    unlink_active()
-    ansible_repeat(off, fault=True)
-    deploy("restore-after-ansible-fault", timer)
+    # Inject the fault for pyinfra. Preserve the raw result, including partial changes.
     unlink_active()
     systemd_major = int(sh("systemctl", "--version").split()[1])
     assert systemd_major in (255, 257), "qualify changed fixture systemd fault semantics explicitly"

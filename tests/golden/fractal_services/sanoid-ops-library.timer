@@ -1,0 +1,10 @@
+[Unit]
+Description=Run sanoid snapshot management (ops-library)
+
+[Timer]
+OnCalendar=01:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

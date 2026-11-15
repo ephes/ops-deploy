@@ -5,8 +5,7 @@ steps around it in ops-control's ``playbooks/deploy-logyard-core.yml``: Docker
 Engine (``docker_install``) before it, and the Nyxmon health checks after it.
 The role's templates are shipped unchanged and rendered the way Ansible's
 ``template`` module renders them, so every file written is byte-identical to
-the role's (``tests/test_logyard_parity.py``) and Ansible and ops-deploy can
-take turns on a host without churn.
+the retired role's (goldens: ``tests/test_logyard_golden.py``).
 
 The health endpoint's HTTP server is the role's Python script or the pinned
 Rust ``metrics-httpd logyard-health`` (``health.httpd_impl``; the role's

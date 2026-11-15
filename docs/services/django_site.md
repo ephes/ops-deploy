@@ -487,10 +487,10 @@ restarts the app once; its second run must be a no-op. Ansible fallback would
 rewrite the old files and restart again. Do not alternate tools after a live
 switch; the private control plane owns admission/entry-point guards.
 
-Coverage: `test_django_site_postgres.py`, `test_django_site_wagtail_parity.py`
-(object storage/Sentry on/off, mail URL empty/set, TLS resolver empty/set),
-and `tests/smoke/test_django_site_postgres_smoke.py` (synthetic Linux/PostgreSQL
-Django app, data retention, no-op rerun, pending-source resume).
+Coverage: `test_django_site_postgres.py`, `test_django_site_wagtail_route.py`
+(HSTS without preload) and `tests/smoke/test_django_site_postgres_smoke.py`
+(synthetic Linux/PostgreSQL Django app, data retention, no-op rerun,
+pending-source resume).
 
 
 ### Existing environment aliases and controller caches
