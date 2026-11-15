@@ -2,13 +2,6 @@ name: Graphyard conditions integration
 
 # Owned disposable GitHub-hosted Ubuntu VM, synthetic condition rows only.
 on:
-  push:
-    branches:
-      - pyinfra-graphyard-conditions-20261027
-    paths:
-      - '.github/workflows/graphyard-conditions-integration.yml'
-      - 'tests/integration/graphyard_conditions/**'
-      - 'src/ops_deploy/services/graphyard/**'
   workflow_dispatch:
     inputs:
       implementation_sha:

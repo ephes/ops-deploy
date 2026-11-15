@@ -1,14 +1,6 @@
 name: Daybook attention reader native
 
 on:
-  push:
-    branches: [pyinfra-attention-reader-20261031]
-    paths:
-      - '.github/workflows/daybook-attention-reader-native.yml'
-      - 'tests/integration/daybook_attention_reader/**'
-      - 'src/ops_deploy/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
   workflow_dispatch:
     inputs:
       implementation_sha:

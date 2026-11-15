@@ -2,12 +2,6 @@ name: Software live integration
 
 # Disposable Ubuntu VM and isolated Debian13 userspace/systemd guest.
 on:
-  push:
-    branches: [pyinfra-software-live-20261028]
-    paths:
-      - '.github/workflows/software-live-integration.yml'
-      - 'tests/integration/software_live/**'
-      - 'src/ops_deploy/services/software_live/**'
   workflow_dispatch:
     inputs:
       implementation_sha:

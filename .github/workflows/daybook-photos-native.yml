@@ -1,18 +1,6 @@
 name: Native Daybook Photos components
 
 on:
-  push:
-    branches: [pyinfra-daybook-photos-offload-20261029]
-    paths:
-      - .github/workflows/daybook-photos-native.yml
-      - smoke/daybook_photos_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_photos*.py
   workflow_dispatch:
     inputs:
       implementation_sha:

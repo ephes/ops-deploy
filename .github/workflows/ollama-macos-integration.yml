@@ -1,12 +1,6 @@
 name: Ollama native macOS integration
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/ollama-macos-integration.yml'
-      - 'src/ops_deploy/services/ollama/**'
-      - 'smoke/ollama_macos_fixture.py'
-      - 'tests/test_ollama.py'
   workflow_dispatch:
     inputs:
       implementation_sha:

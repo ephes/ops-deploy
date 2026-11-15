@@ -3,14 +3,6 @@ name: Linux apps integration (encrypted_volume)
 # Owned native fixture: a disposable GitHub-hosted Ubuntu 24.04 x86 VM with its
 # own LUKS loop file and synthetic credentials. Never an inventory host.
 on:
-  push:
-    branches:
-      - pyinfra-linux-apps-20261027
-    paths:
-      - '.github/workflows/linux-apps-integration.yml'
-      - 'tests/integration/linux_apps/**'
-      - 'src/ops_deploy/infra/encrypted_volume.py'
-      - 'src/ops_deploy/infra/files/encrypted_volume_host.py'
   workflow_dispatch:
     inputs:
       implementation_sha:

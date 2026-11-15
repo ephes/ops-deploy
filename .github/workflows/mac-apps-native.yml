@@ -1,20 +1,6 @@
 name: Native Mac applications integration
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/mac-apps-native.yml'
-      - 'src/ops_deploy/base/uv_install.py'
-      - 'src/ops_deploy/base/uv_install_darwin.py'
-      - 'src/ops_deploy/ops/sync_tree.py'
-      - 'src/ops_deploy/services/macos_ssh_tunnel/**'
-      - 'src/ops_deploy/services/opsgate/**'
-      - 'src/ops_deploy/services/voxhelm/**'
-      - 'src/ops_deploy/services/voxhelm_remote_worker/**'
-      - 'src/ops_deploy/services/llama_server/**'
-      - 'smoke/mac_apps_*.py'
-      - 'tests/test_mac_apps_*.py'
-      - 'tests/test_macos_ssh_tunnel*.py'
   workflow_dispatch:
     inputs:
       implementation_sha:

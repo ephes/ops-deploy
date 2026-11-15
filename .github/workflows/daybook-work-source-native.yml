@@ -1,14 +1,6 @@
 name: Daybook work source native
 
 on:
-  push:
-    branches: [pyinfra-daybook-work-source-current-20261031]
-    paths:
-      - '.github/workflows/daybook-work-source-native.yml'
-      - 'tests/integration/daybook_work_source/**'
-      - 'src/ops_deploy/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
   workflow_dispatch:
     inputs:
       implementation_sha:

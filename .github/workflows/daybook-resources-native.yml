@@ -1,16 +1,6 @@
 name: Native Daybook Sessions resource mechanisms
 
 on:
-  push:
-    branches: [pyinfra-daybook-resources-native-20261028]
-    paths:
-      - .github/workflows/daybook-resources-native.yml
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_resources_native_fixture.py
   workflow_dispatch:
     inputs:
       implementation_sha:

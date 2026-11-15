@@ -1,23 +1,6 @@
 name: Native Daybook original runtime checks
 
 on:
-  push:
-    branches: [pyinfra-daybook-runtime-preflight-20261028]
-    paths:
-      - .github/workflows/daybook-health-native.yml
-      - smoke/daybook_health_native_fixture.py
-      - smoke/daybook_transition_native_fixture.py
-      - smoke/daybook_inbox_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_runtime_health.py
-      - tests/test_daybook_runtime_preflight.py
-      - tests/test_daybook_runtime_closeout.py
-      - tests/test_daybook_inbox_report.py
   workflow_dispatch:
     inputs:
       implementation_sha:

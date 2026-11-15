@@ -1,17 +1,6 @@
 name: Native Daybook installed sdist verification
 
 on:
-  push:
-    branches: [pyinfra-daybook-uv-check-20261028]
-    paths:
-      - .github/workflows/daybook-uv-check-native.yml
-      - smoke/daybook_uv_check_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_uv_sdist.py
   workflow_dispatch:
     inputs:
       implementation_sha:

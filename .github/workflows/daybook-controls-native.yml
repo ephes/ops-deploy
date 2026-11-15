@@ -1,24 +1,6 @@
 name: Native Daybook control components
 
 on:
-  push:
-    branches:
-      - pyinfra-daybook-controls-20261030
-      - pyinfra-daybook-inbox-emergency-20261030
-      - pyinfra-daybook-weeknotes-disable-20261030
-      - pyinfra-mac-operators-compose-20261030
-    paths:
-      - .github/workflows/daybook-controls-native.yml
-      - smoke/daybook_controls_native_fixture.py
-      - smoke/daybook_archive_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_controls*.py
-      - tests/test_daybook_weeknotes_controls.py
   workflow_dispatch:
     inputs:
       implementation_sha:
