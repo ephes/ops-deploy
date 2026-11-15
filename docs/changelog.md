@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Daybook runtime: the `Adapter` list of `daybook_operations_runtime`
+  admits `remarkable.notes.v1`, Daybook's adapter for its reMarkable notes
+  lane, so a profile declaring that kind validates. A contract test checks
+  the session-starting work adapters (`catalog.work.v1`,
+  `paperless.intake.v1`, `remarkable.notes.v1`).
 - Traefik transactions: the engine (`infra/traefik_tx/engine.py`) ports the
   rest of ops-library's reference engine (3110a0f1): `enroll`, `alias`,
   `metrics_bind` and `acme_storage` (with `validate_alias`,

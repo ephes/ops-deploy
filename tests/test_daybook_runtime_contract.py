@@ -301,8 +301,8 @@ def test_missing_or_invalid_monitor_access_is_sanitized_before_transport(values:
 
 
 def test_every_daybook_adapter_the_controller_runs_is_admitted() -> None:
-    """The Atlas kinds include the reMarkable notes lane (Daybook
-    remarkable.notes.v1, on Daybook main since a3d7c63)."""
+    """The session-starting work adapters are admitted, including Daybook's
+    remarkable.notes.v1."""
     for adapter in ("catalog.work.v1", "paperless.intake.v1", "remarkable.notes.v1"):
         assert (
             config(kinds=[{"adapter": adapter, "deadline": 600, "lease": 900, "run": {}}]).kinds[0].adapter == adapter
