@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Daybook runtime: the `Adapter` list of `daybook_operations_runtime` admits
+  `remarkable.reading.v1`, Daybook's reMarkable reading lane, so a profile
+  declaring that kind validates; the contract test covers it.
 - Tests: the OpenClaw fixtures (`tests/fixtures/openclaw/production` and
   `audio-disabled`) no longer carry private data. The family name, first
   names, the real assistant system prompt and user profile and the real

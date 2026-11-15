@@ -26,6 +26,7 @@ Adapter = Literal[
     "catalog.work.v1",
     "paperless.intake.v1",
     "remarkable.notes.v1",
+    "remarkable.reading.v1",
 ]
 Action = Literal["install", "replace", "cutover", "rollback", "closeout", "stop", "verify"]
 Name = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,49}$")]

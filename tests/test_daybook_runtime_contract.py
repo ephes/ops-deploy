@@ -269,9 +269,8 @@ def test_missing_or_invalid_monitor_access_is_sanitized_before_transport(values:
 
 
 def test_every_daybook_adapter_the_controller_runs_is_admitted() -> None:
-    """The session-starting work adapters are admitted, including Daybook's
-    remarkable.notes.v1."""
-    for adapter in ("catalog.work.v1", "paperless.intake.v1", "remarkable.notes.v1"):
+    """The Daybook work adapters are admitted, including both reMarkable lanes."""
+    for adapter in ("catalog.work.v1", "paperless.intake.v1", "remarkable.notes.v1", "remarkable.reading.v1"):
         assert (
             config(kinds=[{"adapter": adapter, "deadline": 600, "lease": 900, "run": {}}]).kinds[0].adapter == adapter
         )
