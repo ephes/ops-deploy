@@ -797,7 +797,9 @@ def test_vendored_source_resources_match_the_reviewed_role(role: str) -> None:
     if library is None:
         pytest.skip("OPS_LIBRARY_PATH not set")
     source = Path(library) / "roles" / role / "templates"
-    for path in source.glob("*.j2"):
+    templates = sorted(source.glob("*.j2"))
+    assert templates, f"no *.j2 below {source}"
+    for path in templates:
         assert (ROOT / "services" / role / "templates" / path.name).read_bytes() == path.read_bytes()
 
 

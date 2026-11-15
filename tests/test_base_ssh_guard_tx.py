@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shlex
 import stat
 import subprocess
@@ -119,6 +120,7 @@ class World:
         self.root = tmp / "world"
         self.etc = tmp / "etc"
         self.state_dir = tmp / "state"
+        self.program = PROGRAM
         for sub in ("timers", "units", "pkgs", "running"):
             (self.root / sub).mkdir(parents=True)
         self.bin = tmp / "bin"
@@ -221,7 +223,7 @@ class World:
             env["SSH_CONNECTION"] = caller
         roots = ["--proc-root", str(self.tmp / "proc"), "--cgroup-root", str(self.tmp / "cgroup")]
         return subprocess.run(
-            [sys.executable, "-I", str(PROGRAM), "--state-dir", str(self.state_dir), *roots, *args],
+            [sys.executable, "-I", str(self.program), "--state-dir", str(self.state_dir), *roots, *args],
             capture_output=True,
             text=True,
             env=env,
@@ -786,19 +788,36 @@ def test_a_hybrid_or_v1_cgroup_layout_is_refused_before_any_change(world: World)
     assert not any(line.startswith("apt-get") for line in world.log())
 
 
+def with_quiesce_wait(world: World, seconds: int) -> None:
+    """Run a copy of the program whose ``QUIESCE_WAIT`` is ``seconds`` instead of 60.
+
+    The program copies itself into the transaction, so the timers run the copy too.
+    """
+
+    source = PROGRAM.read_text()
+    patched, replaced = re.subn(r"^QUIESCE_WAIT = (\d+)$", f"QUIESCE_WAIT = {seconds}", source, flags=re.MULTILINE)
+    assert replaced == 1
+    assert re.search(r"^QUIESCE_WAIT = 60$", source, flags=re.MULTILINE)
+    world.program = world.tmp / PROGRAM.name
+    world.program.write_text(patched)
+
+
 def test_a_revert_that_cannot_see_the_apply_unit_end_restores_nothing(world: World) -> None:
+    # The real wait is 60 s; the behaviour is the same with a shorter one.
+    quiesce = 2
+    with_quiesce_wait(world, quiesce)
     world.unit("ssh")
     assert world.run(world.standard()).returncode == 0
     (world.root / "fail-show").touch()
     timer = world.timers()[0]
     argv = (world.root / "timers" / timer).read_text().splitlines()
-    # A failing query never counts as "ended": the revert waits its full 60 s, then gives up.
+    # A failing query never counts as "ended": the revert waits its full QUIESCE_WAIT, then gives up.
     started = time.monotonic()
     fired = subprocess.run(argv, capture_output=True, text=True, env=world.env, timeout=120, check=False)
 
     assert fired.returncode == 1
     assert "nothing restored yet" in fired.stderr
-    assert time.monotonic() - started >= 59
+    assert time.monotonic() - started >= quiesce
     assert world.state()["status"] == "armed"
     assert Path(world.dropin).read_text() == "PerSourceMaxStartups 5\n"
     # Once systemd answers again, the same revert completes.

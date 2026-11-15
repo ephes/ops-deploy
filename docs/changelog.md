@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Tests: faster without testing less. The `ssh_guard_tx` revert test runs a
+  copy of the program with `QUIESCE_WAIT` rewritten from 60 to 2 seconds
+  (asserting exactly one replacement of the value 60);
+  `tests/test_base_ssh_guard_tx.py` drops from about 80 s to about 23 s.
+  `traefik_tx` proof: the API poll interval is the new `POLL` (0.5 s, as
+  before), passed to the proof in its spec; the proof tests patch it to
+  0.05 s with `SETTLE`/`PATIENCE` at 0.1/0.25 s, so
+  `tests/test_traefik_tx_proof.py` drops from about 56 s to about 21 s. The
+  suite (`just test`, 9 workers on an M5 Max) now takes about 100 s.
+- Tests: new `just test-parity`, the suite with `OPS_LIBRARY_PATH` (default
+  `../ops-library`) in its own `.venv-parity` with `ansible-core==2.21.5`
+  (not in the dev group), so the parity, drift and role-oracle tests have a
+  recipe. Template-parity loops over a
+  glob now fail on an empty glob (`test_hdparm_tune_boot`,
+  `test_fractal_services`, `test_archive_parity`). CI installs `age`, so
+  the Vaultwarden backup tests that encrypt with a throwaway key run there.
+  The PostgreSQL fixture of `test_postfixadmin_backup_restore.py` retries
+  `pg_ctl start` on a fresh port when the probed one was taken meanwhile.
+- Drift manifest: `minio_backup` recorded at ops-library `ff722ea6`. Its two
+  changes since `44a532ba` (metadata-only by default with a refusal of a full
+  copy onto the root filesystem; secret redaction and the root-password scan
+  of metadata backups) touch the backup flow, which ops-deploy does not port;
+  the part it mirrors, the pinned `mc` install (`mc_install.yml` and the
+  `mc_*` defaults), is unchanged. Nothing to port.
+
 - Tests: `just test` (and so CI) runs the suite in parallel with
   pytest-xdist (new dev dependency `pytest-xdist`, `--dist loadfile`). It
   starts half as many workers as there are CPUs (rounded down, at least

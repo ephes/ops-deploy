@@ -6,6 +6,7 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 |---|---|
 | `just sync` | `uv sync --locked` |
 | `just test` | `pytest -n <half the CPUs> --dist loadfile` (pass extra args: `just test -k toy`; `PYTEST_JOBS=auto just test` for one worker per CPU; serial, for example with `--pdb`: `just test -n 0`) |
+| `just test-parity` | the same with `OPS_LIBRARY_PATH` (default `../ops-library`, made absolute), in its own `.venv-parity` with `ansible-core==2.21.5`: the parity, drift and role-oracle tests that `just test` skips; prints the ops-library HEAD and whether it is dirty |
 | `just typecheck` | `mypy` in strict mode over `src/` and `tests/` |
 | `just lint` | `ruff check` and `ruff format --check` |
 | `just fmt` | apply ruff fixes and formatting |
@@ -23,9 +24,14 @@ machine at the same time; `PYTEST_JOBS` overrides the count (a number, or
 `auto` for one per CPU). `--dist loadfile` keeps each test file on one worker,
 so tests within a file still run in order. Most of the time goes into waiting
 on subprocesses, so the speedup is large (on an 18-core M5 Max: about 12
-minutes serial, about 2½ minutes with the default 9 workers). The wall time cannot drop below the
-slowest file; `tests/test_base_ssh_guard_tx.py` deliberately waits out a
-60-second revert timeout. Tests running in parallel must not share state:
+minutes serial, under 2 minutes with the default 9 workers). The wall time cannot drop below
+the slowest file, currently `tests/test_drive_fan_control.py` (about 90 s of
+real subprocesses for its fake host). Waits that only stand in for a
+production timeout are shortened in the test, not slept out: the
+`ssh_guard_tx` revert test runs a copy of the program with `QUIESCE_WAIT`
+rewritten to 2 s, and the Traefik proof tests patch `proof.POLL` (the API
+poll interval, passed to the proof in its spec) along with `SETTLE` and
+`PATIENCE`. Tests running in parallel must not share state:
 
 - use `tmp_path` for files, never a fixed path below `/tmp` on the
   controller (a short `tempfile.mkdtemp(dir="/tmp")` is fine where a Unix
@@ -41,6 +47,16 @@ slowest file; `tests/test_base_ssh_guard_tx.py` deliberately waits out a
   `0o077`).
 
 ## Optional original-role oracle checks
+
+`just test-parity` runs all of these against `../ops-library` (or
+`OPS_LIBRARY_PATH`). The drift tests compare against the checkout's working
+tree, so run it on a clean `main` checkout before recording digests. The
+recipe syncs the locked environment into `.venv-parity` and installs
+`ansible-core` there; it stays out of the dev group, because only these oracle
+tests import it, and a skip on a missing import would hide an oracle that
+silently did not run. Not `uv run --with ansible-core`: its overlay brings a
+second `packaging`, and the Home Assistant extras probe (rightly) treats
+duplicate distribution metadata as not current.
 
 Setting `OPS_LIBRARY_PATH` enables additional comparisons with the original
 Ansible roles. Use an absolute path to the intended owned checkout and record

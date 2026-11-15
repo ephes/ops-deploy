@@ -153,5 +153,7 @@ def test_units_and_route_are_byte_identical(tmp_path: Path, template: str) -> No
 
 
 def test_packaged_templates_are_the_role_templates() -> None:
-    for packaged in PACKAGED.glob("*.j2"):
+    packaged_templates = sorted(PACKAGED.glob("*.j2"))
+    assert packaged_templates, f"no *.j2 below {PACKAGED}"
+    for packaged in packaged_templates:
         assert packaged.read_text() == (VENDORED / f"archive_deploy__{packaged.name}").read_text()

@@ -346,8 +346,10 @@ class ProofHost:
                 (proof, "PROOF_ROOT", RootOwnedPath(self.proofs)),
                 (proof, "working_directory", lambda: self.root),
                 (proof, "stop_units", self.stopped.append),
-                (proof, "SETTLE", 0.6),
-                (proof, "PATIENCE", 1.5),
+                # A tenth of the real poll interval; settle and patience stay a few polls long.
+                (proof, "POLL", 0.05),
+                (proof, "SETTLE", 0.1),
+                (proof, "PATIENCE", 0.25),
                 (proof, "DEADLINE", 20),
                 (engine, "LOCK", self.root / "lock"),
                 (engine, "validate_policy", lambda policy: None),
@@ -1224,6 +1226,7 @@ def observe(url: str, expected: list[str]) -> tuple[dict[str, Any], float]:
         "deadline": 20,
         "settle": 1.2,
         "patience": 3,
+        "poll": proof.POLL,
     }
     started = time.monotonic()
     result = proof.observe(Running(), spec)  # type: ignore[arg-type]
@@ -1255,7 +1258,14 @@ def test_observation_reports_a_traefik_that_exits_or_never_answers() -> None:
         def poll(self) -> int:
             return 3
 
-    spec = {"api": "http://127.0.0.1:9/api/rawdata", "expected": [], "deadline": 1.2, "settle": 1, "patience": 1}
+    spec = {
+        "api": "http://127.0.0.1:9/api/rawdata",
+        "expected": [],
+        "deadline": 1.2,
+        "settle": 1,
+        "patience": 1,
+        "poll": proof.POLL,
+    }
     assert proof.observe(Exited(), spec) == {  # type: ignore[arg-type]
         "api_reachable": False,
         "stable": False,

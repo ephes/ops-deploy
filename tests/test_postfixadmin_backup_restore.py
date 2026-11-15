@@ -436,25 +436,31 @@ def postgres(tmp_path: Path) -> Any:
         capture_output=True,
         env=pg_env,
     )
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    subprocess.run(
-        [
-            PG_BIN / "pg_ctl",
-            "-D",
-            data,
-            "-w",
-            "-l",
-            tmp_path / "pg.log",
-            "-o",
-            f"-p {port} -k {sock} -c listen_addresses=localhost -c shared_memory_type=mmap",
-            "start",
-        ],
-        check=True,
-        capture_output=True,
-        env=pg_env,
-    )
+    # PostgreSQL cannot bind port 0: take a free port and start; another process
+    # (a parallel test worker) may grab it in between, so try a fresh one then.
+    for _ in range(3):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        started = subprocess.run(
+            [
+                PG_BIN / "pg_ctl",
+                "-D",
+                data,
+                "-w",
+                "-l",
+                tmp_path / "pg.log",
+                "-o",
+                f"-p {port} -k {sock} -c listen_addresses=localhost -c shared_memory_type=mmap",
+                "start",
+            ],
+            capture_output=True,
+            env=pg_env,
+        )
+        if started.returncode == 0:
+            break
+    else:
+        started.check_returncode()
 
     def sql(text: str, db: str = "mail", user: str = "postgres") -> str:
         done = subprocess.run(

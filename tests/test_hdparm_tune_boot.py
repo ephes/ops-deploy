@@ -70,7 +70,9 @@ def test_vendored_templates_match_the_reviewed_role() -> None:
     if library is None:
         pytest.skip("OPS_LIBRARY_PATH not set")
     source = Path(library) / "roles/hdparm_tune/templates"
-    for path in source.glob("hdparm-tune*.j2"):
+    templates = sorted(source.glob("hdparm-tune*.j2"))
+    assert templates, f"no hdparm-tune*.j2 below {source}"
+    for path in templates:
         assert (TEMPLATES / path.name).read_bytes() == path.read_bytes()
 
 

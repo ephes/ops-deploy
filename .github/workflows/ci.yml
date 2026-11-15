@@ -22,7 +22,8 @@ jobs:
       - uses: extractions/setup-just@v3
       # fish: tests/test_remote_shell_execution.py runs commands through it (root's login shell on the hosts).
       # sqlite3: tests/test_sqlite_backup_scripts.py runs the SQLite backups against the real CLI.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fish sqlite3
+      # age: tests/test_vaultwarden_backup_restore.py encrypts and decrypts with a throwaway age key.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fish sqlite3 age
       - run: uv sync --locked
       - run: just lint
       - run: just typecheck

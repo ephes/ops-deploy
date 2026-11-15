@@ -7,16 +7,26 @@ default:
 sync:
     uv sync --locked
 
-# Run the test suite in parallel (pytest-xdist, each test file on one worker).
-# Workers: half the CPUs (rounded down, at least 1), so several suites can share
-# a machine; override with PYTEST_JOBS (a number, or auto for one per CPU).
-# Serial, for example with --pdb: just test -n 0
+# pytest-xdist workers: half the CPUs (rounded down, at least 1), so several
+# suites can share a machine; PYTEST_JOBS overrides (a number, or auto for one per CPU)
+half_cpus := `n=$(( $(getconf _NPROCESSORS_ONLN) / 2 )); [ "$n" -ge 1 ] || n=1; echo "$n"`
+jobs := env("PYTEST_JOBS", half_cpus)
+
+# Run the test suite in parallel (pytest-xdist, each test file on one worker); serial, e.g. with --pdb: just test -n 0
 test *args:
+    uv run --locked pytest -n {{jobs}} --dist loadfile {{args}}
+
+# Run the suite with the ops-library parity and role-oracle tests (OPS_LIBRARY_PATH, default ../ops-library).
+# Uses its own .venv-parity: the locked environment plus ansible-core, which the oracle tests import.
+test-parity *args:
     #!/usr/bin/env sh
     set -eu
-    half=$(( $(getconf _NPROCESSORS_ONLN) / 2 ))
-    [ "$half" -ge 1 ] || half=1
-    exec uv run --locked pytest -n "${PYTEST_JOBS:-$half}" --dist loadfile {{args}}
+    library=$(cd "${OPS_LIBRARY_PATH:-../ops-library}" && pwd -P)
+    echo "OPS_LIBRARY_PATH=$library ($(git -C "$library" rev-parse --short HEAD)$(test -z "$(git -C "$library" status --porcelain)" || echo ', dirty'))"
+    # UV_PROJECT_ENVIRONMENT only for the sync: tests that run uv themselves must not inherit it.
+    UV_PROJECT_ENVIRONMENT=.venv-parity uv sync --locked --inexact --quiet
+    uv pip install --quiet --python .venv-parity/bin/python 'ansible-core==2.21.5'
+    OPS_LIBRARY_PATH="$library" exec .venv-parity/bin/python -m pytest -n {{jobs}} --dist loadfile {{args}}
 
 # Run mypy (strict)
 typecheck:

@@ -89,6 +89,7 @@ UNIT_MAX_SEC = 150  # the transient unit's hard limit
 DEADLINE = 90  # seconds Traefik gets to load every router
 SETTLE = 5  # router statuses unchanged this long: loaded (the file provider throttles 2 s)
 PATIENCE = 20  # unchanged this long although defined routers are missing: give up waiting
+POLL = 0.5  # seconds between two API polls
 
 
 Router = tuple[str, str]  # (kind, name with provider): kinds keep their own namespaces
@@ -439,14 +440,14 @@ def observe(process: subprocess.Popen[bytes], spec: dict[str, Any]) -> dict[str,
             require(isinstance(answer, dict), "unexpected API answer")
             raw, current = answer, statuses(answer)
         except (OSError, ValueError, Refused):
-            time.sleep(0.5)
+            time.sleep(spec["poll"])
             continue
         now = time.monotonic()
         if current != last:
             last, since = current, now
         elif now - since >= (spec["settle"] if expected <= set(current) else spec["patience"]):
             return {"api_reachable": True, "stable": True, "exited": None, "rawdata": raw}
-        time.sleep(0.5)
+        time.sleep(spec["poll"])
     return {"api_reachable": raw is not None, "stable": False, "exited": None, "rawdata": raw}
 
 
@@ -767,6 +768,7 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
                 "deadline": DEADLINE,
                 "settle": SETTLE,
                 "patience": PATIENCE,
+                "poll": POLL,
             }
             if routine is None:
                 results = {

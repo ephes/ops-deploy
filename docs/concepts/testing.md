@@ -115,10 +115,12 @@ the disposition and regression coverage of the previously failing roles.
 individually reviewed role; drift failures report that role's actual baseline.
 
 Paired role-oracle tests also import Ansible's native filters. Supply that
-test-only dependency when checking a source checkout:
+test-only dependency when checking a source checkout; `just test-parity`
+does that in its own `.venv-parity` (see [Development](../development.md)):
 
 ```bash
-OPS_LIBRARY_PATH=../ops-library uv run --locked --with ansible-core pytest
+just test-parity                                # ../ops-library
+OPS_LIBRARY_PATH=/path/to/ops-library just test-parity
 ```
 
 The ports follow ops-library's roles, which keep changing. Parity tests
