@@ -1,8 +1,9 @@
 """What the ported Traefik transaction engine adds to, or leaves out of, ops-library's.
 
-``test_traefik_tx_parity`` compares the two engines; this module covers the port on
-its own: the actions it refuses, that it runs as a standalone standard-library
-program, its size, and that it shares the reference engine's state, lock and actions.
+``test_traefik_tx_parity`` and ``test_traefik_tx_config`` compare the two engines; this
+module covers the port on its own: that it runs as a standalone standard-library
+program, its size, and that it shares the reference engine's state, lock and actions
+(all of them ported).
 """
 
 from __future__ import annotations
@@ -37,28 +38,11 @@ POLICY = {
     "config_path": "/etc/traefik/traefik.toml",
     "dynamic_path": "/etc/traefik/dynamic",
 }
-NOT_PORTED = ("enroll", "alias", "metrics_bind", "acme_storage")
+WRITING = ("enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")
 
 
-@pytest.mark.parametrize("action", NOT_PORTED)
-def test_actions_left_to_ansible_are_refused_before_anything_is_touched(action: str, tmp_path: Path) -> None:
-    host = FakeHost(engine, tmp_path)
-    host.install()
-    with host.patched():
-        request = base_setup(host, action).request
-        with (
-            patch.object(engine, "identity", side_effect=AssertionError("identity read")),
-            pytest.raises(engine.Refused, match=f"^action not ported to ops-deploy, .*: {action}$"),
-        ):
-            engine.execute(request)
-
-    assert not host.state_root.exists()
-    assert not (tmp_path / "lock").exists()
-    assert host.calls == []
-
-
-@pytest.mark.parametrize("action", NOT_PORTED)
-def test_refused_actions_exit_2_as_a_standalone_script(action: str, tmp_path: Path) -> None:
+@pytest.mark.parametrize("action", WRITING)
+def test_writing_actions_need_root_as_a_standalone_script(action: str, tmp_path: Path) -> None:
     """``python3 -I engine.py``: no package, no site directory, no script directory on the path."""
 
     request = tmp_path / "request.json"
@@ -74,10 +58,25 @@ def test_refused_actions_exit_2_as_a_standalone_script(action: str, tmp_path: Pa
     )
 
     assert (result.returncode, result.stderr) == (2, "")
-    assert json.loads(result.stdout) == {
-        "failed": True,
-        "error": f"action not ported to ops-deploy, use the Ansible transaction path: {action}",
-    }
+    assert json.loads(result.stdout) == {"failed": True, "error": "root is required"}
+
+
+@pytest.mark.parametrize("action", WRITING)
+def test_writing_actions_refuse_a_non_root_caller_before_anything_is_touched(action: str, tmp_path: Path) -> None:
+    host = FakeHost(engine, tmp_path)
+    host.install()
+    host.euid = 1000
+    with host.patched():
+        request = base_setup(host, action).request
+        with (
+            patch.object(engine, "identity", side_effect=AssertionError("identity read")),
+            pytest.raises(engine.Refused, match=r"^root is required$"),
+        ):
+            engine.execute(request)
+
+    assert not host.state_root.exists()
+    assert not (tmp_path / "lock").exists()
+    assert host.calls == []
 
 
 def test_main_takes_its_arguments(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -104,8 +103,8 @@ def test_the_reference_engine_knows_exactly_these_actions() -> None:
             with pytest.raises(RuntimeError) as raised:
                 reference.execute({"action": action, "policy": POLICY})
             assert (str(raised.value) == "unknown action") is (action == "rollback")
-    assert set(engine.PORTED) < set(engine.ACTIONS)
-    assert set(engine.ACTIONS) - set(engine.PORTED) == set(NOT_PORTED)
+    assert engine.PORTED == engine.ACTIONS
+    assert set(engine.ACTIONS) == {*WRITING, "inspect"}
 
 
 def test_state_and_lock_are_the_reference_engines_and_the_guards() -> None:

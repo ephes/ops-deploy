@@ -1,15 +1,15 @@
 """Controller side of detached Traefik transactions: stage, start, poll, wait, clean up, inspect.
 
-A binary transaction must not depend on the session that started it: an SSH drop, a
-sleeping controller or a killed caller between the binary replacement and its acceptance
-would leave a new binary, a ``pending`` record and no rollback. So the engine
-(:mod:`ops_deploy.infra.traefik_tx.engine`; ``binary``, and ``resume`` and ``rebaseline``
-the same way) runs on the host in a transient
+A binary (or static configuration) transaction must not depend on the session that started
+it: an SSH drop, a sleeping controller or a killed caller between the replacement and its
+acceptance would leave a new binary, a ``pending`` record and no rollback. So the engine
+(:mod:`ops_deploy.infra.traefik_tx.engine`; ``binary``, and every other action but
+``inspect`` the same way) runs on the host in a transient
 systemd unit, ``traefik-tx-<id>.service``, launched with ``systemd-run`` (``RuntimeMaxSec``,
 ``--collect``), and the controller polls its result over fresh connections. When that
 unit fails (the engine was killed, timed out or gave no result, or the host record was
 left ``pending``), ``OnFailure=`` starts ``traefik-tx-safe-restore@<id>.service``, which
-puts the original binary back under the rules in
+puts the original binary or static configuration back under the rules in
 :mod:`ops_deploy.infra.traefik_tx.runner`.
 
 Each step is a bash script sent through a :data:`~ops_deploy.backups.remote.Runner`
@@ -63,6 +63,8 @@ STATUSES: frozenset[str] = frozenset(
     {"absent", "incomplete", "staged", "running", "restoring", "finished", "interrupted"}
 )
 FINAL: frozenset[str] = frozenset({"absent", "finished", "interrupted"})
+# The engine actions that run detached (every one but the read-only ``inspect``).
+STAGED_ACTIONS = ("enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume", "rebaseline", "routine")
 
 
 class TransportError(RuntimeError):
@@ -229,7 +231,7 @@ def staged_request(request: Mapping[str, Any], transaction_id: str) -> bytes:
     """``request.json`` as the host program writes it into the transport directory.
 
     For ``binary`` it names the transport's copy of the archive as ``archive_path``,
-    as the Ansible transport does; for ``resume`` there is none.
+    as the Ansible transport does; the other actions have none.
     """
 
     value = json.loads(_request_bytes(request))
@@ -245,7 +247,7 @@ def stage_transaction(
 ) -> Staged:
     """Put engine, runner and ``request`` on the host and fetch the release archive there.
 
-    ``request`` is the engine request for ``binary``, ``resume`` or ``rebaseline`` (ops-library's
+    ``request`` is the engine request for any action but ``inspect`` (ops-library's
     ``TRANSACTIONS.md`` format, ``controller_state`` included); for ``binary`` the host
     downloads ``release.version`` for ``release.arch`` from GitHub and refuses unless
     it has exactly ``release.sha256``, and ``archive_path`` is set to that copy. Nothing
@@ -254,8 +256,8 @@ def stage_transaction(
 
     _check_id(transaction_id)
     action = request.get("action")
-    if action not in ("binary", "resume", "rebaseline", "routine"):
-        raise TransportError("stage: only binary, resume and rebaseline transactions run detached")
+    if action not in STAGED_ACTIONS:
+        raise TransportError("stage: only engine transactions run detached")
     staged = _call(
         runner,
         "stage",

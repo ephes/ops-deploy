@@ -371,12 +371,13 @@ def test_a_changed_template_is_rewritten_and_reloaded(box: Box) -> None:
     assert "safe-restore %i" in (box.units_dir / runner.SAFE_RESTORE_TEMPLATE).read_text()
 
 
-def test_stage_resume_fetches_nothing_and_drops_an_archive_path(box: Box) -> None:
-    request = {**box.setup.request, "action": "resume", "recovery_review_reference": "review"}
+@pytest.mark.parametrize("action", ["resume", "enroll", "alias", "metrics_bind", "acme_storage"])
+def test_stage_without_a_release_fetches_nothing_and_drops_an_archive_path(box: Box, action: str) -> None:
+    request = {**box.setup.request, "action": action, "recovery_review_reference": "review"}
 
     staged = box.stage(request=request)
 
-    assert (staged["action"], staged["archive_sha256"]) == ("resume", None)
+    assert (staged["action"], staged["archive_sha256"]) == (action, None)
     assert box.downloads == []
     assert "archive_path" not in box.read("request.json")
     assert not (box.dir() / "release.tar.gz").exists()
@@ -385,8 +386,8 @@ def test_stage_resume_fetches_nothing_and_drops_an_archive_path(box: Box) -> Non
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"action": "inspect"}, "only binary, resume and rebaseline transactions run detached"),
-        ({"action": "alias"}, "only binary, resume and rebaseline transactions run detached"),
+        ({"action": "inspect"}, "only engine transactions run detached"),
+        ({"action": "rollback"}, "only engine transactions run detached"),
         ({"release": None}, "binary transactions need a release"),
         ({"release": {"version": "3.7.16; rm", "arch": "amd64", "sha256": "0" * 64}}, "unsupported release"),
         ({"release": {"version": "2.11.9", "arch": "amd64", "sha256": "0" * 64}}, "unsupported release"),
@@ -993,6 +994,149 @@ def test_safe_restore_needs_a_record_an_original_and_the_lock(box: Box) -> None:
     assert runner.safe_restore(TX)["reason"] == "no_record"
     assert box.host.binary.read_bytes() == fake_traefik(NEW)
     assert box.host.calls == []
+
+
+def use_action(box: Box, action: str) -> None:
+    """A valid request for ``action`` replaces the box's binary request, its record enrolled again."""
+
+    box.setup = base_setup(box.host, action)
+    engine.save(box.host.state_root / "state.json", box.setup.state)
+
+
+def kill_at_config_write(box: Box) -> Callable[[list[str]], Completed]:
+    """An engine run killed after its pending record, as it would write the candidate config."""
+
+    def run(args: list[str]) -> Completed:
+        frozen: Frozen = {}
+        real = engine.atomic
+
+        def atomic(path: Path, data: bytes, mode: int = 0o600) -> None:
+            if path == box.host.config and not frozen:
+                frozen.update(freeze(box.host.root))
+                raise Killed
+            real(path, data, mode)
+
+        with patch.object(engine, "atomic", atomic):
+            box.run_engine(args)
+        thaw(box.host.root, frozen)
+        return subprocess.CompletedProcess(["engine.py", *args], -9, "", "")
+
+    return run
+
+
+CONFIG_ACTIONS = ["alias", "metrics_bind", "acme_storage"]
+
+
+@pytest.mark.parametrize("action", CONFIG_ACTIONS)
+def test_safe_restore_puts_the_original_static_config_back(box: Box, action: str) -> None:
+    use_action(box, action)
+    before = box.host.config.read_bytes()
+    pending = run_killed(box, kill_engine(box))
+    assert pending["operation"] == action
+    assert box.host.config.read_bytes() != before
+
+    outcome = runner.safe_restore(TX)
+
+    record = box.saved_record()
+    assert (outcome["acted"], outcome["reason"], outcome["phase"]) == (True, "restored", "recovery")
+    assert outcome["state"] == record
+    assert record == {
+        "schema": 1,
+        "host": "fixture",
+        "phase": "recovery",
+        "identity": pending["identity"],
+        "revision": record["revision"],
+        "updated_at": record["updated_at"],
+        "owner": "operator",
+        "transaction": pending["transaction"],
+        "reason": "EngineInterrupted",
+        "review_due": record["updated_at"] + 3600,
+        "safe_restore": TX,
+    }
+    assert box.host.config.read_bytes() == before
+    assert stat.S_IMODE(box.host.config.stat().st_mode) == 0o644
+    assert box.host.binary.read_bytes() == box.host.running == fake_traefik(OLD)
+    tls = ["tls"] if action == "acme_storage" else []
+    assert box.host.calls == ["probe cleanup", "restart", "probe baseline", "probe cleanup", *tls]
+
+
+@pytest.mark.parametrize("action", CONFIG_ACTIONS)
+def test_safe_restore_restarts_even_when_the_config_file_is_original(box: Box, action: str) -> None:
+    """Whether Traefik loaded the candidate cannot be read from the file: always restart."""
+
+    use_action(box, action)
+    before = box.host.config.read_bytes()
+    run_killed(box, kill_at_config_write(box))
+    assert box.host.config.read_bytes() == before
+    inode = box.host.config.stat().st_ino
+
+    outcome = runner.safe_restore(TX)
+
+    assert (outcome["acted"], outcome["phase"]) == (True, "recovery")
+    assert box.host.config.stat().st_ino == inode  # not rewritten
+    assert "restart" in box.host.calls
+
+
+def test_safe_restore_of_acme_storage_requires_the_recorded_certificates(box: Box) -> None:
+    use_action(box, "acme_storage")
+    run_killed(box, kill_engine(box))
+    box.host.tls_wrong_restarts = 1
+
+    outcome = runner.safe_restore(TX)
+
+    record = box.saved_record()
+    assert (outcome["acted"], outcome["reason"], outcome["phase"]) == (True, "restore_failed", "degraded")
+    assert record["recovery_error"] == "Refused"
+    assert box.host.clock.sleeps == [2, 2, 2, 2]
+
+
+def test_safe_restore_of_acme_storage_without_its_baseline_is_degraded(box: Box) -> None:
+    use_action(box, "acme_storage")
+    pending = run_killed(box, kill_engine(box))
+    (Path(pending["transaction"]) / "acme-baseline.json").unlink()
+
+    outcome = runner.safe_restore(TX)
+
+    assert (outcome["phase"], box.saved_record()["recovery_error"]) == ("degraded", "FileNotFoundError")
+    assert "restart" in box.host.calls
+
+
+@pytest.mark.parametrize("action", CONFIG_ACTIONS)
+def test_safe_restore_takes_only_its_own_config_transaction(box: Box, action: str) -> None:
+    use_action(box, action)
+    pending = run_killed(box, kill_engine(box))
+    transaction = Path(pending["transaction"])
+    saved = json.loads((transaction / "request.json").read_text())
+    engine.save(transaction / "request.json", {**saved, "archive_path": "/tmp/ansible/release.tar.gz"})
+    before = box.record()
+
+    outcome = runner.safe_restore(TX)
+
+    assert (outcome["acted"], outcome["reason"]) == (False, "not_this_transaction")
+    assert box.record() == before
+
+
+@pytest.mark.parametrize("action", CONFIG_ACTIONS)
+def test_a_config_transaction_runs_detached_and_finishes(box: Box, action: str) -> None:
+    use_action(box, action)
+    box.stage()
+
+    assert runner.run_transaction(TX) == 0
+
+    result = box.read("result.json")
+    assert (result["engine_exit"], result["host_phase"], result["restore_expected"]) == (0, "clear", False)
+    assert result["response"]["state"] == box.saved_record()
+    assert box.saved_record()["identity"]["config_sha256"] == sha256(box.host.config.read_bytes())
+
+
+@pytest.mark.parametrize("action", ["enroll", "resume"])
+def test_safe_restore_of_an_action_without_a_replacement_does_nothing(box: Box, action: str) -> None:
+    use_action(box, action)
+    box.stage()
+
+    outcome = runner.safe_restore(TX)
+
+    assert (outcome["acted"], outcome["reason"]) == (False, "not_binary")
 
 
 def test_safe_restore_of_a_resume_does_nothing(box: Box) -> None:

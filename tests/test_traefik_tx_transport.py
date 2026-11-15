@@ -178,8 +178,8 @@ def test_stage_refuses_a_different_staging(change: dict[str, Any]) -> None:
         transport.stage_transaction(FakeRunner([ok(staged_answer(**change))]), REQUEST, TX)
 
 
-@pytest.mark.parametrize("action", ["resume", "rebaseline"])
-def test_stage_resume_and_rebaseline_have_no_archive(action: str) -> None:
+@pytest.mark.parametrize("action", ["resume", "rebaseline", "enroll", "alias", "metrics_bind", "acme_storage"])
+def test_stage_actions_without_a_release_have_no_archive(action: str) -> None:
     request = {**REQUEST, "action": action, "recovery_review_reference": "reviewed", "archive_path": "/x"}
     digest = hashlib.sha256(transport.staged_request(request, TX)).hexdigest()
     answer = staged_answer(action=action, archive_sha256=None, request_sha256=digest)
@@ -190,8 +190,8 @@ def test_stage_resume_and_rebaseline_have_no_archive(action: str) -> None:
 @pytest.mark.parametrize(
     ("request_", "transaction_id", "message"),
     [
-        ({**REQUEST, "action": "inspect"}, TX, "stage: only binary, resume and rebaseline transactions run detached"),
-        ({**REQUEST, "action": "alias"}, TX, "stage: only binary, resume and rebaseline transactions run detached"),
+        ({**REQUEST, "action": "inspect"}, TX, "stage: only engine transactions run detached"),
+        ({**REQUEST, "action": "rollback"}, TX, "stage: only engine transactions run detached"),
         ({**REQUEST, "evidence": {"verified_at": object()}}, TX, "stage: the request is not JSON"),
         (REQUEST, TX.upper(), "invalid transaction id"),
         (REQUEST, "../" + TX, "invalid transaction id"),

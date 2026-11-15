@@ -9,8 +9,8 @@ unit run it. Subcommands, each printing one JSON object (exit 0) or
 ``traefik tx: <reason>`` on stderr (exit 1):
 
 ``stage ID SOURCE``
-    Copy ``engine.py``, ``runner.py`` and ``request.json`` (``binary``, ``resume`` or
-    ``rebaseline``) from SOURCE into ``/var/lib/traefik-transport/ID`` (root, ``0700``); for
+    Copy ``engine.py``, ``runner.py`` and ``request.json`` (any engine action but
+    ``inspect``) from SOURCE into ``/var/lib/traefik-transport/ID`` (root, ``0700``); for
     ``binary`` fetch the exact
     release archive from GitHub and check its SHA256; install the safe-restore unit
     template; write ``staged.json`` (the files' SHA256) last.
@@ -31,7 +31,11 @@ unit run it. Subcommands, each printing one JSON object (exit 0) or
     binary differs from it: then it puts ``original`` back, restarts Traefik, waits for
     the pre-transaction identity and runs the baseline and cleanup probes, like the
     engine's own rollback. It records ``recovery``, or ``degraded`` when any of that
-    fails; never ``clear``. Ordinary routine transactions instead restore every
+    fails; never ``clear``. A static configuration transaction (``alias``,
+    ``metrics_bind``, ``acme_storage``) is restored the same way from its ``original``
+    configuration, always with a restart (the running Traefik may hold the candidate
+    even when the file is back), and ``acme_storage`` then requires the recorded TLS
+    fingerprints again, as the engine's rollback does. Ordinary routine transactions instead restore every
     manifest-bound owned file and metadata resource through the shared engine helper.
     Otherwise it changes nothing. ``safe-restore.json`` says what
     it did.
@@ -90,7 +94,9 @@ RELEASE_URL = "https://github.com/traefik/traefik/releases/download/v{version}/t
 ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_JSON = 4 * 1024 * 1024
-STAGED_ACTIONS = ("binary", "resume", "rebaseline", "routine")
+STAGED_ACTIONS = ("enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume", "rebaseline", "routine")
+# The actions whose engine replaces the static configuration; safe-restore puts the original back.
+CONFIG_ACTIONS = ("alias", "metrics_bind", "acme_storage")
 ACTIVE = frozenset({"active", "activating", "deactivating", "reloading", "refreshing"})
 TRANSACTION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 
@@ -101,8 +107,8 @@ RESTORE_STARTED, RESTORED, ENGINE_STDERR = "restore-started.json", "safe-restore
 
 TEMPLATE = """\
 # Written by ops-deploy's Traefik transaction transport. Started as OnFailure= of
-# traefik-tx-%i.service: puts the original Traefik binary back after an interrupted
-# transaction and records recovery (or degraded), never clear.
+# traefik-tx-%i.service: puts the original Traefik binary or static configuration back
+# after an interrupted transaction and records recovery (or degraded), never clear.
 [Unit]
 Description=Traefik transaction %i safe-restore
 CollectMode=inactive-or-failed
@@ -152,6 +158,8 @@ class Engine(Protocol):
     ) -> dict[str, Any]: ...
 
     def restore_manifest(self, policy: dict[str, Any], directory: Path, expected_digest: str) -> None: ...
+
+    def verify_tls_fingerprints(self, names: list[str], baseline: dict[str, str]) -> None: ...
 
     def state_for(self, policy: dict[str, Any], phase: str, live: dict[str, Any], **fields: Any) -> dict[str, Any]: ...
 
@@ -383,7 +391,7 @@ def stage(transaction_id: str, source: Path) -> dict[str, Any]:
     request = read_json(source / REQUEST)
     require(isinstance(request, dict), "invalid request")
     action = request.get("action")
-    require(action in STAGED_ACTIONS, "only binary, resume and rebaseline transactions run detached")
+    require(action in STAGED_ACTIONS, "only engine transactions run detached")
     engine, runner = (source / ENGINE).read_bytes(), (source / RUNNER).read_bytes()
     TRANSPORT_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     private_dir(TRANSPORT_ROOT)
@@ -611,6 +619,7 @@ def own_transaction(
         and (
             request.get("archive_path") == str(directory / ARCHIVE)
             or (request.get("action") == "routine" and request.get("release") is None and "archive_path" not in request)
+            or (request.get("action") in CONFIG_ACTIONS and "archive_path" not in request)
         )
         and isinstance(supplied, dict)
         and state.get("previous_revision") == supplied.get("revision")
@@ -624,7 +633,7 @@ def skipped(reason: str) -> dict[str, Any]:
 def restore(engine: Engine, directory: Path, request: Any, transaction_id: str) -> dict[str, Any]:
     """The safe-restore decision and, when it applies, the restore itself (see the module docstring)."""
 
-    if not isinstance(request, dict) or request.get("action") not in {"binary", "routine"}:
+    if not isinstance(request, dict) or request.get("action") not in {"binary", "routine", *CONFIG_ACTIONS}:
         return skipped("not_binary")
     policy = request["policy"]
     engine.validate_policy(policy)
@@ -676,6 +685,8 @@ def restore(engine: Engine, directory: Path, request: Any, transaction_id: str) 
             expected = engine.digest(original)
         except Exception:
             return skipped("no_original")
+        if request["action"] in CONFIG_ACTIONS:
+            return restore_config(engine, request, policy, state, transaction, original, expected, transaction_id)
         installed, running = live_digests(engine, policy)
         if installed == expected and running == expected:
             return skipped("binary_unchanged")
@@ -714,6 +725,64 @@ def restore(engine: Engine, directory: Path, request: Any, transaction_id: str) 
             return {"acted": True, "reason": "record_not_saved", "phase": None, "state": None}
         reason = "restored" if recovery["phase"] == "recovery" else "restore_failed"
         return {"acted": True, "reason": reason, "phase": recovery["phase"], "state": recovery}
+
+
+def restore_config(
+    engine: Engine,
+    request: dict[str, Any],
+    policy: dict[str, Any],
+    state: dict[str, Any],
+    transaction: Path,
+    original: Path,
+    expected: str,
+    transaction_id: str,
+) -> dict[str, Any]:
+    """Put the original static configuration back, as the engine's own rollback of ``replace_config`` does.
+
+    Whether the running Traefik already loaded the candidate cannot be read from the file,
+    so it always restarts; for ``acme_storage`` the served certificates must then match
+    the transaction's ``acme-baseline.json`` again.
+    """
+
+    config = Path(policy["config_path"])
+    mode = stat.S_IMODE(original.stat().st_mode)
+    recovery = engine.state_for(
+        policy,
+        "recovery",
+        state["identity"],
+        owner=state.get("owner"),
+        transaction=str(transaction),
+        reason="EngineInterrupted",
+        review_due=0,
+        safe_restore=transaction_id,
+    )
+    recovery["review_due"] = recovery["updated_at"] + 3600
+    state_path = engine.STATE_ROOT / "state.json"
+    try:
+        cleanup_failure: BaseException | None = None
+        try:
+            engine.check_probe(request["cleanup_probe"])
+        except BaseException as exc:
+            cleanup_failure = exc
+        if file_sha256(config) != expected:
+            engine.atomic(config, original.read_bytes(), mode)
+        engine.restart_verify(policy, state["identity"], request["baseline_probe"], request["cleanup_probe"])
+        if request["action"] == "acme_storage":
+            engine.trusted_file(transaction / "acme-baseline.json")
+            baseline = json.loads((transaction / "acme-baseline.json").read_bytes())["tls_fingerprints"]
+            engine.verify_tls_fingerprints(sorted(baseline), baseline)
+        if cleanup_failure is not None:
+            raise cleanup_failure
+        recovery["identity"] = engine.identity(policy)
+    except BaseException as failure:
+        recovery["phase"] = "degraded"
+        recovery["recovery_error"] = type(failure).__name__
+    try:
+        engine.save(state_path, recovery)
+    except OSError:
+        return {"acted": True, "reason": "record_not_saved", "phase": None, "state": None}
+    reason = "restored" if recovery["phase"] == "recovery" else "restore_failed"
+    return {"acted": True, "reason": reason, "phase": recovery["phase"], "state": recovery}
 
 
 def safe_restore(transaction_id: str) -> dict[str, Any]:

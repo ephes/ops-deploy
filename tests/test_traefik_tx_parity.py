@@ -8,8 +8,8 @@ outside ``execute`` (policy, evidence, startup arguments, records, the route tre
 digest, release archives, the backup set, probes, identity and the command line) are
 compared function by function.
 
-Only ``inspect``, ``binary`` and ``resume`` are compared; ``test_traefik_tx_engine``
-covers the actions the port refuses.
+Here ``inspect``, ``binary`` and ``resume``; ``test_traefik_tx_config`` compares
+``enroll`` and the static configuration actions the same way.
 """
 
 from __future__ import annotations

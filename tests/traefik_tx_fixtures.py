@@ -9,7 +9,11 @@ or must pin: systemd and the running process (``identity``, ``systemctl restart`
 ``traefik version``), the probe programs, the ``tar`` backup, root (``geteuid``,
 the root-owned state directory, ``trusted_file`` without the ownership check),
 ``validate_policy`` (it allows only the real host paths), and ``time`` and
-``uuid4`` (fixed, so records compare byte for byte). The parity tests compare each
+``uuid4`` (fixed, so records compare byte for byte). For the static configuration
+actions it also replaces ``openssl`` (a certificate's expiry is derived from its PEM),
+the TLS probe of local Traefik (``tls_fingerprints``), the root ownership of the ACME
+target's parent directories, and maps the fake host's ACME paths to the real ones for
+``validate_acme_storage``, which accepts only those. The parity tests compare each
 replaced function separately. Everything else runs for real on files below a
 temporary root: state records, the lock, the transaction directory, the release
 archive, the candidate, the binary replacement and its rollback. ``run_scenario``
@@ -19,6 +23,7 @@ two runs can be compared.
 
 from __future__ import annotations
 
+import base64
 import copy
 import fcntl
 import gzip
@@ -66,6 +71,63 @@ UNIT = (
     "ExecStart=/usr/local/bin/traefik --configFile=/etc/traefik/traefik.toml\n"
 )
 PROBES = ("baseline", "acceptance", "cleanup")
+CONFIG_ACTIONS = ("alias", "metrics_bind", "acme_storage")
+ACME_SOURCE, ACME_TARGET = "/acme.json", "/etc/traefik/acme/acme.json"
+ACME_NAMES = ("app.example.invalid", "www.example.invalid", "mail.example.invalid")
+
+
+def static_configs(dynamic: Path) -> dict[str, tuple[str, str, dict[str, str]]]:
+    """Per configuration action: the live static config, the reviewed candidate, the policy's ``alias_policy``."""
+
+    provider = f'[providers.file]\ndirectory = "{dynamic}"\nwatch = true\n'
+    entrypoints = '[entryPoints.web]\naddress = ":80"\n\n[entryPoints.web-secure]\naddress = ":443"\n'
+    metrics = "[metrics.prometheus]\naddEntryPointsLabels = true\n"
+    aliased = (
+        '[entryPoints.web]\naddress = ":80"\n[entryPoints.web.http]\naliasHeadersStrategy = "delete"\n\n'
+        '[entryPoints.web-secure]\naddress = ":443"\n[entryPoints.web-secure.http]\naliasHeadersStrategy = "delete"\n'
+    )
+    loopback = '[entryPoints.traefik]\naddress = "127.0.0.1:8080"\n'
+    loopback += '[entryPoints.traefik.http]\naliasHeadersStrategy = "delete"\n'
+    resolver = '[certificatesResolvers.letsencrypt.acme]\nkeyType = "RSA4096"\n'
+    challenge = '[certificatesResolvers.letsencrypt.acme.httpChallenge]\nentryPoint = "web"\n'
+    misplaced = '[letsencrypt]\n\n[acme]\nemail = "operator@example.invalid"\nstorage = "acme.json"\n'
+    moved = f'email = "operator@example.invalid"\nstorage = "{ACME_TARGET}"\n'
+    both = {"web": "delete", "web-secure": "delete"}
+    return {
+        "alias": (provider + entrypoints + metrics, provider + aliased + metrics, both),
+        "metrics_bind": (
+            provider + aliased + metrics,
+            provider + aliased + loopback + metrics + 'entryPoint = "traefik"\n',
+            {**both, "traefik": "delete"},
+        ),
+        "acme_storage": (
+            provider + aliased + resolver + challenge + misplaced,
+            provider + aliased + resolver + moved + challenge,
+            both,
+        ),
+    }
+
+
+def acme_store(names: tuple[str, ...] = ACME_NAMES) -> bytes:
+    """A populated ACME store as Traefik writes it; the "PEM" is a fixture string."""
+
+    certificates = [
+        {
+            "domain": {"main": names[0], "sans": list(names[1:2])},
+            "certificate": base64.b64encode(f"-----BEGIN CERTIFICATE-----\n{names[0]}\n".encode()).decode(),
+            "key": "fixture-private-key",
+        }
+    ]
+    if len(names) > 2:
+        certificates.append(
+            {
+                "domain": {"main": names[2]},
+                "certificate": base64.b64encode(f"-----BEGIN CERTIFICATE-----\n{names[2]}\n".encode()).decode(),
+                "key": "fixture-private-key",
+            }
+        )
+    store = {"letsencrypt": {"Account": {"Email": "operator@example.invalid"}, "Certificates": certificates}}
+    return json.dumps(store, indent=1).encode()
 
 
 def sha256(data: bytes) -> str:
@@ -161,9 +223,13 @@ class FakeHost:
     unsettled_restarts: int = 0
     unsettled: bool = False
     after_backup: Callable[[], None] | None = None
+    # Restarts after which local Traefik serves another certificate (until the next restart).
+    tls_wrong_restarts: int = 0
+    tls_wrong: bool = False
     euid: int = 0
     clock: FakeClock = field(default_factory=FakeClock)
     uuids: FakeUuid = field(default_factory=FakeUuid)
+    real_validate_acme_storage: Callable[[bytes, bytes, dict[str, Any]], None] = field(init=False, repr=False)
 
     @property
     def binary(self) -> Path:
@@ -180,6 +246,14 @@ class FakeHost:
     @property
     def state_root(self) -> Path:
         return self.root / "state"
+
+    @property
+    def acme_source(self) -> Path:
+        return self.root / "acme.json"
+
+    @property
+    def acme_target(self) -> Path:
+        return self.root / "etc" / "acme" / "acme.json"
 
     def probe(self, name: str) -> dict[str, Any]:
         path = self.root / "probes" / name
@@ -238,6 +312,8 @@ class FakeHost:
                 self.restart_failures -= 1
                 raise self.engine.Refused("command failed: systemctl (exit 1)")
             self.running = self.binary.read_bytes()
+            self.tls_wrong = self.tls_wrong_restarts > 0
+            self.tls_wrong_restarts = max(0, self.tls_wrong_restarts - 1)
             self.unsettled = self.unsettled_restarts > 0
             self.unsettled_restarts = max(0, self.unsettled_restarts - 1)
             return ""
@@ -245,7 +321,36 @@ class FakeHost:
             self.calls.append(f"version {Path(argv[0]).name}")
             found = version_of(Path(argv[0]).read_bytes())
             return "no version here\n" if found is None else f"Version:      {found}\nCodename:     fixture\n"
+        if argv == ["openssl", "x509", "-noout", "-enddate"]:
+            pem = kwargs["input"]
+            self.calls.append("openssl")
+            return f"notAfter={sha256(pem.encode())[:12]} GMT\n" if "BEGIN" in pem else "unable to load\n"
         raise AssertionError(f"unexpected command: {argv}")
+
+    def tls_fingerprints(self, names: list[str]) -> dict[str, str]:
+        self.calls.append("tls")
+        return {name: sha256(f"{name} {'other' if self.tls_wrong else 'served'}".encode()) for name in names}
+
+    def validate_acme_storage(self, before: bytes, after: bytes, policy: dict[str, Any]) -> None:
+        """The engine's own check, with this host's ACME paths named as the real ones."""
+
+        paths = {str(self.acme_source): ACME_SOURCE, str(self.acme_target): ACME_TARGET}
+        named = {key: paths.get(str(policy.get(key)), policy.get(key)) for key in ("acme_source", "acme_target")}
+        self.real_validate_acme_storage(before, after, {**policy, **named})
+
+    def lstat_as_root(self, real: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
+        """``Path.lstat`` reporting root for the ACME target's parent directories."""
+
+        parents = {self.acme_target.parent, self.acme_target.parent.parent}
+
+        def lstat(path: Path) -> os.stat_result:
+            info = real(path)
+            if Path(path) not in parents:
+                return info
+            fields = (info.st_mode, info.st_ino, info.st_dev, info.st_nlink, 0, 0, info.st_size)
+            return os.stat_result((*fields, int(info.st_atime), int(info.st_mtime), int(info.st_ctime)))
+
+        return lstat
 
     def check_probe(self, spec: dict[str, Any]) -> None:
         name = Path(spec["argv"][0]).name
@@ -280,8 +385,13 @@ class FakeHost:
                 "backup": self.backup,
                 "time": self.clock,
                 "uuid": self.uuids,
+                "tls_fingerprints": self.tls_fingerprints,
+                "validate_acme_storage": self.validate_acme_storage,
             }.items():
+                if name == "validate_acme_storage":
+                    self.real_validate_acme_storage = engine.validate_acme_storage
                 stack.enter_context(patch.object(engine, name, value))
+            stack.enter_context(patch.object(Path, "lstat", self.lstat_as_root(Path.lstat)))
             stack.enter_context(patch("os.geteuid", new=lambda: self.euid))
             yield
 
@@ -314,15 +424,33 @@ def enrolled_state(identity: dict[str, Any], **fields: Any) -> dict[str, Any]:
 
 
 def base_setup(host: FakeHost, action: str) -> Setup:
-    """A complete, valid request for ``action`` against a clear record."""
+    """A complete, valid request for ``action`` against a clear record (no record for ``enroll``).
+
+    For a static configuration action the host's static config is first rewritten to that
+    action's live config (:func:`static_configs`); ``acme_storage`` also gets a populated
+    ACME source and an empty target directory.
+    """
 
     policy = host.policy()
+    after: bytes | None = None
+    if action in CONFIG_ACTIONS:
+        before, candidate_config, alias_policy = static_configs(host.dynamic)[action]
+        host.config.write_text(before)
+        after = candidate_config.encode()
+        policy["alias_policy"] = alias_policy
+        if action == "acme_storage":
+            host.acme_source.write_bytes(acme_store())
+            host.acme_source.chmod(0o600)
+            host.acme_target.parent.mkdir(mode=0o755, exist_ok=True)
+            policy.update(acme_source=str(host.acme_source), acme_target=str(host.acme_target))
+            policy["acme_paths"] = [str(host.acme_source)]
+            policy["backup_paths"] = [*policy["backup_paths"], str(host.acme_source)]
     live = host.identity(policy)
     candidate = fake_traefik(NEW)
     archive = release_archive(
         host.root / "release.tar.gz", [("LICENSE.md", b"license\n"), ("traefik", candidate), ("CHANGELOG.md", b"log\n")]
     )
-    state = enrolled_state(live)
+    state: dict[str, Any] | None = enrolled_state(live)
     request: dict[str, Any] = {
         "action": action,
         "policy": policy,
@@ -354,6 +482,15 @@ def base_setup(host: FakeHost, action: str) -> Setup:
     }
     if action == "resume":
         request["recovery_review_reference"] = "fixture reviewed recovery"
+    if after is not None:
+        request["candidate_config_base64"] = base64.b64encode(after).decode()
+        request["approved_binary_sha256"] = live["binary_sha256"]
+        request["compatibility"].update(
+            candidate_binary_sha256=live["binary_sha256"], candidate_config_sha256=sha256(after)
+        )
+    if action == "enroll":
+        state = None
+        request["controller_state"] = None
     return Setup(host=host, request=request, state=state)
 
 

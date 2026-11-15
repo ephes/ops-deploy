@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Traefik transactions: the engine (`infra/traefik_tx/engine.py`) ports the
+  rest of ops-library's reference engine (3110a0f1): `enroll`, `alias`,
+  `metrics_bind` and `acme_storage` (with `validate_alias`,
+  `validate_metrics_bind`, `validate_acme_storage`, `certificate_set`,
+  `acme_preflight`, `tls_fingerprints` and `verify_tls_fingerprints`), with
+  the reference engine's checks, records, refusals and files; `PORTED` is now
+  every reference action. A `rollback_archive` policy also applies to the
+  static config actions. The transport and the host runner stage every action
+  but `inspect`, and the safe-restore unit restores an interrupted static
+  config transaction from its `original` config (always with a restart; for
+  `acme_storage` it then requires the recorded TLS fingerprints). New
+  `tests/test_traefik_tx_config.py` compares the new actions with the
+  reference engine on the fake host and the replaced functions one by one.
+  ops-control drives all transaction recipes through this engine now; it
+  needs an ops-deploy pin that includes this change.
 - Tests: faster without testing less. The `ssh_guard_tx` revert test runs a
   copy of the program with `QUIESCE_WAIT` rewritten from 60 to 2 seconds
   (asserting exactly one replacement of the value 60);

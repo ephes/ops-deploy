@@ -1,7 +1,8 @@
 """Fail-closed Traefik binary and ordinary resource transactions on a Linux host. Requests are trusted operator policy.
 
 A port of ops-library's transaction engine (``roles/traefik_deploy/files/traefik_transaction.py``
-at 3110a0f1) for the actions ``inspect``, ``binary`` and ``resume``, plus ``rebaseline``, which
+at 3110a0f1) for all its actions (``inspect``, ``enroll``, ``binary``, ``alias``,
+``metrics_bind``, ``acme_storage`` and ``resume``), plus ``rebaseline`` and ``routine``, which
 only this engine has. It runs on the host as
 root, with the standard library only, under ``/usr/bin/python3`` 3.11 or newer::
 
@@ -20,10 +21,16 @@ record for the live identity. Any other drift and any other phase stay with a re
 It keeps the reference engine's state directory, lock, record schema, request format and
 refusal messages, so records written by either engine load unchanged in the other, both
 serialize on the same lock, and the controller journal pairs with either one.
-``enroll``, ``alias``, ``metrics_bind`` and ``acme_storage`` are not ported: they are
-refused before anything is read or written and stay with the Ansible path.
 
-Where ``binary`` keeps its full pre-change archive is the policy's choice: in the transaction
+``alias``, ``metrics_bind`` and ``acme_storage`` replace only the static configuration with an
+operator-reviewed candidate (``candidate_config_base64``) whose delta the engine re-derives
+from the live file: the alias header strategy on every entrypoint, the loopback metrics
+entrypoint, or the misplaced ACME resolver email/storage (which also copies the populated
+store to its new path and requires every stored certificate to be served unchanged
+afterwards). ``enroll`` writes the first ``clear`` record and never overwrites one.
+
+Where ``binary`` (and each static configuration change) keeps its full pre-change archive is
+the policy's choice: in the transaction
 directory, as the reference engine does, or, with ``rollback_archive`` (``root`` below
 ``mount``), as ``<root>/<transaction>.tar.gz`` on an external disk. Then the transaction is
 refused before anything is written unless ``mount`` is mounted read-write there; nothing
@@ -34,13 +41,17 @@ artifact either way (``original``, ``request.json``, ``backup.json``).
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
+import copy
 import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
+import socket
+import ssl
 import stat
 import subprocess
 import tarfile
@@ -54,9 +65,11 @@ from typing import Any, BinaryIO
 
 STATE_ROOT = Path("/var/lib/traefik-transactions")
 LOCK = Path("/run/lock/traefik-transaction.lock")
-# The reference engine's actions; only PORTED run here.
+# The reference engine's actions; all of them are ported.
 ACTIONS = ("inspect", "enroll", "binary", "alias", "metrics_bind", "acme_storage", "resume")
-PORTED = ("inspect", "binary", "resume")
+PORTED = ACTIONS
+# The actions that replace the static configuration (the reference engine's non-binary branch).
+CONFIG_ACTIONS = ("alias", "metrics_bind", "acme_storage")
 # Actions only this engine has; the reference engine refuses them as unknown.
 # Routine uses the same state/lock and adds a complete file/metadata restore manifest.
 OWN = ("rebaseline", "routine")
@@ -87,8 +100,8 @@ def canonical(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def run(argv: list[str], timeout: int = 30) -> str:
-    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+def run(argv: list[str], timeout: int = 30, input: str | None = None) -> str:
+    result = subprocess.run(argv, input=input, capture_output=True, text=True, timeout=timeout, check=False)
     require(result.returncode == 0, f"command failed: {Path(argv[0]).name} (exit {result.returncode})")
     return result.stdout
 
@@ -302,6 +315,148 @@ def check_probe(spec: dict[str, Any]) -> None:
     trusted_file(path)
     require(digest(path) == spec["sha256"], "probe program identity changed")
     run(argv, timeout=120)
+
+
+def validate_alias(before: bytes, after: bytes, approved: dict[str, str]) -> None:
+    """The candidate is the live config with ``aliasHeadersStrategy = "delete"`` on every entrypoint, nothing else."""
+
+    old, new = tomllib.loads(before.decode()), tomllib.loads(after.decode())
+    entries = old.get("entryPoints", {})
+    require(entries and set(entries) == set(approved), "alias map must cover every entrypoint")
+    expected = copy.deepcopy(old)
+    for name, setting in approved.items():
+        require(setting == "delete", "only the approved delete strategy is supported")
+        require(not str(entries[name]["address"]).endswith("/udp"), "UDP requires a separately reviewed policy")
+        http = expected["entryPoints"][name].setdefault("http", {})
+        require("underscoreHeadersStrategy" not in http, "legacy underscore strategy needs separate reconciliation")
+        http["aliasHeadersStrategy"] = setting
+    require(new == expected, "alias candidate changes unrelated configuration")
+
+
+def validate_metrics_bind(before: bytes, after: bytes, approved: dict[str, str]) -> None:
+    """Allow only the loopback metrics entrypoint repair."""
+
+    old, new = tomllib.loads(before.decode()), tomllib.loads(after.decode())
+    entries = old.get("entryPoints")
+    if not isinstance(entries, dict) or not entries:
+        raise Refused("entrypoints are required")
+    require("traefik" not in entries, "metrics entrypoint already exists")
+    require(set(approved) == set(entries) | {"traefik"}, "metrics binding policy must cover every resulting entrypoint")
+    for name, setting in approved.items():
+        require(setting == "delete", "only the approved delete strategy is supported")
+        if name != "traefik":
+            require(
+                entries[name].get("http", {}).get("aliasHeadersStrategy") == "delete",
+                "existing entrypoint alias policy is incomplete",
+            )
+    metrics = old.get("metrics")
+    if not isinstance(metrics, dict):
+        raise Refused("Prometheus metrics must already be enabled")
+    prometheus = metrics.get("prometheus")
+    if not isinstance(prometheus, dict) or "entryPoint" in prometheus:
+        raise Refused("Prometheus must use the implicit entrypoint before repair")
+    expected = copy.deepcopy(old)
+    expected["entryPoints"]["traefik"] = {"address": "127.0.0.1:8080", "http": {"aliasHeadersStrategy": "delete"}}
+    expected["metrics"]["prometheus"]["entryPoint"] = "traefik"
+    require(new == expected, "metrics binding candidate changes unrelated static configuration")
+
+
+def validate_acme_storage(before: bytes, after: bytes, policy: dict[str, Any]) -> None:
+    """Accept only the misplaced resolver email/storage repair, without reserializing."""
+
+    require(policy.get("acme_source") == "/acme.json", "unsupported ACME source")
+    require(policy.get("acme_target") == "/etc/traefik/acme/acme.json", "unsupported ACME target")
+    old, new = tomllib.loads(before.decode()), tomllib.loads(after.decode())
+    expected = copy.deepcopy(old)
+    misplaced = expected.pop("acme", None)
+    require(
+        isinstance(misplaced, dict) and set(misplaced) == {"email", "storage"},
+        "expected only misplaced email and storage",
+    )
+    require(isinstance(misplaced["email"], str), "email must be a string")
+    if expected.get("letsencrypt") == {}:
+        del expected["letsencrypt"]
+    resolver = expected["certificatesResolvers"]["letsencrypt"]["acme"]
+    require("email" not in resolver and "storage" not in resolver, "resolver already has email or storage")
+    resolver.update(email=misplaced["email"], storage=policy["acme_target"])
+    require(new == expected, "ACME candidate changes unrelated configuration")
+
+
+def certificate_set(data: bytes) -> list[tuple[tuple[str, ...], str]]:
+    """Public certificate identities only; never serialize account or key material."""
+
+    store = json.loads(data)
+    require(set(store) == {"letsencrypt"}, "expected one letsencrypt resolver")
+    certificates = store["letsencrypt"]["Certificates"]
+    require(isinstance(certificates, list) and certificates, "empty certificate store")
+    result = []
+    for item in certificates:
+        domain = item["domain"]
+        names = tuple(sorted({domain["main"], *domain.get("sans", [])}))
+        require(all(isinstance(name, str) and name for name in names), "invalid certificate domains")
+        pem = base64.b64decode(item["certificate"], validate=True)
+        # OpenSSL parses the leaf at the start of Traefik's PEM chain.
+        expiry = run(["openssl", "x509", "-noout", "-enddate"], input=pem.decode("ascii")).strip()
+        require(expiry.startswith("notAfter="), "missing certificate expiry")
+        result.append((names, expiry))
+    return sorted(result)
+
+
+def acme_preflight(policy: dict[str, Any]) -> tuple[bytes, list[tuple[tuple[str, ...], str]]]:
+    """The ACME source's bytes and certificate set; the target must be absent, empty or an exact copy."""
+
+    source, target = Path(policy["acme_source"]), Path(policy["acme_target"])
+    trusted_file(source)
+    require(stat.S_IMODE(source.stat().st_mode) == 0o600, "ACME source must be 0600")
+    for parent in (target.parent.parent, target.parent):
+        info = parent.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
+            "unsafe ACME parent directory",
+        )
+    data = source.read_bytes()
+    if target.exists() or target.is_symlink():
+        trusted_file(target)
+        # An exact copy is what a rolled-back attempt leaves; anything else is foreign.
+        require(
+            target.stat().st_size == 0 or target.read_bytes() == data,
+            "ACME target must be absent, empty or an exact copy of the source",
+        )
+    return data, certificate_set(data)
+
+
+def tls_fingerprints(names: list[str]) -> dict[str, str]:
+    """Probe every stored hostname directly on local Traefik using SNI."""
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    result = {}
+    for name in names:
+        with (
+            socket.create_connection(("127.0.0.1", 443), timeout=10) as connection,
+            context.wrap_socket(connection, server_hostname=name) as connection_tls,
+        ):
+            cert = connection_tls.getpeercert(binary_form=True)
+            if not cert:
+                raise Refused("missing served certificate")
+            result[name] = hashlib.sha256(cert).hexdigest()
+    return result
+
+
+def verify_tls_fingerprints(names: list[str], baseline: dict[str, str]) -> None:
+    """Allow bounded resolver startup settling; never accept a different leaf."""
+
+    last: Exception | None = None
+    for attempt in range(5):
+        try:
+            require(tls_fingerprints(names) == baseline, "served certificate fingerprint changed")
+            return
+        except (OSError, Refused) as exc:
+            last = exc
+            if attempt < 4:
+                time.sleep(2)
+    raise Refused("TLS fingerprint verification failed") from last
 
 
 def candidate_binary(archive: Path, checksum: str, destination: Path, target: str) -> Path:
@@ -772,6 +927,181 @@ def replace_binary(
         return {"changed": replaced, "failed": True, "state": recovery}
 
 
+def enroll(
+    request: dict[str, Any],
+    policy: dict[str, Any],
+    state: dict[str, Any] | None,
+    live: dict[str, Any],
+    state_path: Path,
+) -> dict[str, Any]:
+    """The first clear record for the live identity; never overwrites any record."""
+
+    require(state is None, "enrollment cannot overwrite any existing recovery record")
+    enrolled = state_for(policy, "clear", live, owner=request["evidence"]["owner"])
+    save(state_path, enrolled)
+    return {"changed": True, "state": enrolled}
+
+
+def config_candidate(request: dict[str, Any], policy: dict[str, Any], action: str, before: bytes) -> bytes:
+    """The reviewed static configuration candidate, its delta from ``before`` checked for ``action``."""
+
+    after = base64.b64decode(request["candidate_config_base64"], validate=True)
+    if action == "alias":
+        validate_alias(before, after, policy["alias_policy"])
+    elif action == "acme_storage":
+        validate_acme_storage(before, after, policy)
+    else:
+        validate_metrics_bind(before, after, policy["alias_policy"])
+    return after
+
+
+def replace_config(
+    request: dict[str, Any],
+    policy: dict[str, Any],
+    state: dict[str, Any],
+    live: dict[str, Any],
+    state_path: Path,
+    action: str,
+) -> dict[str, Any]:
+    """Replace only the static configuration (``alias``, ``metrics_bind``, ``acme_storage``); roll back on failure.
+
+    The reference engine's non-binary branch, step for step.
+    """
+
+    require(state["phase"] == "clear" and state["identity"] == live, "active recovery or unreviewed baseline drift")
+    # As for binary: an external archive disk that is not mounted refuses before anything is written.
+    settings = archive_settings(policy)
+    require(settings is None or archive_mounted(settings[1]), "rollback archive mount is not mounted")
+    check_probe(request["baseline_probe"])
+    compatibility = request["compatibility"]
+    require(
+        compatibility["baseline"] == live and compatibility["architecture"] == os.uname().machine,
+        "isolated preflight must match baseline and native architecture",
+    )
+    require(
+        compatibility.get("passed") is True
+        and compatibility.get("baseline_pair_passed") is True
+        and compatibility.get("report_reference"),
+        "isolated preflight proof required",
+    )
+    directory = STATE_ROOT / str(uuid.uuid4())
+    directory.mkdir(mode=0o700)
+    save(directory / "request.json", request)
+    old_config = Path(policy["config_path"]).read_bytes()
+    expected = dict(live)
+    require(
+        tuple(map(int, live["version"].split("."))) >= (3, 7, 12),
+        "alias policy requires a compatible running and installed binary",
+    )
+    require(
+        live["binary_sha256"] == request["approved_binary_sha256"], "alias operation requires approved executable hash"
+    )
+    after = config_candidate(request, policy, action, old_config)
+    candidate = directory / "candidate.toml"
+    atomic(candidate, after)
+    expected["config_sha256"] = digest(candidate)
+    require(
+        compatibility["candidate_binary_sha256"] == live["binary_sha256"]
+        and compatibility["candidate_config_sha256"] == expected["config_sha256"],
+        "alias candidate differs from isolated test",
+    )
+    destination = Path(policy["config_path"])
+    if expected == live:
+        try:
+            check_probe(request["acceptance_probe"])
+        finally:
+            check_probe(request["cleanup_probe"])
+        require(identity(policy) == live, "identity changed during no-op verification")
+        return {"changed": False, "state": state}
+    names: list[str] = []
+    fingerprints: dict[str, str] = {}
+    if action == "acme_storage":
+        require(
+            policy["acme_source"] in policy["acme_paths"] and policy["acme_source"] in policy["backup_paths"],
+            "source backup is required",
+        )
+        source_bytes, certificates = acme_preflight(policy)
+        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        names = sorted({name for domains, _ in certificates for name in domains})
+        fingerprints = tls_fingerprints(names)
+        save(
+            directory / "acme-baseline.json",
+            {"source_sha256": source_hash, "certificates": certificates, "tls_fingerprints": fingerprints},
+        )
+    backup(policy, directory)
+    original = directory / "original"
+    shutil.copy2(destination, original)
+    mode = stat.S_IMODE(destination.stat().st_mode)
+    require(identity(policy) == live, "baseline changed during preparation")
+    pending = state_for(
+        policy,
+        "pending",
+        live,
+        owner=request["evidence"]["owner"],
+        operation=action,
+        transaction=str(directory),
+        intended_identity=expected,
+        previous_revision=state["revision"],
+    )
+    save(state_path, pending)
+    replaced = False
+    try:
+        if action == "acme_storage":
+            # Recheck after backup and baseline capture, before any live write.
+            latest, _ = acme_preflight(policy)
+            require(hashlib.sha256(latest).hexdigest() == source_hash, "ACME source changed before copy")
+            target = Path(policy["acme_target"])
+            if target.exists():
+                atomic(directory / "acme-target.orig", target.read_bytes())
+            target.parent.chmod(0o700)
+            atomic(target, source_bytes, 0o600)
+            require(digest(target) == source_hash, "ACME copy hash mismatch")
+        replaced = True
+        atomic(destination, candidate.read_bytes(), mode)
+        accepted = restart_verify(policy, expected, request["acceptance_probe"], request["cleanup_probe"])
+        if action == "acme_storage":
+            require(digest(Path(policy["acme_source"])) == source_hash, "ACME source changed since copy")
+            require(
+                certificate_set(Path(policy["acme_target"]).read_bytes()) == certificates,
+                "ACME certificate set changed",
+            )
+            verify_tls_fingerprints(names, fingerprints)
+        complete = state_for(policy, "clear", accepted, owner=request["evidence"]["owner"], transaction=str(directory))
+        save(state_path, complete)
+        return {"changed": True, "state": complete}
+    except BaseException as failure:
+        # Interrupted operations are recovered too; the journal stays active for review.
+        recovery = state_for(
+            policy,
+            "recovery",
+            live,
+            owner=request["evidence"]["owner"],
+            transaction=str(directory),
+            reason=type(failure).__name__,
+            review_due=int(time.time()) + 3600,
+        )
+        try:
+            cleanup_failure: BaseException | None = None
+            try:
+                check_probe(request["cleanup_probe"])
+            except BaseException as exc:
+                cleanup_failure = exc
+            if replaced:
+                atomic(destination, original.read_bytes(), mode)
+                restart_verify(policy, live, request["baseline_probe"], request["cleanup_probe"])
+                if action == "acme_storage":
+                    verify_tls_fingerprints(names, fingerprints)
+            if cleanup_failure is not None:
+                raise cleanup_failure
+            recovery["identity"] = identity(policy)
+        except BaseException as restore_failure:
+            # Any interrupted or unverified recovery is degraded.
+            recovery["phase"] = "degraded"
+            recovery["recovery_error"] = type(restore_failure).__name__
+        save(state_path, recovery)
+        return {"changed": replaced, "failed": True, "state": recovery}
+
+
 # Routine transactions extend the same journal, lock and detached recovery protocol.
 UNIT_PATH = Path("/etc/systemd/system/traefik.service")
 PROBE_CONFIG = Path("/var/lib/traefik-update-probes/checks.json")
@@ -1035,10 +1365,6 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
     policy, action = request["policy"], request["action"]
     validate_policy(policy)
     require(action in ACTIONS or action in OWN, "unknown action")
-    require(
-        action in PORTED or action in OWN,
-        f"action not ported to ops-deploy, use the Ansible transaction path: {action}",
-    )
     state_path = STATE_ROOT / "state.json"
     if action == "inspect":
         return {"identity": identity(policy), "state": load_state(state_path)}
@@ -1057,8 +1383,12 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
         evidence(request, live)
         supplied = request.get("controller_state")
         require(state == supplied, "controller and host recovery records disagree")
+        if action == "enroll":
+            return enroll(request, policy, state, live, state_path)
         if state is None or state["host"] != policy["host"]:
             raise Refused("missing or wrong host enrollment")
+        if action in CONFIG_ACTIONS:
+            return replace_config(request, policy, state, live, state_path, action)
         if action == "resume":
             return resume(request, policy, state, live, state_path)
         if action == "rebaseline":
@@ -1070,7 +1400,7 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Guarded Traefik binary transaction (inspect, binary, resume, rebaseline)."
+        description="Guarded Traefik transaction (every reference action, rebaseline, routine)."
     )
     parser.add_argument("--request", type=Path, required=True)
     args = parser.parse_args(argv)

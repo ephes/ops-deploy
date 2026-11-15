@@ -88,8 +88,9 @@ ported (see [Health probes](#health-probes)) and are allowed on these hosts.
 
 `ops_deploy.infra.traefik_tx.engine` is the host side of that workflow: a port
 of ops-library's `roles/traefik_deploy/files/traefik_transaction.py` at
-`3110a0f1` for the actions `inspect`, `binary` and `resume`, plus a
-`rebaseline` action of its own. It is one program,
+`3110a0f1` for all its actions (`inspect`, `enroll`, `binary`, `alias`,
+`metrics_bind`, `acme_storage`, `resume`), plus the `rebaseline` and
+`routine` actions of its own. It is one program,
 standard library only (under 1,500 lines), that runs as root under
 `/usr/bin/python3` 3.11 or newer:
 
@@ -98,9 +99,10 @@ python3 engine.py --request request.json
 ```
 
 [Detached transactions](#detached-transactions) below upload it and run it on
-the host, out of reach of the session that started it. Nothing calls that
-transport yet: binary updates still go through ops-library's Ansible
-transaction entry, which runs the reference engine.
+the host, out of reach of the session that started it. ops-control's
+transaction recipes (`just traefik-status`, `-enroll`, `-update`, `-alias`,
+`-metrics-bind`, `-acme-storage`, `-resume`) and its unattended patch runner
+drive it through that transport; nothing runs the reference engine any more.
 
 | Action | What it does |
 |---|---|
@@ -108,7 +110,10 @@ transaction entry, which runs the reference engine.
 | `binary` | replaces only the executable with a checksum-pinned release, restarts and verifies; any failure puts the original back |
 | `resume` | reviewed reconciliation: a new `clear` record for the live identity once the baseline probe passes |
 | `rebaseline` | route-only reconciliation without a review: a new `clear` record when only the dynamic tree changed and the baseline probe passes (below); ops-deploy only |
-| `enroll`, `alias`, `metrics_bind`, `acme_storage` | refused before anything is read or written; they stay with the Ansible entry |
+| `enroll` | the first `clear` record for the live identity (with `owner`); refused when the host or the controller has any record |
+| `alias` | replaces only the static config with the reviewed candidate that sets `aliasHeadersStrategy = "delete"` on every entrypoint (`policy.alias_policy` must name each, all `delete`; no UDP entrypoint, no legacy `underscoreHeadersStrategy`) and changes nothing else |
+| `metrics_bind` | replaces only the static config with the candidate that adds the loopback entrypoint `traefik` (`127.0.0.1:8080`, alias strategy `delete`) and binds `metrics.prometheus.entryPoint` to it; refused when the entrypoint exists, Prometheus is not enabled or already bound, or an existing entrypoint lacks the alias strategy |
+| `acme_storage` | replaces only the static config with the candidate that moves the misplaced top-level `[acme]` email/storage into `certificatesResolvers.letsencrypt.acme` (storage `policy.acme_target`, only `/acme.json` to `/etc/traefik/acme/acme.json`), copies the populated store to the target first and requires the same certificate set and every stored name served with the same leaf afterwards |
 
 **Same state, same records.** State directory `/var/lib/traefik-transactions`
 (`state.json`, one directory per transaction and, after a `rebaseline`,
@@ -124,12 +129,12 @@ one in ops-library's `TRANSACTIONS.md` (`action`, `policy`, `controller_state`,
 `release.arch` is not read, the caller fetches the archive.
 
 **Output.** One JSON object on stdout. Exit 0: `inspect` prints `identity` and
-`state`; `binary`, `resume` and `rebaseline` print `changed` and the new
-record as `state`.
-Exit 1: the binary transaction failed after its `pending` record was written;
-the original binary was put back and verified (`recovery`), or that did not
-verify (`degraded`). Exit 2: refused (always before the binary is touched) or
-an unexpected error, as `error`.
+`state`; every other action prints `changed` and the new (or, for a no-op,
+the unchanged) record as `state`.
+Exit 1: the binary or static config transaction failed after its `pending`
+record was written; the original was put back and verified (`recovery`), or
+that did not verify (`degraded`). Exit 2: refused (always before the binary or
+config is touched) or an unexpected error, as `error`.
 
 `binary` checks and acts in the reference engine's order:
 
@@ -164,6 +169,29 @@ an unexpected error, as `error`.
 9. on any failure, an interrupt included: cleanup probe, the original put back,
    restart, baseline and cleanup probes: `recovery` with `review_due`; if any of
    that fails: `degraded`. Both wait for a reviewed `resume`.
+
+`alias`, `metrics_bind` and `acme_storage` take the reference engine's
+static-config branch in the same order: steps 1 to 4 (a `rollback_archive`
+policy must be mounted, as for `binary`); a transaction directory with the
+request; a running and installed Traefik of at least 3.7.12 whose hash is
+`approved_binary_sha256`; the `candidate_config_base64` delta checked against
+the live file for the action (the table above), written as `candidate.toml`,
+its hash and the unchanged binary hash the ones the compatibility proof tested;
+an unchanged config is a no-op (acceptance and cleanup probes, no restart). For
+`acme_storage` the source must be an approved ACME store in the backup set, a
+root-owned `0600` file, with root-owned parent directories of the target, which
+must be absent, empty or an exact copy of the source (what a rolled-back attempt
+leaves); its certificate set (names and `openssl x509 -enddate`, never keys) and
+the SHA256 of the leaf local Traefik serves for every name (SNI on
+`127.0.0.1:443`) go to `acme-baseline.json`. Then backup, `original` (the
+config), identity, `pending`; for `acme_storage` the source is checked again, an
+existing target kept as `acme-target.orig`, the target directory made `0700` and
+the store copied (`0600`); the config replaced, restart and acceptance as in
+step 8, and for `acme_storage` the source unchanged, the target's certificate
+set the same and the served leaves the same (five tries, two seconds apart). A
+failure restores the original config, restarts and, for `acme_storage`,
+requires the served leaves again; the copied store stays (a retry accepts the
+exact copy).
 
 ### Route-only rebaseline
 
@@ -207,8 +235,9 @@ the rebaselined record unchanged and runs `binary` on it.
 `tests/test_traefik_tx_rebaseline.py` covers each refusal, the bases and the
 hand-over to both engines.
 
-Differences from the reference engine, on purpose: only the three actions (and
-`rebaseline`); a
+Differences from the reference engine, on purpose: the `rebaseline` and
+`routine` actions; a `rollback_archive` policy also applies to the static
+config actions (the reference engine does not know the key); a
 host record that is valid JSON but not an object is refused as `invalid
 recovery state` (the reference engine stops with an uncaught `AttributeError`);
 `main` takes its arguments for tests.
@@ -256,7 +285,7 @@ engine does (the parity tests run without it). A rebaseline reads the route
 files from the external archive the record's transaction names, under the same
 checks as a local one; when it is gone, the changed file names are
 `unavailable`, as before. ops-library's engine does not know the key: a
-transaction run through the Ansible entry still writes its archive locally.
+transaction the reference engine ran wrote its archive locally.
 
 **Retention.** `ops_deploy.infra.traefik_tx.retention` is a host program next to
 the engine (standard library only, as root):
@@ -299,26 +328,30 @@ phase refusals, the program, runner and transport, and the external archive
 (mount checks, directory checks, the transaction refused before any write,
 the rebaseline reading it).
 
-`tests/test_traefik_tx_parity.py` runs this engine and the reference one
+`tests/test_traefik_tx_parity.py` (`inspect`, `binary`, `resume`) and
+`tests/test_traefik_tx_config.py` (`enroll`, `alias`, `metrics_bind`,
+`acme_storage`) run this engine and the reference one
 (vendored byte for byte under `tests/parity/traefik_deploy/`;
 `tests/test_traefik_tx_engine.py` checks it against `OPS_LIBRARY_PATH`)
 through the same requests on the same fake host. Results, refusals and the
 files left behind (records, transaction directory, binary) must be identical
 byte for byte, and so must identity, policy, evidence, archive, backup-set,
-probe and command-line behaviour, compared function by function.
+probe, command-line, static-config validation, ACME store and TLS probe
+behaviour, compared function by function.
 
 ## Detached transactions
 
 `ops_deploy.infra.traefik_tx.transport` (controller side) and
 `ops_deploy.infra.traefik_tx.runner` (host side, a standard-library program like
-the engine) run the engine's `binary`, `resume` and `rebaseline` actions in a
-transient systemd unit on the host. The Ansible entry runs the engine inside the SSH
-session, so a dropped connection or a killed controller between the binary
-replacement and its acceptance leaves a new binary, a `pending` record and no
+the engine) run every engine action but `inspect` in a
+transient systemd unit on the host. The former Ansible entry ran the engine inside the SSH
+session, so a dropped connection or a killed controller between the
+replacement and its acceptance left a new binary or config, a `pending` record and no
 rollback. Here nothing outside the host takes part once the unit runs: the
 controller polls the result over new connections, and when the unit fails, an
-`OnFailure=` unit puts the original binary back. Nothing calls the transport
-yet; the controller journal stays with its caller (ops-control).
+`OnFailure=` unit puts the original binary or static config back. The
+controller journal stays with its caller (ops-control's transaction recipes and
+patch runner).
 
 ```python
 from ops_deploy.backups.remote import SshTarget, ssh_runner
@@ -343,7 +376,7 @@ with a fixed reason and no host name.
 
 | Call | On the host |
 |---|---|
-| `stage_transaction(runner, request, id)` | `/var/lib/traefik-transport/<id>/` (root, `0700`) with `engine.py`, `runner.py`, `request.json` (`binary`, `resume` or `rebaseline`); for `binary` the host downloads the release archive from GitHub (`release.version` for `release.arch`, which must be the host's) and refuses it unless it has exactly `release.sha256`, and `archive_path` is set to it; the safe-restore unit template (below), with `systemctl daemon-reload` when it was missing or differed; last `staged.json` with the files' SHA256, which must be the ones sent. A refusal leaves no directory, and nothing ran: it needs no `pending` record |
+| `stage_transaction(runner, request, id)` | `/var/lib/traefik-transport/<id>/` (root, `0700`) with `engine.py`, `runner.py`, `request.json` (any action but `inspect`); for `binary` the host downloads the release archive from GitHub (`release.version` for `release.arch`, which must be the host's) and refuses it unless it has exactly `release.sha256`, and `archive_path` is set to it; the safe-restore unit template (below), with `systemctl daemon-reload` when it was missing or differed; last `staged.json` with the files' SHA256, which must be the ones sent. A refusal leaves no directory, and nothing ran: it needs no `pending` record |
 | `start_transaction(runner, id, runtime_max_sec=900)` | the staged files unchanged and never started, then `systemd-run --unit=traefik-tx-<id>.service --collect` with `Type=exec`, `RuntimeMaxSec=<n>` (60 to 3600), `TimeoutStopSec=30`, `KillMode=control-group` and `OnFailure=traefik-tx-safe-restore@<id>.service`; returns once the unit runs. A failure here does not prove that nothing started: poll |
 | the unit | holding the transaction's lock (an exclusive `flock` on its directory) while it runs: `started.json` (written durably before the engine starts), the engine on `request.json`, then `result.json` (`engine_exit`, `response` = the engine's JSON, `host_phase`, `restore_expected`); the archive is deleted afterwards. The unit fails, and so starts the safe-restore unit, when the engine gave no usable result or left the host record `pending`; a timeout, a kill and a stop (its `SIGTERM` exits 143, not as a clean stop) fail it too |
 | `poll_transaction(runner, id)` | read-only status, taken only from marker files that did not change while systemd was asked about the two units (otherwise it looks again, and reports `running` if the transaction keeps moving); `wait_for_transaction(runner, id, timeout=..., interval=5)` polls until the status is final or `timeout` has passed, and takes a failed poll as "ask again" |
@@ -367,18 +400,22 @@ the controller keeps its `pending` one, as ops-library's controller does.
 transaction's `runner.py safe-restore <id>`, holding the transaction's lock. It
 acts only when, under the engine lock:
 
-- the host record is `pending` for a `binary` operation;
+- the host record is `pending` for a `binary`, `alias`, `metrics_bind`,
+  `acme_storage` or `routine` operation (a routine one restores its manifest instead);
 - its transaction directory is below `/var/lib/traefik-transactions` and holds
-  exactly this transport's request (with this transport's archive path), and
+  exactly this transport's request (with this transport's archive path, none
+  for a static config action), and
   the record's `previous_revision` is the request's controller record: a
-  transaction of the Ansible entry or of another transport is never touched;
-- that directory has the `original` binary;
-- the installed or the running binary differs from it (no running Traefik
-  counts as different).
+  transaction the reference engine left or of another transport is never touched;
+- that directory has the `original` binary (or config);
+- for `binary`: the installed or the running binary differs from it (no running
+  Traefik counts as different). A static config transaction always counts as
+  changed: which config the running Traefik loaded cannot be read from the file.
 
 Then it does what the engine's rollback does: cleanup probe, `original` put
 back (if the installed binary differs), restart, the pre-transaction identity
-within 15 tries, baseline and cleanup probes. That gives `recovery` (`reason:
+within 15 tries, baseline and cleanup probes, and for `acme_storage` the served
+leaves of its `acme-baseline.json` again. That gives `recovery` (`reason:
 EngineInterrupted`, `safe_restore: <id>`, `review_due` an hour later), or
 `degraded` with `recovery_error` when any of it failed, a stop or the unit's
 timeout included; never `clear`.
