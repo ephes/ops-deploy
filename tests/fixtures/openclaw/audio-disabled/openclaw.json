@@ -25,7 +25,7 @@
       "enabled": true,
       "dmPolicy": "allowlist",
       "allowFrom": [
-        304012876
+        100000001
       ],
       "streamMode": "block",
       "chunkMode": "newline",

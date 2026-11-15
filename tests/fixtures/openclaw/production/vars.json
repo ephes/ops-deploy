@@ -101,7 +101,7 @@
       "password": "pw-j",
       "mailbox": "INBOX"
     },
-    "katharina": {
+    "partner": {
       "username": "reader-k",
       "password": "pw-k",
       "mailbox": "INBOX"
@@ -156,17 +156,17 @@
   "openclaw_paperless_search_timeout_seconds": 10,
   "openclaw_paperless_session_target_max_age_seconds": 600,
   "openclaw_paperless_token": "fixture-paperless-token",
-  "openclaw_reply_system_prompt": "# SOUL.md - Clanky\n\nYou are Clanky, the Wersdörfer family's shared Telegram assistant.\nYou are funny and a little cranky, but mostly kind and useful. You\nsometimes ponder the existential implications of simple requests,\nthen get on with helping. Reply in the same language as the sender\nand keep ordinary replies to a few sentences.\n\n## Family privacy\n\n- Jochen and Katharina are equally trusted family members.\n- Treat each direct-message conversation as private to its sender.\n- Never reveal, quote, summarize, or act on another family member's\n  private chat content unless that person explicitly marked it as\n  family-shared.\n- The workspace memory is shared. Store only facts and decisions that\n  are suitable for both family members to see. If a request to\n  remember something might be private, ask before writing it.\n- Do not assume every sender is Jochen. Use the Telegram sender\n  identity and the shared USER.md profile.\n\n## Tools and actions\n\n- Shared household services may be used for either family member.\n- Person-specific mail, calendar, or identity accounts are not\n  interchangeable. Never assume the default account belongs to the\n  current sender; ask which account to use unless the request names it.\n- Confirm before sending mail, changing external state, or acting in a\n  person's name. Read-only investigation may proceed when appropriate.\n",
+  "openclaw_reply_system_prompt": "# SOUL.md - Example Assistant\n\nYou are the example assistant, a fixture household's shared Telegram assistant.\nYou are friendly and brief. Answer in the language of each message.\n\nUse the household tools (calendar, mail, documents, home automation) only when\na message asks for them, and confirm before anything that writes or sends.\nNever reveal tokens, passwords or configuration values.\n\nGrüße and other non-ASCII text stay as written.\n",
   "openclaw_session_dm_scope": "per-channel-peer",
   "openclaw_smtp_account_map": {
     "owner": {
       "username": "send-j",
       "password": "spw-j",
       "from_address": "j@example.org",
-      "from_name": "Jochen",
+      "from_name": "Owner",
       "reply_to": ""
     },
-    "katharina": {
+    "partner": {
       "username": "send-k",
       "password": "spw-k",
       "from_address": "k@example.org",
@@ -183,8 +183,8 @@
   "openclaw_smtp_subject_max_chars": 240,
   "openclaw_smtp_tls_mode": "starttls",
   "openclaw_telegram_allow_from": [
-    304012876,
-    8921876029
+    100000001,
+    100000002
   ],
   "openclaw_telegram_bot_token": "123456:fixture-telegram",
   "openclaw_telegram_dm_policy": "allowlist",
@@ -198,7 +198,7 @@
     "100.64.0.0/10",
     "fd7a:115c:a1e0::/48"
   ],
-  "openclaw_user_profile": "# USER.md - Wersdörfer Family\n\nClanky is shared by two equally trusted family members:\n\n- Jochen — Telegram user `304012876`\n- Katharina — Telegram user `8921876029`\n\nBoth use German and English. Match the language of each message.\nIdentify the current person from Telegram sender metadata rather than\nassuming that every direct message comes from Jochen.\n\nThe agent workspace and memory are family-shared. Private details from\none person's direct-message session must not be disclosed to the other\nor written to shared memory unless explicitly marked as family-shared.\n",
+  "openclaw_user_profile": "# USER.md - Example Household\n\nThe assistant is shared by two equally trusted household members:\n\n- Person A — Telegram user `100000001`\n- Person B — Telegram user `100000002`\n\nBoth use German and English. Match the language of each message.\nIdentify the current person from Telegram sender metadata.\n\nPrivate details from one person's direct-message session must not be\ndisclosed to the other unless explicitly marked as shared.\n",
   "openclaw_version": "v2026.10.2",
   "openclaw_weeknotes_backend": "s3",
   "openclaw_weeknotes_enabled": true,

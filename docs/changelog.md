@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Tests: the OpenClaw fixtures (`tests/fixtures/openclaw/production` and
+  `audio-disabled`) no longer carry private data. The family name, first
+  names, the real assistant system prompt and user profile and the real
+  Telegram user ids are replaced with neutral placeholders (an example
+  assistant and household, `Person A`/`Person B`, ids `100000001` and
+  `100000002`, the `partner` account). The golden hashes of the files built
+  from them (`SOUL.md`, `USER.md`, `imap_accounts.json`, `smtp_accounts.json`)
+  and the `openclaw.json` allowlist are re-recorded; deploy code is unchanged.
+  Earlier commits still hold the old values in history.
+
 - Tests: the Ansible parity and role-oracle tests are retired. Every deploy
   runs on pyinfra, so they only kept a frozen Ansible render that nothing
   produces any more. Gone: `tests/parity/` (475 files, 1.2 MB: vendored role
