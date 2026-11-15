@@ -1,22 +1,6 @@
 name: Native Weeknotes operator composition
 
 on:
-  push:
-    branches: [pyinfra-weeknotes-activation-20261030]
-    paths:
-      - .github/workflows/weeknotes-composition-native.yml
-      - smoke/daybook_identity_native_fixture.py
-      - smoke/daybook_activation_native_fixture.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_archive_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_weeknotes_activation.py
-      - tests/test_daybook_weeknotes_identity.py
-      - tests/test_daybook_identity_native_fixture.py
   workflow_dispatch:
     inputs:
       implementation_sha:

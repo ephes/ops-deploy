@@ -1,18 +1,6 @@
 name: Native Daybook attention components
 
 on:
-  push:
-    branches: [pyinfra-daybook-attention-20261029, pyinfra-attention-preserve-disabled-20261031]
-    paths:
-      - .github/workflows/daybook-attention-native.yml
-      - smoke/daybook_attention_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_voice_memo_attention*.py
   workflow_dispatch:
     inputs:
       implementation_sha:

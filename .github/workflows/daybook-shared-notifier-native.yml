@@ -1,14 +1,6 @@
 name: Daybook shared notifier native
 
 on:
-  push:
-    branches: [pyinfra-shared-notifier-20261031]
-    paths:
-      - '.github/workflows/daybook-shared-notifier-native.yml'
-      - 'tests/integration/daybook_shared_notifier/**'
-      - 'src/ops_deploy/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
   workflow_dispatch:
     inputs:
       implementation_sha:

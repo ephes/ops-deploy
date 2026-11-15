@@ -1,20 +1,6 @@
 name: Native Photos and archive activation
 
 on:
-  push:
-    branches: [pyinfra-photo-archive-activation-20261030]
-    paths:
-      - .github/workflows/photo-activation-native.yml
-      - smoke/photo_activation_helpers.py
-      - smoke/daybook_photos_native_fixture.py
-      - smoke/daybook_archive_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_photo_activation_fixtures.py
   workflow_dispatch:
     inputs:
       implementation_sha:

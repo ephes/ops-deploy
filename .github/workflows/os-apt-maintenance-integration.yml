@@ -2,12 +2,6 @@ name: OS apt maintenance integration
 
 # Disposable Ubuntu VM and isolated Debian13 userspace/systemd guest.
 on:
-  push:
-    branches: [pyinfra-os-apt-20261027]
-    paths:
-      - '.github/workflows/os-apt-maintenance-integration.yml'
-      - 'tests/integration/os_apt_maintenance/**'
-      - 'src/ops_deploy/services/os_apt_maintenance/**'
   workflow_dispatch:
     inputs:
       implementation_sha:

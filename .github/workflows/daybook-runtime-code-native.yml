@@ -1,22 +1,6 @@
 name: Native Daybook user runtime source
 
 on:
-  push:
-    branches: [pyinfra-daybook-runtime-code-20261029]
-    paths:
-      - .github/workflows/daybook-runtime-code-native.yml
-      - smoke/daybook_runtime_code_native_fixture.py
-      - smoke/daybook_transition_native_fixture.py
-      - smoke/daybook_inbox_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_runtime_code_guard.py
-      - tests/test_daybook_runtime_code_source.py
-      - tests/test_daybook_runtime_code_controller.py
   workflow_dispatch:
     inputs:
       implementation_sha:

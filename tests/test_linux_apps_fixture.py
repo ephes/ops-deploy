@@ -83,8 +83,7 @@ def test_runner_syntax() -> None:
 def test_workflow_is_guarded_and_pinned() -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text())
     triggers = workflow[True]  # YAML 1.1 reads ``on`` as true
-    assert set(triggers) == {"push", "workflow_dispatch"}
-    assert triggers["push"]["branches"] == ["pyinfra-linux-apps-20261027"]
+    assert set(triggers) == {"workflow_dispatch"}
     assert workflow["permissions"] == {"contents": "read"}
     [job] = workflow["jobs"].values()
     assert job["runs-on"] == "ubuntu-24.04"

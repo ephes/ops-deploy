@@ -1,18 +1,6 @@
 name: Native Daybook archive components
 
 on:
-  push:
-    branches: [pyinfra-daybook-archive-sync-20261029]
-    paths:
-      - .github/workflows/daybook-archive-native.yml
-      - smoke/daybook_archive_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - smoke/daybook_runtime_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_photos_archive_sync*.py
   workflow_dispatch:
     inputs:
       implementation_sha:

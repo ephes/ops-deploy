@@ -1,20 +1,6 @@
 name: Native host baseline integration
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/host-exceptions-native.yml'
-      - 'src/ops_deploy/base/hostname.py'
-      - 'src/ops_deploy/services/graphyard/vector*'
-      - 'src/ops_deploy/services/graphyard/_common.py'
-      - 'src/ops_deploy/services/graphyard/files/graphyard_vector_host.py'
-      - 'src/ops_deploy/services/graphyard/templates/vector.*'
-      - 'src/ops_deploy/services/logyard/vector.py'
-      - 'src/ops_deploy/ops/secret_file.py'
-      - 'src/ops_deploy/testing/**'
-      - 'smoke/host_exceptions_macos_fixture.py'
-      - 'smoke/ollama_macos_fixture.py'
-      - 'tests/test_graphyard_darwin.py'
   workflow_dispatch:
     inputs:
       implementation_sha:

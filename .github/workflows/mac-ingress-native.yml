@@ -1,16 +1,6 @@
 name: Mac application ingress integration
 
 on:
-  push:
-    branches: [pyinfra-mac-apps-20261027]
-    paths:
-      - .github/workflows/mac-ingress-native.yml
-      - src/ops_deploy/services/opsgate/ingress.py
-      - src/ops_deploy/services/opsgate/templates/opsgate-traefik.yml.j2
-      - src/ops_deploy/services/voxhelm/ingress.py
-      - src/ops_deploy/services/voxhelm/templates/voxhelm-traefik.yml.j2
-      - tests/integration/mac_ingress/**
-      - tests/test_mac_ingress.py
   workflow_dispatch:
     inputs:
       implementation_sha:

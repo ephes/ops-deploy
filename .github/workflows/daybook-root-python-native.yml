@@ -1,17 +1,6 @@
 name: Native Daybook protected root Python parity
 
 on:
-  push:
-    branches: [pyinfra-daybook-root-python-20261028]
-    paths:
-      - .github/workflows/daybook-root-python-native.yml
-      - smoke/daybook_root_python_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - smoke/daybook_resources_native_fixture.py
-      - src/ops_deploy/**
-      - pyproject.toml
-      - uv.lock
-      - tests/test_daybook_root_python.py
   workflow_dispatch:
     inputs:
       implementation_sha:

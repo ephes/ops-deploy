@@ -1,16 +1,6 @@
 name: Mail core native integration
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/mail-core-integration.yml'
-      - 'src/ops_deploy/services/_mail_config/**'
-      - 'src/ops_deploy/services/_mail_database/**'
-      - 'src/ops_deploy/services/_mail_postfix/**'
-      - 'src/ops_deploy/services/mail_backend/**'
-      - 'src/ops_deploy/services/mail_relay/**'
-      - 'src/ops_deploy/services/mail_spam/**'
-      - 'tests/integration/mail_core/**'
   workflow_dispatch:
     inputs:
       implementation_sha:

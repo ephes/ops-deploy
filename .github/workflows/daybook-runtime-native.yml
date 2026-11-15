@@ -1,23 +1,6 @@
 name: Native Daybook runtime guard integration
 
 on:
-  push:
-    branches: [pyinfra-daybook-studio-20261028]
-    paths:
-      - .github/workflows/daybook-runtime-native.yml
-      - src/ops_deploy/services/daybook_operations_runtime/**
-      - src/ops_deploy/services/daybook_sessions/**
-      - tests/test_daybook_sessions_source.py
-      - smoke/daybook_runtime_native_fixture.py
-      - smoke/mac_apps_owned.py
-      - tests/test_daybook_runtime_native_fixture.py
-      - src/ops_deploy/testing/**
-      - src/ops_deploy/ops/**
-      - src/ops_deploy/core/**
-      - src/ops_deploy/base/**
-      - src/ops_deploy/helpers/**
-      - pyproject.toml
-      - uv.lock
   workflow_dispatch:
     inputs:
       implementation_sha:

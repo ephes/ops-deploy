@@ -1,24 +1,6 @@
 name: Mailgun relay native integration
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/mailgun-relay-integration.yml'
-      - 'src/ops_deploy/services/mailgun_relay/**'
-      - 'src/ops_deploy/helpers/rust_release.py'
-      - 'src/ops_deploy/helpers/templates/rust_release*'
-      - 'src/ops_deploy/helpers/**'
-      - 'src/ops_deploy/ops/**'
-      - 'src/ops_deploy/core/**'
-      - 'src/ops_deploy/testing/**'
-      - 'tests/test_mailgun_relay.py'
-      - 'tests/test_mailgun_ci_fixture.py'
-      - 'tests/smoke/*mailgun*'
-      - 'tests/smoke/conftest.py'
-      - 'tests/integration/mailgun_relay/**'
-      - 'uv.lock'
-      - 'pyproject.toml'
-      - '.python-version'
   workflow_dispatch:
     inputs:
       implementation_sha:
