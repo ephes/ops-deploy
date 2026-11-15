@@ -360,6 +360,8 @@ def test_each_owned_field_that_drifts_is_pending_without_a_write(
         (jwt(type="service", service="mail-db-backup", jti="a"), "no_expiry"),
         (jwt(type="service", service="mail-db-backup", jti="a", exp=int(time.time()) + 10 * 86400), "expiring"),
     ],
+    # Stable ids: the tokens carry time.time(), and pytest-xdist workers must collect the same ids.
+    ids=["missing", "undecodable", "wrong_scope", "legacy_without_jti", "no_expiry", "expiring"],
 )
 def test_each_rotation_reason_is_pending(token: str, reason: str, capsys: pytest.CaptureFixture[str]) -> None:
     stored_row(service_token=token)

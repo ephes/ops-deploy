@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Tests: `just test` (and so CI) runs the suite in parallel with
+  pytest-xdist (new dev dependency `pytest-xdist`, `--dist loadfile`). It
+  starts half as many workers as there are CPUs (rounded down, at least
+  one), so several suites can share a machine; `PYTEST_JOBS` overrides the
+  count (`PYTEST_JOBS=auto` for one per CPU), and `just test -n 0` runs
+  serially. On an 18-core M5 Max the suite drops from about 12 minutes to
+  about 2½. No test asserts anything different; four fixes make the suite
+  order-independent: the new `tests/conftest.py` restores pyinfra's global
+  context after each test (a deploy that raised left its `State` installed,
+  so `test_homeassistant_precise_dry_run.py` failed after such a test) and
+  the process umask (a host program run in-process left `0o077`, so
+  `test_sync_tree.py` saw `0700` directories); two parametrized echoport
+  token tests get stable `ids` (their tokens embed `time.time()`); and the
+  PostgreSQL fixture in `test_postfixadmin_backup_restore.py` starts
+  `initdb`/`pg_ctl` with `LC_ALL=C`, so it no longer errors when no locale
+  is set.
+
 - `minecraft_java`: the unit's vanilla `ExecStart`, the Forge wrapper
   `start-forge.sh` and the Forge installer run the configured JDK,
   `/usr/lib/jvm/java-<java_version>-openjdk-<java_arch>/bin/java`, instead of

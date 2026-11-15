@@ -159,6 +159,8 @@ def test_each_owned_field_that_drifts_is_pending_without_a_write(drift: dict[str
         jwt(type="service", service="vaultwarden-backup", exp=int(time.time()) + 60 * 86400),
         good_token(29),
     ],
+    # Stable ids: the tokens carry time.time(), and pytest-xdist workers must collect the same ids.
+    ids=["empty", "not_a_jwt", "other_service", "without_jti", "expiring"],
 )
 def test_a_due_token_is_pending_and_stored_by_apply(token: str) -> None:
     store(**LIVE, service_token=token)

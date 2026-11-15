@@ -5,7 +5,7 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 | Recipe | What it runs |
 |---|---|
 | `just sync` | `uv sync --locked` |
-| `just test` | `pytest` (pass extra args: `just test -k toy`) |
+| `just test` | `pytest -n <half the CPUs> --dist loadfile` (pass extra args: `just test -k toy`; `PYTEST_JOBS=auto just test` for one worker per CPU; serial, for example with `--pdb`: `just test -n 0`) |
 | `just typecheck` | `mypy` in strict mode over `src/` and `tests/` |
 | `just lint` | `ruff check` and `ruff format --check` |
 | `just fmt` | apply ruff fixes and formatting |
@@ -15,6 +15,30 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 | `just smoke` | real deploys to the local lima VM ([smoke target](concepts/smoke.md)); `smoke-up`, `smoke-ssh`, `smoke-down` manage the VM |
 
 CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
+
+`just test` runs the suite with [pytest-xdist](https://pytest-xdist.readthedocs.io/).
+By default it starts half as many workers as the machine has CPUs (rounded
+down, at least one), so several agents or checkouts can run suites on one
+machine at the same time; `PYTEST_JOBS` overrides the count (a number, or
+`auto` for one per CPU). `--dist loadfile` keeps each test file on one worker,
+so tests within a file still run in order. Most of the time goes into waiting
+on subprocesses, so the speedup is large (on an 18-core M5 Max: about 12
+minutes serial, about 2½ minutes with the default 9 workers). The wall time cannot drop below the
+slowest file; `tests/test_base_ssh_guard_tx.py` deliberately waits out a
+60-second revert timeout. Tests running in parallel must not share state:
+
+- use `tmp_path` for files, never a fixed path below `/tmp` on the
+  controller (a short `tempfile.mkdtemp(dir="/tmp")` is fine where a Unix
+  socket path must stay short);
+- bind servers to port `0` and read the port back;
+- keep parametrize ids stable across processes (no `time.time()` or other
+  run-dependent values in an id; pass `ids=`), or xdist refuses to run
+  because the workers collected different tests;
+- do not rely on process state left behind by an earlier test.
+  `tests/conftest.py` puts pyinfra's state, inventory, config and host
+  context back after each test (`ContextManager.use()` does not restore it
+  when the block raises), and the umask (host programs run in-process set
+  `0o077`).
 
 ## Optional original-role oracle checks
 

@@ -7,9 +7,16 @@ default:
 sync:
     uv sync --locked
 
-# Run the test suite
+# Run the test suite in parallel (pytest-xdist, each test file on one worker).
+# Workers: half the CPUs (rounded down, at least 1), so several suites can share
+# a machine; override with PYTEST_JOBS (a number, or auto for one per CPU).
+# Serial, for example with --pdb: just test -n 0
 test *args:
-    uv run --locked pytest {{args}}
+    #!/usr/bin/env sh
+    set -eu
+    half=$(( $(getconf _NPROCESSORS_ONLN) / 2 ))
+    [ "$half" -ge 1 ] || half=1
+    exec uv run --locked pytest -n "${PYTEST_JOBS:-$half}" --dist loadfile {{args}}
 
 # Run mypy (strict)
 typecheck:

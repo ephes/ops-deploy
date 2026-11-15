@@ -29,6 +29,7 @@ dev = [
     "mkdocs-material>=9.7.7",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "ruff>=0.17.0",

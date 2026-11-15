@@ -414,6 +414,10 @@ def postgres(tmp_path: Path) -> Any:
     sock = Path(tempfile.mkdtemp(prefix="pfa-", dir="/tmp"))
     pwfile = tmp_path / "pw"
     pwfile.write_text(PASSWORD + "\n")
+    # initdb and the macOS postmaster refuse to start without a valid locale
+    # ("invalid locale settings", "postmaster became multithreaded during
+    # startup"), so they must not depend on the caller's LANG/LC_*.
+    pg_env = {**os.environ, "LC_ALL": "C"}
     subprocess.run(
         [
             PG_BIN / "initdb",
@@ -430,6 +434,7 @@ def postgres(tmp_path: Path) -> Any:
         ],
         check=True,
         capture_output=True,
+        env=pg_env,
     )
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -448,6 +453,7 @@ def postgres(tmp_path: Path) -> Any:
         ],
         check=True,
         capture_output=True,
+        env=pg_env,
     )
 
     def sql(text: str, db: str = "mail", user: str = "postgres") -> str:
@@ -465,7 +471,7 @@ def postgres(tmp_path: Path) -> Any:
         sql("SET ROLE mail;" + SCHEMA)
         yield {"port": port, "sql": sql}
     finally:
-        subprocess.run([PG_BIN / "pg_ctl", "-D", data, "-m", "fast", "stop"], capture_output=True)
+        subprocess.run([PG_BIN / "pg_ctl", "-D", data, "-m", "fast", "stop"], capture_output=True, env=pg_env)
         _shutil.rmtree(sock, ignore_errors=True)
 
 
