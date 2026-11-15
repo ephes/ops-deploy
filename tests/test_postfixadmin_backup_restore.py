@@ -29,6 +29,7 @@ from ops_deploy.services.postfixadmin import (
 )
 from ops_deploy.services.postfixadmin.backup_restore import FILES
 from ops_deploy.testing import FakeRun, run_deploy_fake
+from tests import stubs
 
 PASSWORD = "fixture-db-password"  # pragma: allowlist secret
 STAMP = "20261104T120000"
@@ -79,12 +80,9 @@ def fixtures(**override: Any) -> dict[str, Any]:
 def host(tmp_path: Path) -> dict[str, Any]:
     bins = tmp_path / "bin"
     bins.mkdir()
-    psql = bins / "psql"
-    psql.write_text(FAKE_PSQL.replace("#!PYTHON", "#!" + sys.executable))
-    psql.chmod(0o755)
+    stubs.install(bins / "psql", FAKE_PSQL.replace("#!PYTHON", "#!" + sys.executable))
     for name, body in (("php", "printf 8.3"), ("systemctl", 'printf "systemctl %s\\n" "$*" >>"$CALLS"')):
-        (bins / name).write_text(f"#!/bin/bash\n{body}\n")
-        (bins / name).chmod(0o755)
+        stubs.install(bins / name, f"#!/bin/bash\n{body}\n")
     install = tmp_path / "postfixadmin"
     (install / "templates_c").mkdir(parents=True)
     (install / "config.local.php").write_text("<?php $CONF['configured'] = true;\n")

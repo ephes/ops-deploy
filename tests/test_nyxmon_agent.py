@@ -22,7 +22,7 @@ from ops_deploy.services.nyxmon import NyxmonConfig, deploy_nyxmon
 from ops_deploy.services.nyxmon.agent import _agent
 from ops_deploy.services.nyxmon.deploy import TEMPLATE_PACKAGE
 from ops_deploy.testing import FakeRun, fish_unsafe, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.nyxmon_fixtures import make_source
 from tests.test_nyxmon import SECRET_VALUES, converged, deploy, site_converged
 
@@ -392,21 +392,18 @@ def fake_agent(tmp_path: Path) -> tuple[Path, str]:
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    runuser = bin_dir / "runuser"
-    runuser.write_text('#!/bin/sh\n[ "$1" = -u ] && [ "$3" = -- ] || exit 97\nshift 3\nexec "$@"\n')
-    runuser.chmod(0o755)
+    stubs.install(bin_dir / "runuser", '#!/bin/sh\n[ "$1" = -u ] && [ "$3" = -- ] || exit 97\nshift 3\nexec "$@"\n')
     root = tmp_path / "it's root"
     (root / "0.1.0").mkdir(parents=True)
-    agent = root / "0.1.0" / "nyxmon-agent"
-    agent.write_text(
+    stubs.install(
+        root / "0.1.0" / "nyxmon-agent",
         "#!/bin/sh\n"
         'case "$1" in\n'
         '  --version) printf "%s\\n" "${FAKE_VERSION-nyxmon-agent 0.1.0 (abc123)}" ;;\n'
         '  --check-schema) [ "$3" = "$FAKE_DB" ] || exit 9\n'
         '    echo "${FAKE_SCHEMA_OUT-ok}"; exit "${FAKE_SCHEMA_RC-0}" ;;\n'
-        "esac\n"
+        "esac\n",
     )
-    agent.chmod(0o755)
     return root, f"{bin_dir}:{os.environ['PATH']}"
 
 

@@ -30,7 +30,7 @@ from ops_deploy.services.nfs_tls_status import (
 from ops_deploy.services.nfs_tls_status import deploy as nts
 from ops_deploy.services.os_lifecycle.deploy import HTTPD_SCRIPT
 from ops_deploy.testing import FakeRun, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.metrics_httpd_fixtures import verify_op, without_switch
 
 PASSWORD = "fixture-endpoint-password"
@@ -268,9 +268,7 @@ def run_exporter(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, body in (("systemctl", FAKE_SYSTEMCTL), ("openssl", FAKE_OPENSSL)):
-        tool = bin_dir / name
-        tool.write_text(f"#!{sys.executable}\n{body}")
-        tool.chmod(0o755)
+        stubs.install(bin_dir / name, f"#!{sys.executable}\n{body}")
     config = json.loads(nts.render_config(cfg))
     config["state_group"] = None
     for entry in config["certificates"]:

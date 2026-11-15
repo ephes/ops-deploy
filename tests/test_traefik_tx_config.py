@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests import stubs
 from tests.traefik_tx_fixtures import (
     ACME_NAMES,
     ACME_SOURCE,
@@ -166,7 +167,7 @@ def static_config(action: str, index: int) -> Scenario:
 
 
 def installed(version: str) -> Scenario:
-    return relive(lambda host: host.binary.write_bytes(fake_traefik(version)))
+    return relive(lambda host: stubs.install(host.binary, fake_traefik(version)))
 
 
 def with_phase(phase: str) -> Scenario:

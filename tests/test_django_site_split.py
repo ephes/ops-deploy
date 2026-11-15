@@ -20,7 +20,7 @@ from ops_deploy.services.django_site.frontend import BUILD_STAMP, code_lines, le
 from ops_deploy.services.django_site.public import CSRF_CHECK, url_check_script
 from ops_deploy.services.django_site.render import MANAGED, render, render_env
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.django_site_split_fixtures import (
     DATA,
     DJANGO_PORT,
@@ -735,11 +735,11 @@ def test_csrf_check_runs_in_real_shells(tmp_path: Path, login_shell: str, get: s
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     # GET (-c jar): prints ``get`` or fails; POST (--data): prints ``post`` as the status.
-    curl.write_text(
+    stubs.install(
+        curl,
         "#!/bin/sh\n"
-        'case " $* " in *" --data "*) printf %s "$POST" ;; *) [ "$GET" = FAIL ] && exit 22; echo "$GET" ;; esac\n'
+        'case " $* " in *" --data "*) printf %s "$POST" ;; *) [ "$GET" = FAIL ] && exit 22; echo "$GET" ;; esac\n',
     )
-    curl.chmod(0o755)
     command = f"base=https://split.example.com; path=/cms-api/session/; {CSRF_CHECK}"
 
     result = run_remote(command, login_shell, f"{bin_dir}:{os.environ['PATH']}", GET=get, POST=post)
@@ -770,12 +770,12 @@ def test_url_check_runs_in_real_shells(
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     # Writes $BODY to the -o file and prints $CODE; records whether -L was given.
-    curl.write_text(
+    stubs.install(
+        curl,
         "#!/bin/sh\n"
         'out=; prev=; for a in "$@"; do [ "$prev" = -o ] && out=$a; [ "$a" = -L ] && touch "$MARK"; prev=$a; done\n'
-        'printf %s "$BODY" > "$out"; printf %s "$CODE"\n'
+        'printf %s "$BODY" > "$out"; printf %s "$CODE"\n',
     )
-    curl.chmod(0o755)
     mark = tmp_path / "followed"
     script = url_check_script("https://example.com" + check.path, check.model_copy(update={"delay": 0}))
 
@@ -798,12 +798,12 @@ def test_url_check_refuses_an_incomplete_transfer(tmp_path: Path, login_shell: s
     bin_dir.mkdir()
     curl = bin_dir / "curl"
     # Status 200 and part of the body, then a timeout (curl exits 28).
-    curl.write_text(
+    stubs.install(
+        curl,
         "#!/bin/sh\n"
         'out=; prev=; for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done\n'
-        'printf %s noindex > "$out"; printf 200; exit 28\n'
+        'printf %s noindex > "$out"; printf 200; exit 28\n',
     )
-    curl.chmod(0o755)
     script = url_check_script("https://example.com/", UrlCheck(path="/", contains=("noindex",), retries=2, delay=0))
 
     result = run_remote(f"sh -c {shlex.quote(script)}", login_shell, f"{bin_dir}:{os.environ['PATH']}")
@@ -908,10 +908,10 @@ def test_the_build_copies_public_only_when_the_app_has_one(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     # npm run build makes the standalone output, as next build does.
-    (bin_dir / "npm").write_text(
-        '#!/bin/sh\n[ "$1" = run ] && mkdir -p nextjs/.next/static nextjs/.next/standalone/nextjs/.next\nexit 0\n'
+    stubs.install(
+        bin_dir / "npm",
+        '#!/bin/sh\n[ "$1" = run ] && mkdir -p nextjs/.next/static nextjs/.next/standalone/nextjs/.next\nexit 0\n',
     )
-    (bin_dir / "npm").chmod(0o755)
     site = tmp_path / "site"
     site.mkdir()
     if public:

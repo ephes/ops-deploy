@@ -17,18 +17,21 @@ from pyinfra.api import DeployError
 from ops_deploy.services.homeassistant import python_observation as observation
 from ops_deploy.services.homeassistant.python_state import EnvironmentState, homeassistant_decision, matter_decision
 from ops_deploy.services.homeassistant.runtime_config import HomeAssistantRuntimeConfig
+from tests import stubs
 
 
 def fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, matter: bool = False) -> tuple[Path, Path]:
     bin_path = tmp_path / "venv/bin"
     bin_path.mkdir(parents=True)
     log = tmp_path / "calls.jsonl"
+    # The stubs log to calls.jsonl two levels above their bin/ (``log``): the same text for every
+    # test, written once (tests/stubs.py).
     script = f"""#!{sys.executable}
 import json,sys
 from pathlib import Path
 name=Path(sys.argv[0]).name
 args=sys.argv[1:]
-with Path({str(log)!r}).open('a') as stream:stream.write(json.dumps([name,*args])+'\\n')
+with (Path(sys.argv[0]).parents[2]/'calls.jsonl').open('a') as stream:stream.write(json.dumps([name,*args])+'\\n')
 if name=='hass':print('2026.10.2');sys.exit(0)
 if args==['--version']:print('Python 3.14.8');sys.exit(0)
 if args==['-m','pip','--version']:print('pip synthetic');sys.exit(0)
@@ -38,17 +41,14 @@ if args==['-c','import chip.exceptions']:sys.exit(0)
 sys.exit(3)
 """
     for name in ("python", "hass", "matter-server"):
-        path = bin_path / name
-        path.write_text(script)
-        path.chmod(0o755)
+        stubs.install(bin_path / name, script)
     stub = tmp_path / "controller-bin"
     stub.mkdir()
-    runuser = stub / "runuser"
-    runuser.write_text(
+    stubs.install(
+        stub / "runuser",
         f"#!{sys.executable}\nimport os,sys\n"
-        "assert sys.argv[1:4]==['-u','homeassistant','--']\nos.execvp(sys.argv[4],sys.argv[4:])\n"
+        "assert sys.argv[1:4]==['-u','homeassistant','--']\nos.execvp(sys.argv[4],sys.argv[4:])\n",
     )
-    runuser.chmod(0o755)
     env = dict(os.environ, PATH=str(stub) + ":" + os.environ["PATH"])
 
     def actual_probe(command: str, *, stdin: str, name: str) -> str:

@@ -17,7 +17,7 @@ from ops_deploy.services.graphyard import GraphyardConfig, deploy_graphyard_core
 from ops_deploy.services.graphyard._common import render_role
 from ops_deploy.services.graphyard.agent import _agent, render_dropin
 from ops_deploy.testing import FakeRun, RecordingRsyncRunner, fish_unsafe, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.graphyard_fixtures import REF, core_config, macmini_core_config, make_source, secrets_values
 from tests.test_graphyard import PREFIX, converged, deploy
 
@@ -435,21 +435,18 @@ def fake_agent(tmp_path: Path) -> tuple[Path, str]:
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    runuser = bin_dir / "runuser"
-    runuser.write_text('#!/bin/sh\n[ "$1" = -u ] && [ "$3" = -- ] || exit 97\nshift 3\nexec "$@"\n')
-    runuser.chmod(0o755)
+    stubs.install(bin_dir / "runuser", '#!/bin/sh\n[ "$1" = -u ] && [ "$3" = -- ] || exit 97\nshift 3\nexec "$@"\n')
     root = tmp_path / "it's root"
     (root / "0.1.0").mkdir(parents=True)
-    agent = root / "0.1.0" / "graphyard-agent"
-    agent.write_text(
+    stubs.install(
+        root / "0.1.0" / "graphyard-agent",
         "#!/bin/sh\n"
         'case "$1" in\n'
         '  --version) printf "%s\\n" "${FAKE_VERSION-graphyard-agent 0.1.0 (abc123)}" ;;\n'
         '  --check-schema) [ "$3" = "$FAKE_DB" ] || exit 9\n'
         '    echo "${FAKE_SCHEMA_OUT-ok}"; exit "${FAKE_SCHEMA_RC-0}" ;;\n'
-        "esac\n"
+        "esac\n",
     )
-    agent.chmod(0o755)
     return root, f"{bin_dir}:{os.environ['PATH']}"
 
 

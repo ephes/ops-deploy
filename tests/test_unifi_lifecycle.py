@@ -42,6 +42,7 @@ from ops_deploy.services.unifi import (
     lifecycle,
 )
 from ops_deploy.testing import FakeRun, run_deploy_fake
+from tests import stubs
 
 host = importlib.import_module("ops_deploy.services.unifi.files.lifecycle_host")
 
@@ -314,7 +315,7 @@ def test_a_confirmed_restore_needs_the_password() -> None:
 STUB = r"""#!{python}
 import json, os, re, shutil, sys
 from urllib.parse import quote
-STATE = {state!r}
+STATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0]))), "state")
 tool = os.path.basename(sys.argv[0])
 args = sys.argv[1:]
 stdin = sys.stdin.read() if tool == "mongosh" else ""
@@ -393,10 +394,9 @@ class Host:
         self.local = base / "local"
         for directory in (self.state / "mongo", self.bin, self.etc / "secrets", self.etc / "dynamic", self.run):
             directory.mkdir(parents=True)
+        # The stubs find their state in ../state: the same text for every test, written once (tests/stubs.py).
         for tool in TOOLS:
-            stub = self.bin / tool
-            stub.write_text(STUB.format(python=sys.executable, state=str(self.state)))
-            stub.chmod(0o755)
+            stubs.install(self.bin / tool, STUB.format(python=sys.executable))
         self.set("password", PASSWORD)
         self.set("version", VERSION)
         self.set("unit", "active")
@@ -1030,11 +1030,11 @@ def test_the_password_never_reaches_the_output_even_when_a_tool_echoes_it(
 ) -> None:
     unifi.install()
     # A mongodump that prints its URI (password included) on failure.
-    stub = unifi.bin / "mongodump"
-    stub.write_text(
+    stubs.install(
+        unifi.bin / "mongodump",
         f"#!{sys.executable}\nimport sys\n"
         "config = open(next(a for a in sys.argv if a.startswith('--config=')).split('=', 1)[1]).read()\n"
-        "sys.stderr.write('error connecting to ' + config)\nsys.exit(1)\n"
+        "sys.stderr.write('error connecting to ' + config)\nsys.exit(1)\n",
     )
 
     code, output = run_host(monkeypatch, capsys, "backup", unifi.backup_payload())

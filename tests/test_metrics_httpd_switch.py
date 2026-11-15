@@ -40,7 +40,7 @@ from ops_deploy.services.static_site import StaticSiteConfig
 from ops_deploy.services.static_site import deploy as static_site
 from ops_deploy.services.thermal_monitoring import deploy as thermal
 from ops_deploy.testing import FakeRun, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.logyard_fixtures import core_config, make_source
 from tests.metrics_httpd_fixtures import BINARY, ROOT, SHA, VERSION, installed, verify_op
 from tests.static_site_fixtures import make_source as make_site
@@ -423,9 +423,7 @@ def test_an_unreadable_live_state_blocks_the_prune() -> None:
 def test_the_live_probe_fails_when_a_running_executable_cannot_be_read(
     tmp_path: Path, pid: str, readable: bool
 ) -> None:
-    systemctl = tmp_path / "systemctl"
-    systemctl.write_text(f"#!/bin/sh\necho '{pid}'\n")
-    systemctl.chmod(0o755)
+    stubs.install(tmp_path / "systemctl", f"#!/bin/sh\necho '{pid}'\n")
     env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
 
     result = subprocess.run(
@@ -852,10 +850,10 @@ class FakeHost:
         self.unit("active", "4242")
 
     def unit(self, state: str, pid: str) -> None:
-        self.systemctl.write_text(
-            f'#!/bin/sh\ncase "$1" in is-active) echo {state} ;; show) echo {pid} ;; *) exit 1 ;; esac\n'
+        stubs.install(
+            self.systemctl,
+            f'#!/bin/sh\ncase "$1" in is-active) echo {state} ;; show) echo {pid} ;; *) exit 1 ;; esac\n',
         )
-        self.systemctl.chmod(0o755)
 
     def process(self, exe: Path | str, *words: str) -> None:
         directory = self.proc / "4242"

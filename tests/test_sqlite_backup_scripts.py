@@ -24,6 +24,7 @@ import pytest
 from ops_deploy.services._lifecycle import script
 from ops_deploy.services.nyxmon.lifecycle import FILES, SQLITE_BACKUP_SETTINGS, START_ORDER, STOP_ORDER
 from ops_deploy.services.work_app.backup import WorkAppBackupConfig, _sqlite_script
+from tests import stubs as stub_files
 
 SQLITE3 = shutil.which("sqlite3")
 pytestmark = pytest.mark.skipif(SQLITE3 is None, reason="needs the sqlite3 CLI")
@@ -90,9 +91,9 @@ def stubs(
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    calls = tmp_path / "systemctl.log"
+    # The log is systemctl.log next to bin/: the same text for every test, written once (tests/stubs.py).
     stub = {
-        "systemctl": f'echo "$*" >> {calls}\n',
+        "systemctl": 'echo "$*" >> "${0%/*}/../systemctl.log"\n',
         "chown": "exit 0\n",
         "stat": "echo stub\n",
     }
@@ -111,9 +112,7 @@ def stubs(
         ]
         stub["sqlite3"] = "\n".join(lines) + "\n"
     for name, body in stub.items():
-        path = bin_dir / name
-        path.write_text(f"#!/bin/sh\n{body}")
-        path.chmod(0o755)
+        stub_files.install(bin_dir / name, f"#!/bin/sh\n{body}")
     return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
 
 

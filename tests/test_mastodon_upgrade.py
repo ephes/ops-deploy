@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ops_deploy.services import mastodon_upgrade
+from tests import stubs
 
 
 def installation(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
@@ -47,9 +48,7 @@ esac""",
     bindir = tmp_path / "bin"
     bindir.mkdir()
     for name, body in commands.items():
-        executable = bindir / name
-        executable.write_text(f"#!/bin/bash\n{body}\n")
-        executable.chmod(0o755)
+        stubs.install(bindir / name, f"#!/bin/bash\n{body}\n")
     call_log = tmp_path / "calls"
     return script, {**os.environ, "PATH": f"{bindir}:/usr/bin:/bin", "CALL_LOG": str(call_log)}, call_log
 

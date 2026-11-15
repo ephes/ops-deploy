@@ -29,6 +29,7 @@ from ops_deploy.backups import (
 from ops_deploy.backups.local_snapshot import SNAPSHOT_SCRIPT
 from ops_deploy.backups.mounts import MOUNT_GUARD_SCRIPT
 from ops_deploy.testing import fish_unsafe
+from tests import stubs
 
 FINDMNT = """#!/usr/bin/env python3
 import os, sys
@@ -57,9 +58,7 @@ class Host:
         self.root = tmp_path.resolve()
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
-        findmnt = bin_dir / "findmnt"
-        findmnt.write_text(FINDMNT)
-        findmnt.chmod(0o755)
+        self.findmnt = stubs.install(bin_dir / "findmnt", FINDMNT)
         self.disk = self.root / "mnt" / "disk"
         self.disk.mkdir(parents=True)
         self.mounts = [f"{self.disk}|ext4|/dev/mapper/disk|rw,relatime"]
@@ -226,8 +225,13 @@ def test_snapshot_refuses_a_dangling_symlink_at_the_archive_name(host: Host) -> 
 def test_timed_out_snapshot_is_stopped_and_cleaned_up(host: Host) -> None:
     started = host.root / "tar-started"
     stub = host.root / "bin" / "tar"
-    stub.write_text(f"#!/usr/bin/env bash\necho $$ >{started}\nprintf partial\nexec sleep 60\n")
+    stub.write_text(
+        f'#!/usr/bin/env bash\n[ "$*" != --warm ] || exit 0\necho $$ >{started}\nprintf partial\nexec sleep 60\n'
+    )
     stub.chmod(0o755)
+    # The first exec of a new file can take over a second on macOS (tests/stubs.py): pay it before the 1s timeout.
+    subprocess.run([stub, "--warm"], check=True)
+    subprocess.run([host.findmnt, "--mountpoint", "/nowhere", "--output", "TARGET"], env=host.env(), check=False)
     with pytest.raises(SnapshotError, match="no result within 1s; stopped"):
         local_snapshot(host.runner(), host.policy(), "ha", "runtime", [host.source()], timeout=1)
     assert list((host.disk / "rollback" / "ha").iterdir()) == []

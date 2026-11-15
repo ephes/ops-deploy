@@ -45,6 +45,7 @@ from typing import Any
 from unittest.mock import patch
 
 from ops_deploy.infra.traefik_tx import engine as port
+from tests import stubs
 
 REFERENCE_PATH = Path(__file__).parent / "parity" / "traefik_deploy" / "traefik_transaction.py.txt"
 REFERENCE_COMMIT = "3110a0f136320654dd7041a0f78e8d6fc629c3d9"
@@ -262,16 +263,14 @@ class FakeHost:
     def install(self, version: str = OLD) -> None:
         for directory in (self.binary.parent, self.dynamic, self.root / "probes"):
             directory.mkdir(parents=True, exist_ok=True)
-        self.binary.write_bytes(fake_traefik(version))
-        self.binary.chmod(0o755)
+        # The engine replaces it atomically (a new inode), never in place: a shared copy is safe.
+        stubs.install(self.binary, fake_traefik(version))
         self.config.write_text(f'[providers.file]\ndirectory = "{self.dynamic}"\nwatch = true\n')
         (self.dynamic / "app.yml").write_text("http:\n  routers: {}\n")
         for path in (self.config, self.dynamic / "app.yml"):
             path.chmod(0o644)
         for name in PROBES:
-            probe = self.root / "probes" / name
-            probe.write_text(f"#!/bin/sh\n# {name} probe fixture\n")
-            probe.chmod(0o755)
+            stubs.install(self.root / "probes" / name, f"#!/bin/sh\n# {name} probe fixture\n")
         self.running = self.binary.read_bytes()
 
     def policy(self) -> dict[str, Any]:

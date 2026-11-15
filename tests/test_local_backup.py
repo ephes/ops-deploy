@@ -47,6 +47,7 @@ from ops_deploy.services.work_app import (
     deploy_work_app_restore,
 )
 from ops_deploy.testing import FakeRun, run_deploy_fake
+from tests import stubs as stub_files
 
 STAMP = "20261022T120000"
 MOUNT = "/opt/backups"
@@ -77,9 +78,7 @@ def shell_env(tmp_path: Path, *, mounted: bool) -> dict[str, str]:
         "realpath": f'exec {REALPATH} "$@"\n',
     }
     for name, body in stubs.items():
-        path = bin_dir / name
-        path.write_text(f"#!/bin/sh\n{body}")
-        path.chmod(0o755)
+        stub_files.install(bin_dir / name, f"#!/bin/sh\n{body}")
     return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
 
 
@@ -395,8 +394,7 @@ def test_fastdeploy_restore_passfile_stays_below_the_guarded_temp_directory(tmp_
         "systemctl": "exit 0\n",
     }
     for name, body in stubs.items():
-        (bin_dir / name).write_text(f"#!/bin/sh\n{body}")
-        (bin_dir / name).chmod(0o755)
+        stub_files.install(bin_dir / name, f"#!/bin/sh\n{body}")
     snapshot_dir = tmp_path / "snap"
     (snapshot_dir / "database").mkdir(parents=True)
     (snapshot_dir / "database" / "fastdeploy.sql").write_text("SELECT 1;\n")

@@ -25,6 +25,8 @@ from typing import Any
 
 import pytest
 
+from tests import stubs
+
 PROGRAM = Path(__file__).parents[1] / "src" / "ops_deploy" / "base" / "files" / "ssh_guard_tx.py"
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX only")
 
@@ -131,9 +133,7 @@ class World:
             ("dpkg-query", DPKG_QUERY),
             ("apt-get", APT_GET),
         ):
-            path = self.bin / name
-            path.write_text(text)
-            path.chmod(0o755)
+            stubs.install(self.bin / name, text)
         (self.etc / "ssh").mkdir(parents=True)
         (self.etc / "f2b").mkdir(parents=True)
         self.dropin = str(self.etc / "ssh" / "99-guard.conf")

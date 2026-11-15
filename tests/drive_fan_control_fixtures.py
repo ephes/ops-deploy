@@ -20,6 +20,7 @@ from types import ModuleType
 from typing import Any
 
 from ops_deploy.services.thermal_monitoring.fan_control import controller_module
+from tests import stubs
 
 DFC: ModuleType = controller_module()
 DEV_NVME = "/dev/disk/by-id/nvme-Example_NVMe_0001"
@@ -167,9 +168,7 @@ class FakeHost:
         self.root = root
         self.bin = root / "bin"
         self.bin.mkdir()
-        script = self.bin / "fake_tool.py"
-        script.write_text(FAKE.replace("{python}", sys.executable))
-        script.chmod(0o755)
+        script = stubs.install(self.bin / "fake_tool.py", FAKE.replace("{python}", sys.executable))
         for tool in ("ipmitool", "hdparm", "smartctl", "zpool"):
             (self.bin / tool).symlink_to(script)
         self.state: dict[str, Any] = {

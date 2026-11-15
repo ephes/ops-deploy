@@ -20,7 +20,7 @@ from ops_deploy.services.minio.user_retirement import (
     retire_minio_users,
 )
 from ops_deploy.testing import run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 
 ROOT_VALUE = "fixture-root-value"  # pragma: allowlist secret
 PROTECTED_VALUE = "fixture-protected-access"
@@ -34,7 +34,7 @@ CONFIG = MinioUserRetirementConfig(users=("legacy-one", "legacy-two"), protected
 # A stand-in for mc; tests/integration/minio/user_retirement runs the real client and server.
 FAKE_CLIENT = """#!{python}
 import json, pathlib, sys
-state_path = pathlib.Path({state!r})
+state_path = pathlib.Path(sys.argv[0]).parent / "state.json"
 args = sys.argv[1:]
 assert args[:2] == ["--json", "--config-dir"]
 command = args[3:]
@@ -114,9 +114,8 @@ class Host:
             **overrides,
         }
         self.path.write_text(json.dumps(self.state))
-        self.client = tmp_path / "fake-mc"
-        self.client.write_text(FAKE_CLIENT.format(python=sys.executable, state=str(self.path)))
-        self.client.chmod(0o755)
+        # Its state is state.json next to it: the same text for every test, written once (tests/stubs.py).
+        self.client = stubs.install(tmp_path / "fake-mc", FAKE_CLIENT.format(python=sys.executable))
 
     def run(self, action: str, **payload: Any) -> tuple[int, dict[str, Any]]:
         data = {
@@ -244,7 +243,7 @@ def test_unknown_inspection_is_not_absence(tmp_path: Path) -> None:
         'if user not in state["users"]:\n        missing()',
         'finish(state, [{"status": "error", "error": {"cause": {"error": {"Code": "AccessDenied"}}}}], 1)',
     )
-    host.client.write_text(source)
+    stubs.install(host.client, source)
     assert "refused" in host.run("check")[1]
     assert host.run("apply")[0] == 1
     assert host.removals() == []
@@ -285,7 +284,7 @@ def test_policy_action_order_is_not_a_change(tmp_path: Path) -> None:
         'sorted("ab", reverse="legacy-one" in state["users"])}]}}}',
     )
     assert source != before
-    host.client.write_text(source)
+    stubs.install(host.client, source)
     code, applied = host.run("apply")
     assert code == 0, applied
     assert applied["changed"] is True
@@ -295,7 +294,7 @@ def conditioned(host: Host, policy_info: str) -> None:
     before = host.client.read_text()
     source = before.replace('{**ok, "policyInfo": state["policies"][command[4]]}', policy_info)
     assert source != before
-    host.client.write_text(source)
+    stubs.install(host.client, source)
 
 
 def test_condition_value_order_is_not_a_change(tmp_path: Path) -> None:

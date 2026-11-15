@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests import stubs
+
 SCRIPT = Path(__file__).parent / "integration/minio/run-owned.sh"
 
 
@@ -28,13 +30,9 @@ def test_native_admission_rejects_unsafe_context_before_git_or_docker(
 ) -> None:
     commands = tmp_path / "bin"
     commands.mkdir()
-    uname = commands / "uname"
-    uname.write_text("#!/bin/sh\nprintf '%s\\n' x86_64\n")
-    uname.chmod(0o700)
+    stubs.install(commands / "uname", "#!/bin/sh\nprintf '%s\\n' x86_64\n", mode=0o700)
     for name in ("git", "docker"):
-        command = commands / name
-        command.write_text("#!/bin/sh\ntouch premature-operation\nexit 99\n")
-        command.chmod(0o700)
+        stubs.install(commands / name, "#!/bin/sh\ntouch premature-operation\nexit 99\n", mode=0o700)
     env = {
         "PATH": str(commands) + os.pathsep + os.environ["PATH"],
         "GITHUB_ACTIONS": "true",

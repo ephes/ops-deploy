@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import sqlite3
-import stat
 import subprocess
 import sys
 from collections.abc import Callable
@@ -20,6 +19,7 @@ import pytest
 
 from ops_deploy.services._echoport_runner.access import RunnerAccount, render_account_policy
 from ops_deploy.services.echoport import deploy as echoport
+from tests import stubs
 
 FAKE_CRONTAB = """#!/bin/sh
 # usage: crontab -l -u USER | crontab -u USER -
@@ -51,8 +51,8 @@ CLEANUP = {**SCHEDULED, "name": "Echoport cleanup old backups", "minute": "0", "
 def crontab(tmp_path: Path) -> Path:
     binary = tmp_path / "bin" / "crontab"
     binary.parent.mkdir()
-    binary.write_text(FAKE_CRONTAB)
-    binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
+    # rwxr--r--: what writing it (umask 022) and adding the owner's execute bit gave.
+    stubs.install(binary, FAKE_CRONTAB, mode=0o744)
     return tmp_path
 
 
@@ -208,9 +208,7 @@ cat "$file"
 
 @pytest.fixture
 def fake_mc(tmp_path: Path) -> Path:
-    binary = tmp_path / "mc"
-    binary.write_text(FAKE_MC)
-    binary.chmod(0o755)
+    stubs.install(tmp_path / "mc", FAKE_MC)
     return tmp_path
 
 

@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests import stubs
 from tests.traefik_tx_fixtures import (
     ENGINES,
     MACHINE_ID,
@@ -72,7 +73,7 @@ def remove_route(name: str = "app.yml") -> Change:
 def new_binary(host: FakeHost) -> None:
     """Another Traefik on disk and running: binary hash and version differ."""
 
-    host.binary.write_bytes(fake_traefik(NEW))
+    stubs.install(host.binary, fake_traefik(NEW))
     host.running = host.binary.read_bytes()
 
 

@@ -32,7 +32,7 @@ from ops_deploy.services.mastodon import (
 )
 from ops_deploy.services.mastodon.backup_restore import FILES, manifest
 from ops_deploy.testing import FakeRun, run_deploy_fake
-from tests import fakehost
+from tests import fakehost, stubs
 from tests.lifecycle_scripts import assignments, calls, repack, run_script
 
 SHARED = Path(__file__).parent / "parity/mastodon/remove/shared-defaults.yml"
@@ -377,9 +377,7 @@ def tools(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name in ("pg_dump", "pg_restore", "psql", "dropdb", "createdb", "systemctl"):
-        path = bin_dir / name
-        path.write_text(FAKE_TOOL)
-        path.chmod(0o755)
+        stubs.install(bin_dir / name, FAKE_TOOL)
     return bin_dir
 
 
@@ -399,9 +397,7 @@ def tree(tmp_path: Path) -> dict[str, Path]:
     for name in ("etc", "units", "pgdata", "home"):
         p[name].mkdir()
     (p["rbenv"] / "bin").mkdir(parents=True)
-    bundle = p["rbenv"] / "bin" / "bundle"
-    bundle.write_text(FAKE_TOOL)
-    bundle.chmod(0o755)
+    stubs.install(p["rbenv"] / "bin" / "bundle", FAKE_TOOL)
     make_site(p, "original")
     for name in SERVICES:
         (p["units"] / f"{name}.service").write_text(f"[Service]\n# {name}\n")
@@ -1028,15 +1024,14 @@ def test_restore_script_reports_a_failed_files_rollback(tmp_path: Path) -> None:
     make_site(p, "changed")
     broken = tmp_path / "bin-broken"
     broken.mkdir()
-    rsync = broken / "rsync"
     # The restore's rsync works; the rollback's (--checksum) fails.
     real = shutil.which("rsync", path=PATH)
-    rsync.write_text(
+    stubs.install(
+        broken / "rsync",
         "#!/usr/bin/env bash\n"
         'case " $* " in *" --checksum "*) echo "rsync: broken" >&2; exit 23 ;; esac\n'
-        f'exec {real} "$@"\n'
+        f'exec {real} "$@"\n',
     )
-    rsync.chmod(0o755)
 
     done = run_restore(p, tmp_path, env_extra={"MIGRATE_FAILS": "1", "PATH": f"{broken}:{tools(tmp_path)}:{PATH}"})
 
