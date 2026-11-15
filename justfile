@@ -12,9 +12,14 @@ sync:
 half_cpus := `n=$(( $(getconf _NPROCESSORS_ONLN) / 2 )); [ "$n" -ge 1 ] || n=1; echo "$n"`
 jobs := env("PYTEST_JOBS", half_cpus)
 
-# Run the test suite in parallel (pytest-xdist, each test file on one worker); serial, e.g. with --pdb: just test -n 0
+# Bytecode for the suite and the Python children it starts: on (an unset PYTHONDONTWRITEBYTECODE),
+# but outside the tree (PYTHONPYCACHEPREFIX, default ~/.cache/ops-deploy/pycache). Without it,
+# collection alone recompiles the package (~10 s) and every child Python recompiles what it imports.
+pycache := "env -u PYTHONDONTWRITEBYTECODE PYTHONPYCACHEPREFIX=\"${PYTHONPYCACHEPREFIX:-${XDG_CACHE_HOME:-$HOME/.cache}/ops-deploy/pycache}\""
+
+# Run the test suite in parallel (pytest-xdist, idle workers steal tests); serial, e.g. with --pdb: just test -n 0
 test *args:
-    uv run --locked pytest -n {{jobs}} --dist loadfile {{args}}
+    {{pycache}} uv run --locked pytest -n {{jobs}} --dist worksteal {{args}}
 
 # Run the suite with the ops-library parity and role-oracle tests (OPS_LIBRARY_PATH, default ../ops-library).
 # Uses its own .venv-parity: the locked environment plus ansible-core, which the oracle tests import.
@@ -26,7 +31,7 @@ test-parity *args:
     # UV_PROJECT_ENVIRONMENT only for the sync: tests that run uv themselves must not inherit it.
     UV_PROJECT_ENVIRONMENT=.venv-parity uv sync --locked --inexact --quiet
     uv pip install --quiet --python .venv-parity/bin/python 'ansible-core==2.21.5'
-    OPS_LIBRARY_PATH="$library" exec .venv-parity/bin/python -m pytest -n {{jobs}} --dist loadfile {{args}}
+    OPS_LIBRARY_PATH="$library" exec {{pycache}} .venv-parity/bin/python -m pytest -n {{jobs}} --dist worksteal {{args}}
 
 # Run mypy (strict)
 typecheck:
