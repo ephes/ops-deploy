@@ -21,6 +21,21 @@ pycache := "env -u PYTHONDONTWRITEBYTECODE PYTHONPYCACHEPREFIX=\"${PYTHONPYCACHE
 test *args:
     {{pycache}} uv run --locked pytest -n {{jobs}} --dist worksteal {{args}}
 
+# Run only the test files the working-tree change (git diff HEAD + untracked) can affect;
+# a fast inner loop, not a gate: run `just test` or `just check` before each commit.
+# Why each file is selected: uv run python scripts/affected_tests.py --explain
+test-changed *args:
+    #!/usr/bin/env sh
+    set -eu
+    selected=$(uv run --locked python scripts/affected_tests.py)
+    case $selected in
+        NONE) echo "test-changed: no change against HEAD"; exit 0 ;;
+        ALL) echo "test-changed: the change reaches core, project or widely used files: whole suite"; exec just test {{args}} ;;
+    esac
+    echo "test-changed: $(printf '%s\n' "$selected" | wc -l | tr -d ' ') test files"
+    # One repo-relative path per line, none with spaces: split on purpose.
+    exec {{pycache}} uv run --locked pytest -n {{jobs}} --dist worksteal $selected {{args}}
+
 # Run the suite with the ops-library parity and role-oracle tests (OPS_LIBRARY_PATH, default ../ops-library).
 # Uses its own .venv-parity: the locked environment plus ansible-core, which the oracle tests import.
 test-parity *args:
