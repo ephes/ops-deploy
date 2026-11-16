@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- dns: `DnsConfig.ddns_static_records` (`DdnsStaticRecord`: `name`, `a`, `aaaa`)
+  pins names of the DDNS zone to fixed addresses; `ddns-config.json` always
+  carries `static_records` (empty by default, so both goldens gain that key).
+  The updater and its config template are the byte-identical copies of
+  ops-library `dns_deploy`: static records are written and read back like the
+  WAN records, an empty set removes the type (NODATA instead of the wildcard),
+  and every `dig` answer is judged by its header (SERVFAIL, REFUSED, a timeout
+  or a missing `aa` flag fail the query instead of reading as empty).
+
 - Echoport runner backup scripts and two host helpers no longer name Ansible
   in their comments ("Deployed by ops-deploy (pyinfra) from ops-control",
   "configuration from the deploy", "deploy-templated" defaults); code is

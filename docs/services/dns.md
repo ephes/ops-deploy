@@ -26,6 +26,19 @@ are never rollback targets. A real configuration change restarts Unbound, which
 can disrupt in-flight queries and lose cache; a no-op preserves the process and
 cache. No cache/query content is exported as proof.
 
+`ddns_static_records` pins further names of the DDNS zone to fixed addresses, e.g.
+`({"name": "s3.home", "a": ["100.64.0.1"]},)` (`aaaa` empty): each entry carries the
+complete A and AAAA sets, an empty set means the type must not exist on the name
+(NODATA instead of the `*.<subdomain>` wildcard's address), and every updater run
+writes and reads them back like the WAN records, independent of the WAN address and
+the family switches. They render into `ddns-config.json` as `static_records` (empty
+list by default). Names must be unique, not the dynamic `<subdomain>`/`*.<subdomain>`,
+no wildcard, and have at least one value. The updater never deletes a name removed
+from the list; with `rfc2136` the server's `update-policy` must grant each static
+owner to the key. The updater (identical to ops-library `dns_deploy`) judges every
+`dig` answer by its header: SERVFAIL, REFUSED, a timeout or a missing `aa` flag at a
+named nameserver is a failed query, not an empty record set.
+
 `ddns-update.timer` runs one minute after boot and after every timer (re)start
 (`OnBootSec`/`OnActiveSec`), then every `ddns_interval` (`OnUnitActiveSec`), with
 an `OnCalendar` backstop `ddns_on_calendar` (default `*:0/5`) and

@@ -6,6 +6,8 @@ JSON config file (``--config``) and credentials from the environment.
 
 For every configured record (name x A/AAAA) it compares the provider's current
 value with the detected WAN address, writes it when it differs and reads it back.
+Optional ``static_records`` pin further names to fixed A/AAAA sets (an empty set
+means the type must not exist on that name) with the same write and read-back.
 Any non-2xx API answer, an unreadable address or a read-back mismatch fails the
 run (exit 1). After the provider step it asks the zone's authoritative
 nameservers what the public sees and records that, plus how long a mismatch has
@@ -27,6 +29,7 @@ import argparse
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -81,6 +84,40 @@ def idna_zone(zone: str) -> str:
 
 def fqdn(name: str, zone: str) -> str:
     return zone if name in ("", "@") else f"{name}.{zone}"
+
+
+DIG_ANSWER_FLAGS = ["+noall", "+comments", "+answer"]
+
+
+def parse_dig(output: str, rtype: str, authoritative: bool) -> list[str]:
+    """Sorted ``rtype`` answers from ``dig +noall +comments +answer`` output.
+
+    An empty ``dig +short`` output cannot tell NODATA from SERVFAIL or REFUSED, so
+    the header decides: NOERROR gives the answers (possibly none), NXDOMAIN gives
+    none, anything else -- or no header, or no ``aa`` flag where an authoritative
+    answer is required -- is a failed query.
+    """
+    statuses = re.findall(r"->>HEADER<<-.*\bstatus: ([A-Z]+)", output)
+    if not statuses:
+        raise DdnsError("no DNS answer")
+    status = statuses[-1]
+    if status not in ("NOERROR", "NXDOMAIN"):
+        raise DdnsError(f"DNS status {status}")
+    if authoritative:
+        flags = re.findall(r"^;; flags: ([a-z ]*);", output, re.MULTILINE)
+        if not flags or "aa" not in flags[-1].split():
+            raise DdnsError("answer is not authoritative")
+    if status == "NXDOMAIN":
+        return []
+    values = []
+    for line in output.splitlines():
+        parts = line.split()
+        if not parts or parts[0].startswith(";"):
+            continue
+        # owner TTL class type rdata; other types (a CNAME on the way) are skipped.
+        if len(parts) >= 5 and parts[2].upper() == "IN" and parts[3].upper() == rtype.upper():
+            values.append(" ".join(parts[4:]).rstrip("."))
+    return sorted(values)
 
 
 class Backend:
@@ -142,6 +179,11 @@ class GandiBackend(Backend):
         return sorted(str(v) for v in values)
 
     def set(self, name: str, rtype: str, values: list[str]) -> None:
+        if not values:
+            status, body = self.http("DELETE", self._url(name, rtype), self._headers(), None)
+            if not (200 <= status < 300 or status == 404):
+                raise DdnsError(f"gandi DELETE {name} {rtype}: HTTP {status} {short_body(body)}")
+            return
         headers = dict(self._headers(), **{"Content-Type": "application/json"})
         payload = json.dumps({"rrset_ttl": self.ttl, "rrset_values": values}).encode()
         status, body = self.http("PUT", self._url(name, rtype), headers, payload)
@@ -192,14 +234,17 @@ class Rfc2136Backend(Backend):
         return fqdn(name, self.zone) + "."
 
     def get(self, name: str, rtype: str) -> list[str]:
-        argv = ["dig", "+norecurse", "+short", "+time=3", "+tries=2", "-p", str(self.port),
-                f"@{self.server}", self._fqdn(name), rtype]
+        argv = ["dig", "+norecurse", *DIG_ANSWER_FLAGS, "+time=3", "+tries=2", "-p",
+                str(self.port), f"@{self.server}", self._fqdn(name), rtype]
         code, output = self.command(argv, None)
-        lines = [line.strip() for line in output.splitlines() if line.strip()]
-        if code != 0 or any(line.startswith(";") for line in lines):
-            raise DdnsError(f"rfc2136 query {name} {rtype} @{self.server}: {short_body(output.encode())}")
-        # A wildcard owner is queried literally and answers with its own record set.
-        return sorted(line.rstrip(".") for line in lines if line.split()[0] != "CNAME")
+        try:
+            if code != 0:
+                raise DdnsError(f"dig exit {code}")
+            # A wildcard owner is queried literally and answers with its own record set.
+            return parse_dig(output, rtype, authoritative=True)
+        except DdnsError as err:
+            raise DdnsError(f"rfc2136 query {name} {rtype} @{self.server}: {err}: "
+                            f"{short_body(output.encode())}") from None
 
     def set(self, name: str, rtype: str, values: list[str]) -> None:
         owner = self._fqdn(name)
@@ -235,8 +280,12 @@ def detect_ip(url: str, version: int, http: HttpFunc) -> str:
 
 
 def dig(name: str, rtype: str, server: Optional[str]) -> Optional[list[str]]:
-    """Query with dig. Returns sorted answers, or None when the query failed."""
-    cmd = ["dig", "+short", "+time=3", "+tries=2"]
+    """Query with dig. Returns sorted answers, or None when the query failed.
+
+    With ``server`` the query goes non-recursively to that nameserver and only an
+    authoritative NOERROR/NXDOMAIN answer counts.
+    """
+    cmd = ["dig", *DIG_ANSWER_FLAGS, "+time=3", "+tries=2"]
     if server:
         cmd += ["+norecurse", f"@{server}"]
     cmd += [name, rtype]
@@ -246,10 +295,62 @@ def dig(name: str, rtype: str, server: Optional[str]) -> Optional[list[str]]:
         return None
     if result.returncode != 0:
         return None
-    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if any(line.startswith(";") for line in lines):
+    try:
+        return parse_dig(result.stdout, rtype, authoritative=bool(server))
+    except DdnsError:
         return None
-    return sorted(line.rstrip(".") for line in lines)
+
+
+RECORD_TYPES = {"A": 4, "AAAA": 6}
+
+
+def parse_static_records(raw: object, names: list[str]) -> tuple[list[tuple[str, dict]], list[str]]:
+    """Validated ``static_records``: [(name, {"A": [...], "AAAA": [...]})] plus errors.
+
+    A bad entry is reported and skipped; the others still run.
+    """
+    if raw in (None, []):
+        return [], []
+    if not isinstance(raw, list):
+        return [], ["static_records must be a list"]
+    taken = {n.lower() for n in names}
+    entries: list[tuple[str, dict]] = []
+    errors: list[str] = []
+    for index, item in enumerate(raw):
+        try:
+            # Both sets are required: an empty set deletes that type, so a forgotten
+            # key must not silently mean "remove".
+            if not isinstance(item, dict) or set(item) != {"name", "a", "aaaa"}:
+                raise DdnsError("entry needs exactly name, a and aaaa")
+            name = item.get("name")
+            if (not isinstance(name, str) or not name or name in ("@",) or name.endswith(".")
+                    or any(ch.isspace() for ch in name) or "*" in name):
+                raise DdnsError(f"invalid name {name!r}")
+            if name.lower() in taken:
+                raise DdnsError(f"name {name} is already managed")
+            values: dict[str, list[str]] = {}
+            for rtype, version in RECORD_TYPES.items():
+                given = item[rtype.lower()]
+                if not isinstance(given, list):
+                    raise DdnsError(f"{name} {rtype} must be a list")
+                parsed = set()
+                for value in given:
+                    try:
+                        address = ipaddress.ip_address(str(value))
+                    except ValueError:
+                        raise DdnsError(f"{name} {rtype} value {value!r} is not an address") from None
+                    if address.version != version:
+                        raise DdnsError(f"{name} {rtype} value {value} is not IPv{version}")
+                    parsed.add(str(address))
+                values[rtype] = sorted(parsed)
+            if not any(values.values()):
+                # No record at all would remove the name and let the wildcard answer.
+                raise DdnsError(f"{name} needs at least one A or AAAA value")
+            taken.add(name.lower())
+            entries.append((name, values))
+        except DdnsError as err:
+            errors.append(f"static_records[{index}]: {err}")
+    return entries, errors
 
 
 class Logger:
@@ -304,10 +405,15 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     errors: list[str] = []
     records: dict[str, dict] = {}
     wan: dict[str, Optional[str]] = {"ipv4": None, "ipv6": None}
+    statics, static_errors = parse_static_records(config.get("static_records"), names)
 
     provider_label = (f"provider={provider}" if len(providers) == 1
                       else f"providers={','.join(providers)}")
-    log(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}")
+    static_label = f" static={','.join(n for n, _ in statics)}" if statics else ""
+    log(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}{static_label}")
+    for err in static_errors:
+        errors.append(err)
+        log(f"ERROR: {err}")
 
     backends: dict[str, Optional[Backend]] = {}
     for name_ in providers:
@@ -334,52 +440,64 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
             errors.append(str(err))
             log(f"ERROR: {err}")
 
+    def converge(name: str, rtype: str, desired, want: Optional[list[str]], static: bool) -> None:
+        """Bring one record set to ``want`` at every provider and read it back."""
+        record = {"name": fqdn(name, zone), "type": rtype, "desired": desired,
+                  "provider_values": None, "action": "skipped", "public_values": None,
+                  "public_ok": False, "providers": {}}
+        if static:
+            record["static"] = True
+        records[f"{name}_{rtype}"] = record
+        for provider_name, backend in backends.items():
+            tag = f"{provider_name} " if len(backends) > 1 else ""
+            result = {"values": None, "action": "skipped"}
+            record["providers"][provider_name] = result
+            if backend is None or want is None:
+                continue
+            try:
+                current = backend.get(name, rtype)
+                result["values"] = current
+                if current == want:
+                    result["action"] = "unchanged"
+                    log(f"unchanged {tag}{rtype} {record['name']} = {desired}")
+                else:
+                    backend.set(name, rtype, want)
+                    after = backend.get(name, rtype)
+                    result["values"] = after
+                    if after != want:
+                        raise DdnsError(
+                            f"{tag}{rtype} {record['name']}: read-back {after} != {want}"
+                        )
+                    result["action"] = "updated"
+                    log(f"updated {tag}{rtype} {record['name']}: "
+                        f"{current or '[]'} -> {desired}")
+            except DdnsError as err:
+                result["action"] = "failed"
+                errors.append(str(err))
+                log(f"ERROR: {err}")
+        # Summary fields keep their single-provider meaning: the first provider's
+        # values, and the worst action across providers.
+        actions = [r["action"] for r in record["providers"].values()]
+        record["provider_values"] = record["providers"][provider]["values"]
+        for action in ("failed", "skipped", "updated", "unchanged"):
+            if action in actions:
+                record["action"] = action
+                break
+
     targets = [(4, "A"), (6, "AAAA")]
     for name in names:
         for version, rtype in targets:
             if not families[version]:
                 continue
-            key = f"{name}_{rtype}"
             desired = wan[f"ipv{version}"]
-            record = {"name": fqdn(name, zone), "type": rtype, "desired": desired,
-                      "provider_values": None, "action": "skipped", "public_values": None,
-                      "public_ok": False, "providers": {}}
-            records[key] = record
-            for provider_name, backend in backends.items():
-                tag = f"{provider_name} " if len(backends) > 1 else ""
-                result = {"values": None, "action": "skipped"}
-                record["providers"][provider_name] = result
-                if backend is None or desired is None:
-                    continue
-                try:
-                    current = backend.get(name, rtype)
-                    result["values"] = current
-                    if current == [desired]:
-                        result["action"] = "unchanged"
-                        log(f"unchanged {tag}{rtype} {record['name']} = {desired}")
-                    else:
-                        backend.set(name, rtype, [desired])
-                        after = backend.get(name, rtype)
-                        result["values"] = after
-                        if after != [desired]:
-                            raise DdnsError(
-                                f"{tag}{rtype} {record['name']}: read-back {after} != [{desired}]"
-                            )
-                        result["action"] = "updated"
-                        log(f"updated {tag}{rtype} {record['name']}: "
-                            f"{current or '[]'} -> {desired}")
-                except DdnsError as err:
-                    result["action"] = "failed"
-                    errors.append(str(err))
-                    log(f"ERROR: {err}")
-            # Summary fields keep their single-provider meaning: the first provider's
-            # values, and the worst action across providers.
-            actions = [r["action"] for r in record["providers"].values()]
-            record["provider_values"] = record["providers"][provider]["values"]
-            for action in ("failed", "skipped", "updated", "unchanged"):
-                if action in actions:
-                    record["action"] = action
-                    break
+            converge(name, rtype, desired, None if desired is None else [desired], static=False)
+
+    # Static names do not follow the WAN address or the family switches. Types with
+    # values go first: until the name owns a record, the zone's wildcard answers
+    # for it and an empty type could never read back empty.
+    for name, values in statics:
+        for rtype in sorted(values, key=lambda t: (not values[t], t)):
+            converge(name, rtype, values[rtype], values[rtype], static=True)
 
     # Public view: ask the authoritative nameservers directly. Without an explicit
     # list, use the NS set of the closest enclosing zone that has one, so a record
@@ -407,13 +525,14 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     for record in records.values():
         if record["desired"] is None:
             continue
+        want = record["desired"] if record.get("static") else [record["desired"]]
         nameservers = nameservers_for(record["name"])
         used_nameservers += [ns for ns in nameservers if ns not in used_nameservers]
         answers = [resolve(record["name"], record["type"], ns) for ns in nameservers]
         seen = [a for a in answers if a is not None]
         record["public_values"] = seen[0] if seen else None
         record["public_ok"] = bool(seen) and len(seen) == len(answers) and all(
-            a == [record["desired"]] for a in seen
+            a == want for a in seen
         )
         if not record["public_ok"]:
             log(f"public {record['type']} {record['name']} = {seen or 'no answer'}"

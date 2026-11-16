@@ -54,6 +54,25 @@ class LocalRecord(Input):
         return value
 
 
+class DdnsStaticRecord(Input):
+    """A name the DDNS updater pins to fixed addresses instead of the WAN address.
+
+    ``name`` is relative to ``ddns_domain`` like ``ddns_subdomain``; ``a``/``aaaa``
+    are the complete sets, and an empty set means that type must not exist.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$", max_length=253)]
+    a: tuple[ipaddress.IPv4Address, ...] = ()
+    aaaa: tuple[ipaddress.IPv6Address, ...] = ()
+
+    @model_validator(mode="after")
+    def has_value(self) -> DdnsStaticRecord:
+        # With no record at all the name would vanish and the wildcard answer again.
+        if not (self.a or self.aaaa):
+            raise ValueError("DDNS static record needs at least one A or AAAA value")
+        return self
+
+
 class DdnsEndpointConfig(EndpointConfig):
     service_name: Literal["ddns-status-endpoint"] = "ddns-status-endpoint"
     user: Literal["ddns"] = "ddns"
@@ -114,6 +133,7 @@ class DnsConfig(BaseServiceConfig):
     ddns_ipv4_source_url: str = "https://ipv4.icanhazip.com"
     ddns_ipv6_source_url: str = "https://ipv6.icanhazip.com"
     ddns_verify_nameservers: tuple[str, ...] = ()
+    ddns_static_records: tuple[DdnsStaticRecord, ...] = ()
     ddns_log_max_size_mb: Annotated[StrictInt, Field(ge=1)] = 10
     ddns_gandi_auth_scheme: Literal["bearer", "apikey"] = "bearer"
     ddns_rfc2136_server: ipaddress.IPv4Address | ipaddress.IPv6Address = IPv4("127.0.0.1")
@@ -142,4 +162,8 @@ class DnsConfig(BaseServiceConfig):
             raise ValueError("DDNS endpoint requires DDNS")
         if self.ddns_enabled and not (self.ddns_ipv4_enabled or self.ddns_ipv6_enabled):
             raise ValueError("DDNS requires an enabled address family")
+        static = [r.name.lower() for r in self.ddns_static_records]
+        dynamic = {self.ddns_subdomain.lower(), "*." + self.ddns_subdomain.lower()}
+        if len(static) != len(set(static)) or dynamic & set(static):
+            raise ValueError("DDNS static records must be unique and not the dynamic names")
         return self

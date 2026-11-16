@@ -45,6 +45,33 @@ def test_ddns_rfc2136_config_has_no_secret() -> None:
         validate_secrets(cfg, SecretValues(SecretRef("fixture.yml"), {"tsig_secret": "invalid\nsecret"}))
 
 
+def test_ddns_static_records_render_and_validate() -> None:
+    records = ({"name": "s3.home", "a": ["100.64.0.1"]}, {"name": "v6.home", "aaaa": ["2001:DB8::1"]})
+    cfg = DnsConfig(ddns_enabled=True, ddns_static_records=records)
+    data = json.loads(render("ddns-config.json.j2", role_vars(cfg, "192.0.2.1", "100.64.0.1", 2)))
+    assert data["static_records"] == [
+        {"name": "s3.home", "a": ["100.64.0.1"], "aaaa": []},
+        {"name": "v6.home", "a": [], "aaaa": ["2001:db8::1"]},
+    ]
+    assert json.loads(render("ddns-config.json.j2", role_vars(DnsConfig(), "192.0.2.1", "100.64.0.1", 2)))[
+        "static_records"
+    ] == []
+    for bad in (
+        {"name": "s3.home"},
+        {"name": "*.x.home", "a": ["100.64.0.1"]},
+        {"name": "s3.home.", "a": ["100.64.0.1"]},
+        {"name": "s3.home", "a": ["2001:db8::1"]},
+        {"name": "s3.home", "aaaa": ["100.64.0.1"]},
+        {"name": "s3.home", "a": ["100.64.0.1"], "ttl": 5},
+    ):
+        with pytest.raises(ValueError):
+            DnsConfig(ddns_static_records=(bad,))
+    # "*.home" is already refused by the name pattern (no wildcards).
+    for clash in ("home", "HOME", "S3.HOME"):
+        with pytest.raises(ValueError, match="unique"):
+            DnsConfig(ddns_static_records=({"name": "s3.home", "a": ["100.64.0.1"]}, {"name": clash, "a": ["100.64.0.1"]}))
+
+
 def host_module() -> Any:
     path = Path(__file__).parents[1] / "src/ops_deploy/services/dns/files/config_host.py"
     spec = importlib.util.spec_from_file_location("dns_config_host", path)

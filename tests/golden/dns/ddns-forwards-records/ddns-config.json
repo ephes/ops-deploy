@@ -26,6 +26,7 @@
         "server": "127.0.0.1",
         "update_zone": "home.example.com"
     },
+    "static_records": [],
     "status_path": "/var/lib/ddns/status.json",
     "ttl": 300,
     "verify_nameservers": [],
