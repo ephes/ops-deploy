@@ -2,7 +2,7 @@
 """
 Echoport backup runner for FastDeploy.
 Performs SQLite backup and file archiving, uploads to MinIO.
-Deployed by Ansible from ops-control.
+Deployed by ops-deploy (pyinfra) from ops-control.
 """
 import hashlib
 import json
@@ -23,7 +23,7 @@ from urllib.error import URLError
 os.environ['PYTHONUNBUFFERED'] = '1'
 
 
-# Configuration from Ansible
+# Configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 # mc aliases of per-target MinIO accounts, by first segment of the object key.

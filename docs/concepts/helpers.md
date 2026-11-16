@@ -230,9 +230,8 @@ ops-deploy sets `stsPreload` (`tests/test_traefik_hsts.py`).
   against the password. bcrypt salts are random, so re-hashing on every run
   (as the roles do) would rewrite the file and restart Traefik on every
   deploy. A rotated password produces a new hash and one restart.
-- Hashes from `htpasswd` (the Ansible path) are reused as well. So once the
-  comments match, switching a service from Ansible to ops-deploy causes no
-  change.
+- Hashes written by `htpasswd` (as the retired Ansible roles did) are reused
+  as well, which is why services moved from the roles kept their files.
 
 ### No hash in `--diff` output
 
@@ -388,7 +387,7 @@ imports `ansible.errors` (bad input raises `ValueError`) and has no
 `FilterModule` or Ansible-result adapter. The steps run on the host
 at execution time, in `templates/rust_release_host.py.txt` (standard library
 only). Both texts are sent on stdin to `/usr/bin/python3 -I -` as root, so
-target hosts need a system Python 3.9 or later; every Ansible-managed host
+target hosts need a system Python 3.9 or later; every managed host
 has one. While planning, the same script with `--check` (`probe`, read-only)
 decides whether a pin or prune step is needed, so a converged run changes
 nothing.

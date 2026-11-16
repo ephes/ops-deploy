@@ -12,7 +12,7 @@ Architecture:
 - Restore: Stage and validate the complete backup while live, atomically swap
            DB/media together, health-check, and roll back both on any failure
 
-Deployed by Ansible from ops-control.
+Deployed by ops-deploy (pyinfra) from ops-control.
 """
 import hashlib
 import json
@@ -30,7 +30,7 @@ from typing import Dict, Optional
 # Ensure unbuffered output
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Configuration from Ansible
+# Configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -1192,7 +1192,7 @@ def main() -> int:
     action = cenv.get("ECHOPORT_ACTION", "backup")
 
     # Get common configuration
-    # Security: remote_host and remote_user are locked to Ansible defaults
+    # Security: remote_host and remote_user are locked to the deploy defaults
     # to prevent config compromise from redirecting backups to arbitrary hosts
     remote_host = "{{ heis_production_backup_default_host | default('heis') }}"
     remote_user = "{{ heis_production_backup_remote_user | default('root') }}"

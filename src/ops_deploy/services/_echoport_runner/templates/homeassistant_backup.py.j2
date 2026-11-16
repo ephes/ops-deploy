@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 # Ensure unbuffered output
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Common configuration from Ansible
+# Common configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -42,7 +42,7 @@ RUN_DIR_PREFIXES = ("ha-backup-", "ha-restore-")
 WORK_OWNER_UID = 0
 WORK_OWNER_LABEL = "root"
 
-# Home Assistant-specific configuration from Ansible
+# Home Assistant-specific configuration from the deploy
 SITE_ROOT = "{{ homeassistant_backup_site_root }}"
 CONFIG_PATH = "{{ homeassistant_backup_config_path }}"
 DATA_PATH = "{{ homeassistant_backup_data_path }}"

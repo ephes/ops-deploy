@@ -156,7 +156,7 @@ def extract(payload, report):
     elif os.path.isdir(component):
         shutil.rmtree(component)
         report["component_removed"] = True
-    # Exact original GNU tar arguments from Ansible's TgzArchive.unarchive.
+    # The GNU tar arguments the original install used, unchanged.
     # Captured command output contains public code paths, but remains unexported.
     completed = subprocess.run(
         [

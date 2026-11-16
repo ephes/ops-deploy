@@ -12,7 +12,7 @@ Architecture:
 - Restore: Download from MinIO, verify checksum, SCP dump to staging,
            stop service, drop/recreate DB, pg_restore, start service
 
-Deployed by Ansible from ops-control.
+Deployed by ops-deploy (pyinfra) from ops-control.
 """
 import hashlib
 import json
@@ -30,7 +30,7 @@ from typing import Dict, Optional
 # Ensure unbuffered output
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Configuration from Ansible
+# Configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -52,7 +52,7 @@ SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
 # echoport_remote_command_guard allowlist on production/staging, and that
 # can check a path; the SFTP mode (`scp` default) cannot be path-restricted.
 
-# Locked defaults (Ansible-templated, not overridable from Echoport context)
+# Locked defaults (deploy-templated, not overridable from Echoport context)
 REMOTE_HOST = "{{ homepage_staging_backup_default_host | default('staging.wersdoerfer.de') }}"
 REMOTE_USER = "{{ homepage_staging_backup_remote_user | default('root') }}"
 DB_NAME = "{{ homepage_staging_backup_db_name | default('homepage') }}"
@@ -804,7 +804,7 @@ def main() -> int:
     action = cenv.get("ECHOPORT_ACTION", "backup")
     bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
     # Note: ECHOPORT_DB_PATH is ignored for PostgreSQL targets. Database name,
-    # user, and service are locked to Ansible-templated defaults above.
+    # user, and service are locked to deploy-templated defaults above.
 
     print(f"Configuration:", file=sys.stderr)
     print(f"  Action: {action}", file=sys.stderr)

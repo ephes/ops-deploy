@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Common configuration from Ansible
+# Common configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -42,7 +42,7 @@ RUN_DIR_PREFIXES = ("fd-backup-", "fd-restore-")
 WORK_OWNER_UID = 0
 WORK_OWNER_LABEL = "root"
 
-# FastDeploy-specific configuration from Ansible
+# FastDeploy-specific configuration from the deploy
 SITE_ROOT = "{{ fastdeploy_echoport_backup_site_root }}"
 SERVICES_PATH = "{{ fastdeploy_echoport_backup_services_path }}"
 ENV_FILE = "{{ fastdeploy_echoport_backup_env_file }}"

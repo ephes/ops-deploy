@@ -27,7 +27,7 @@ from urllib.request import Request, urlopen
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Common configuration from Ansible
+# Common configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -41,7 +41,7 @@ RUN_DIR_PREFIXES = ("paperless-backup-", "paperless-restore-")
 WORK_OWNER_UID = 0
 WORK_OWNER_LABEL = "root"
 
-# Paperless-specific configuration from Ansible
+# Paperless-specific configuration from the deploy
 SITE_ROOT = "{{ paperless_echoport_backup_site_root }}"
 EXTERNAL_ROOT = "{{ paperless_echoport_backup_external_root }}"
 MEDIA_PATH = "{{ paperless_echoport_backup_media_path }}"

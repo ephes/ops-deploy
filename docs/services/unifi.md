@@ -242,9 +242,9 @@ by `********`.
 
 **Deliberate differences from the roles.**
 
-- Credentials: the roles pass `--username`/`--password` on the tools'
-  command lines (hidden from Ansible's log only); the port uses the config
-  file and stdin above.
+- Credentials: the retired roles passed `--username`/`--password` on the
+  tools' command lines (hidden from Ansible's log only); the port uses the
+  config file and stdin above.
 - A failing `mongodump`, or MongoDB unreachable while UniFi runs, fails the
   backup before UniFi is stopped; the roles warn and write a file-only
   backup. A stopped controller is backed up without a dump in both, with a

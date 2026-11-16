@@ -164,7 +164,7 @@ def _decode(content: Any) -> str | None:
 
 
 def software_live_files(stats: Any, reads: Any) -> list[dict[str, Any]]:
-    """File records for ``software_live_live_state`` from Ansible results.
+    """File records for ``software_live_live_state`` from stat and read results.
 
     ``stats`` are the ``results`` of an ``ansible.builtin.stat`` loop (with
     ``follow: false``) over the files, ``reads`` those of the

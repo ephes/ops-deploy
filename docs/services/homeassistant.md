@@ -1,10 +1,10 @@
-# Home Assistant implementation in preparation
+# Home Assistant
 
-The Home Assistant port is being implemented against the original public
-`homeassistant_deploy`, backup, restore, remove and trust-maintenance contracts.
-Prepared deployment and maintenance APIs exist; the private engine switch and
-native qualification remain outstanding.
-The selected application, Python and Matter versions are not being upgraded.
+The Home Assistant port implements the original public `homeassistant_deploy`,
+backup, restore, remove and trust-maintenance contracts. ops-control deploys
+Home Assistant with it (`engine: pyinfra`); the owned native application matrix
+was removed on 2026-11-16 (see below). The sections that
+follow keep the record of how the port was built.
 
 ## Configuration ownership foundation
 

@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Common configuration from Ansible
+# Common configuration from the deploy
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
@@ -42,7 +42,7 @@ RUN_DIR_PREFIXES = ("echoport-self-backup-", "echoport-self-restore-")
 WORK_OWNER_UID = 0
 WORK_OWNER_LABEL = "root"
 
-# Echoport self-backup configuration from Ansible
+# Echoport self-backup configuration from the deploy
 SITE_ROOT = "{{ echoport_self_backup_site_root }}"
 DB_PATH = "{{ echoport_self_backup_db_path }}"
 ENV_FILE = "{{ echoport_self_backup_env_file }}"

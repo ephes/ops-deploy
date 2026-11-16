@@ -34,8 +34,8 @@ Restore (attended, service stopped):
      ownership/modes, start the service, wait for /readyz
   4. on any failure after the move: move the previous data back and start
 
-Paths, host and service are fixed by Ansible (ops-control
-register-gotosocial-backup.yml); Echoport's context cannot redirect them.
+Paths, host and service are fixed by the deploy (the ops-control
+runner registration); Echoport's context cannot redirect them.
 The archive contains the database (accounts, private keys, OAuth tokens),
 the local media and config.yaml: treat it as secret. After a restore the
 database still lists the remote media cached at backup time, without their
@@ -73,7 +73,7 @@ RUN_DIR_PREFIXES = ("gotosocial-backup-", "gotosocial-restore-")
 WORK_OWNER_UID = os.geteuid()
 WORK_OWNER_LABEL = "the runner user"
 
-# Locked by Ansible.
+# Locked by the deploy.
 REMOTE_HOST = "{{ gotosocial_backup_remote_host }}"
 REMOTE_USER = "{{ gotosocial_backup_remote_user | default('root') }}"
 SERVICE_NAME = "{{ gotosocial_backup_service_name | default('gotosocial') }}"

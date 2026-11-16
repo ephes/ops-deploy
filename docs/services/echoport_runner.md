@@ -582,7 +582,8 @@ targets) and plans no mutating operation on that host.
   `echoport-backup-macmini`), rendered from
   `tests/fixtures/echoport_runner/inputs.json`, has the sha256 recorded in
   `tests/golden/echoport_runner/runner-sha256.json` (the scripts as hosts
-  have them, first recorded by `ansible-playbook`), and `config.json` and the
+  have them: first recorded from the retired role's output, re-recorded on
+  2026-11-16 when their comments stopped naming Ansible), and `config.json` and the
   sudoers rule equal the recorded files for three settings. An intended
   change re-records them (`OPS_DEPLOY_UPDATE_GOLDEN=1`, see
   [Testing](../concepts/testing.md)).

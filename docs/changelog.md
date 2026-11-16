@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Echoport runner backup scripts and two host helpers no longer name Ansible
+  in their comments ("Deployed by ops-deploy (pyinfra) from ops-control",
+  "configuration from the deploy", "deploy-templated" defaults); code is
+  unchanged. Every runner script's sha256 in
+  `tests/golden/echoport_runner/runner-sha256.json` is re-recorded, and the
+  macmini live hash in `test_echoport_runner_generic.py` moves with it: the
+  next deploy of each runner rewrites its `backup.py` once. The Home
+  Assistant helper `files/custom_component.py` and software_live's
+  `files/software_live_impl.py` change in a comment and a docstring only.
+  Docs that still described Ansible as current (htpasswd reuse, the macmini
+  Python note, UniFi's credential difference, the runner hashes and the Home
+  Assistant status line) now say it in the past.
+
 - Tests: the owned native integration harnesses no longer use Ansible, so
   nothing in ops-deploy installs or runs it. Per harness:
   - `dns`: the phase that rendered the retired `dns_deploy` role (ops-library

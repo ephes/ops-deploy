@@ -29,8 +29,10 @@ from tests import fakehost
 from tests.echoport_runner_data import INPUTS, runner_sha256
 
 CASE = "echoport-backup-macmini"
-# /usr/local/libexec/fastdeploy/echoport-backup/backup.py on macmini, 2026-11-10.
-LIVE_RUNNER_SHA256 = "d92c2fc302a8a293137ab279c17d8293deed704469d8e99f213a986860ac745a"
+# /usr/local/libexec/fastdeploy/echoport-backup/backup.py on macmini as of the
+# 2026-11-16 comment-only change (it was d92c2fc3...860ac745a from 2026-11-10
+# until that deploy).
+LIVE_RUNNER_SHA256 = "1b20fcf1ba25b7409cdcb24e8f536adfca978bed0a039130261cd3f00728367d"
 LIVE_CONFIG = (
     '{\n    "deploy_script": "/usr/local/libexec/fastdeploy/echoport-backup/backup.py",\n'
     '    "description": "Echoport backup service - backs up SQLite databases and files to MinIO",\n'
