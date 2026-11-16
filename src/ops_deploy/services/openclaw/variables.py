@@ -39,7 +39,7 @@ def defaults(role: str = "deploy") -> dict[str, Any]:
     return loaded
 
 
-def ansible_bool(value: Any) -> bool:
+def to_bool(value: Any) -> bool:
     """Ansible's ``bool`` filter (``to_bool``), including its deprecated ``== 1`` fallback."""
 
     check: Any = value.lower() if isinstance(value, str) else str(value).lower() if isinstance(value, int) else value
@@ -104,7 +104,7 @@ def environment() -> jinja2.Environment:
 
     env = jinja2.Environment(undefined=jinja2.StrictUndefined, autoescape=False)
     env.filters.update(
-        bool=ansible_bool,
+        bool=to_bool,
         regex_replace=lambda value, pattern, replacement="": re.sub(pattern, replacement, str(value)),
         dict2items=dict2items,
         subelements=_subelements,

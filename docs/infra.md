@@ -503,8 +503,8 @@ an existing file's owner and mode. Afterwards `/etc/crypttab` is enforced
 final read-only probe must find nothing pending.
 
 On a converged host nothing is written and nothing is remounted. Equal
-inputs give the files the role writes, so the role run after this deploy
-changes nothing (the owned native fixture checks it with the role).
+inputs give the files the retired role wrote, so a host the role prepared
+needs no change.
 
 ### Tests
 
@@ -512,8 +512,7 @@ changes nothing (the owned native fixture checks it with the role).
 refusal and the plan; the owned native fixture
 [`tests/integration/linux_apps`](https://github.com/ephes/ops-deploy/tree/main/tests/integration/linux_apps)
 runs it on a real LUKS loop device: fresh, repeat, closed mapper, lost lines,
-changed options, keyfile drift, the refusals, recovery and the role run after
-it.
+changed options, keyfile drift, the refusals and recovery.
 
 ## Persistent network and Tailscale
 

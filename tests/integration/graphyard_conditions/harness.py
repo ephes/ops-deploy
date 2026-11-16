@@ -177,37 +177,6 @@ def deploy(
     print(label, "expected failure" if failure else "passed", len(mutations), "managed", flush=True)
 
 
-def ansible_repeat(config: GraphyardConditionsConfig) -> None:
-    """Original private seed bytes through a real Ansible command task, owned inputs only."""
-    import yaml
-
-    before = snapshot()
-    command = manage(config, "shell", "-c", (HERE / "ansible_seed.py.txt").read_text())
-    play = [
-        {
-            "hosts": "localhost",
-            "gather_facts": False,
-            "tasks": [
-                {
-                    "name": "Original Ansible seed",
-                    "ansible.builtin.command": {"argv": ["bash", "-c", command], "stdin": "{{ item | to_json }}"},
-                    "loop": [json.loads(entry.spec()) for entry in config.enabled],
-                    "register": "seed",
-                    "changed_when": "'changed=true' in seed.stdout",
-                }
-            ],
-        }
-    ]
-    path = EVIDENCE / "ansible-repeat.yml"
-    path.write_text(yaml.safe_dump(play))
-    output = shell(str(Path(sys.executable).parent / "ansible-playbook"), "-i", "localhost,", "-c", "local", str(path))
-    (EVIDENCE / "ansible-repeat.log").write_text(output)
-    assert "changed=0" in output, output
-    assert "failed=0" in output, output
-    assert snapshot() == before
-    PHASES.append({"label": "ansible-after-pyinfra", "mutations": [], "unchanged": True})
-
-
 def main() -> None:
     global KEEPER
     ENV.write_text("DJANGO_SETTINGS_MODULE=config.settings.test\nPYTHONDONTWRITEBYTECODE=1\n")
@@ -312,9 +281,6 @@ def main() -> None:
     deploy("missing-settings", cfg(), failure=True)
     ENV.write_text(old)
     deploy("settings-recovery", cfg(), zero=True)
-    # Ansible compares only its owned fields and therefore does not reset staleness on a repeat.
-    ansible_repeat(cfg())
-    deploy("pyinfra-after-ansible", cfg(), zero=True)
     assert KEEPER.poll() is None, "fixture connection keeper exited"
     (EVIDENCE / "summary.json").write_text(
         json.dumps(

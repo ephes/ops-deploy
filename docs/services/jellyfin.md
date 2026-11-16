@@ -46,7 +46,7 @@ Defaults follow the retired roles' `jellyfin_shared/defaults/main.yml` and
 
 | Field | Default | Notes |
 |---|---|---|
-| `repo_distro`, `repo_release`, `repo_arch` | required | the role derives them from Ansible facts; here they are fixed per host (see below) |
+| `repo_distro`, `repo_release`, `repo_arch` | required | the retired role derived them from gathered facts; here they are fixed per host (see below) |
 | `configure_repo` | `true` | keyring, list file and cache refresh; off: no repository step and no host check |
 | `repo_base`, `repo_component` | `https://repo.jellyfin.org`, `main` | |
 | `repo_key_url` | `None` | `None`: the role's `<repo_base>/<repo_distro>/jellyfin_team.gpg.key` |

@@ -495,12 +495,15 @@ playbook script. Ansible on an already-converged row still changes nothing.
 The owned native fixture in `tests/integration/graphyard_conditions` uses pinned
 real Graphyard, Django, SQLite and its HTTP API with synthetic operational rows.
 It covers first/repeat/update, nondefault staleness with both flag states,
-disabled/unrelated rows, missing settings, API omissions and Ansible coexistence.
-Inventory rollout is a separate qualification step.
+disabled/unrelated rows, missing settings and API omissions. Its Ansible
+coexistence phase (the original seed run by the playbook, then a pyinfra repeat) was dropped on 2026-11-16 together with the harness's Ansible install;
+no host runs the playbook any more. Inventory rollout is a separate
+qualification step.
 
 Native run `40590096323` qualified implementation `82b2cd3` in 20 phases against
 Graphyard `1918198`. The ten successful pyinfra repeats/recoveries made no
-managed changes or uploads; the Ansible seed repeat reported `changed=0`.
+managed changes or uploads; the Ansible seed repeat (since removed) reported
+`changed=0`.
 The original failed run `40589106951` remains retained: its repeat had unchanged
 rows, main database, environment and PID, but WAL/SHM bookkeeping changed.
 The observer then explicitly closed its own SQLite connections and added

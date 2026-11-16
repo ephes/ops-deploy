@@ -43,7 +43,6 @@ from ops_deploy.testing.harness import collect_ops
 
 ROOT = Path("/opt/software-live-fixture")
 EVIDENCE = Path(sys.argv[1])
-LIBRARY = ROOT / "collections/ansible_collections/local/ops_library"
 REF = SecretRef("fixture.yml")
 VALUE = secrets.token_urlsafe(24)
 PHASES: list[dict[str, Any]] = []
@@ -293,72 +292,6 @@ def health(secret: str = VALUE) -> dict[str, Any]:
     return {"schema_version": 2, "host": data["host"], "fresh": True, "anonymous_status": 401}
 
 
-def ansible(config: SoftwareLiveConfig) -> None:
-    import yaml
-
-    variables = {
-        "software_live_" + key: value
-        for key, value in config.model_dump(mode="json").items()
-        if key not in ("secrets", "service_name", "site_path")
-    }
-    variables.update(software_live_auth_password=VALUE, ansible_python_interpreter="/usr/bin/python3")
-    variables.pop("software_live_rust_local_archive", None)
-    variables.pop("software_live_rust_version_check_user", None)
-    if not config.rust_release_url:
-        variables.pop("software_live_rust_release_url", None)
-    path = ROOT / "ansible.yml"
-    path.write_text(
-        yaml.safe_dump(
-            [
-                {
-                    "hosts": "localhost",
-                    "gather_facts": False,
-                    "vars": variables,
-                    "roles": ["local.ops_library.software_live"],
-                }
-            ]
-        )
-    )
-    path.chmod(0o600)
-    settle()
-    before = snapshot()
-    try:
-        result = subprocess.run(
-            [str(Path(sys.executable).parent / "ansible-playbook"), "-i", "localhost,", "-c", "local", str(path)],
-            env={**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(ROOT / "collections")},
-            text=True,
-            capture_output=True,
-            timeout=900,
-        )
-    except subprocess.TimeoutExpired as exc:
-        (EVIDENCE / "ansible.log").write_text(str(exc.stdout or "").replace(VALUE, "<fixture-password>"))
-        (EVIDENCE / "ansible.stderr").write_text(str(exc.stderr or "").replace(VALUE, "<fixture-password>"))
-        raise
-    finally:
-        path.unlink()
-    (EVIDENCE / "ansible.log").write_text(result.stdout.replace(VALUE, "<fixture-password>"))
-    (EVIDENCE / "ansible.stderr").write_text(result.stderr.replace(VALUE, "<fixture-password>"))
-    settle()
-    after = snapshot()
-    write(
-        "ansible.json",
-        {
-            "returncode": result.returncode,
-            "before": before,
-            "after": after,
-            "limit": (
-                "Original Ansible always collects despite changed_when=false; "
-                "state rewriting is expected, not physical no-op."
-            ),
-        },
-    )
-    assert result.returncode == 0, "Original Ansible failed; retained output"
-    assert before["packages"] == after["packages"]
-    assert before["apt_policy"] == after["apt_policy"]
-    assert before["files"][str(STATE_FILE)] != after["files"][str(STATE_FILE)]
-    assert health()
-
-
 def nyxmon() -> None:
     DB.parent.mkdir(mode=0o750)
     sh("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "fixture-nyxmon")
@@ -458,8 +391,6 @@ def main() -> None:
     write("health.json", health())
     deploy("repeat", config, zero=True)
     deploy("fish-repeat", config, zero=True, fish=True)
-    ansible(config)
-    deploy("after-ansible", config, zero=True)
     # Synthetic operational state age; collector still executes its real read-only probes.
     stale = json.loads(STATE_FILE.read_text())
     stale["generated_at_epoch"] = time.time() - 1900

@@ -267,8 +267,9 @@ The final905-resource composition preserves all873 separately qualified peer
 resources and all32 Paperless resources from these runs; no peer-only native
 replay is claimed.
 
-The [concrete native fixture](https://github.com/ephes/ops-deploy/tree/main/tests/integration/paperless)
-uses disposable public GitHub Ubuntu24 x86 VMs with systemd Docker userspaces
+The concrete native fixture (removed on 2026-11-16, last at
+[`f7e62e5`](https://github.com/ephes/ops-deploy/tree/f7e62e5b5c2e6b043a0a14825c5dbe83588d643d/tests/integration/paperless):
+it installed the original role as its baseline, which needs Ansible) used disposable public GitHub Ubuntu24 x86 VMs with systemd Docker userspaces
 sharing each VM's kernel. It is not KVM, a physical scanner/encrypted-device proof,
 or production qualification. Original bootstrap needed explicitly recorded
 package-cache/index-directory and lost-SSH-handler fixture recovery; there is no

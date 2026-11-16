@@ -3,10 +3,11 @@
 Runs as root on a disposable GitHub-hosted Ubuntu 24.04 x86 VM (see run.sh) with
 the immutable installed ops-deploy package. Every secret is generated here.
 Phases: encrypted_volume fresh / repeat / closed->open / restored lines / option
-change (remount) / keyfile drift / eight refusals / recovery / Ansible role after
-pyinfra. Repeats and refusals run every command under strace and fail on any
-write. (The open_webui phases went with ops_deploy.services.open_webui when
-Open WebUI was retired on 2026-11-09.)
+change (remount) / keyfile drift / eight refusals / recovery. Repeats and
+refusals run every command under strace and fail on any write. (The open_webui
+phases went with ops_deploy.services.open_webui when Open WebUI was retired on
+2026-11-09; the ops-library role phase after pyinfra went with Ansible on
+2026-11-16.)
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ import secrets
 import shutil
 import subprocess
 import sys
-import tarfile
 import time
 import traceback
 from dataclasses import asdict
@@ -33,8 +33,6 @@ MOUNT = "/mnt/cryptdata"
 KEYFILE = "/root/.luks-key-cryptdata"
 PASSPHRASE = secrets.token_hex(24)
 UNRELATED_CRYPTTAB = "fixture-unrelated UUID=00000000-0000-4000-8000-000000000000 none luks,noauto\n"
-OPS_LIBRARY_SHA = "cf3a0c74b10ed83a43fa79c4d1f3a57fffc89641"
-ANSIBLE_PACKAGE = "ansible==14.5.0"
 SUMMARY: dict[str, Any] = {"phases": []}
 
 
@@ -422,93 +420,6 @@ def encrypted_volume_phases(dev: dict[str, str]) -> None:
     ev("ev-final-repeat", cfg, zero=True)
 
 
-# -- the Ansible role after pyinfra -----------------------------------------------------------
-
-
-def ansible_setup() -> dict[str, str]:
-    uv = os.environ["UV_BIN"]
-    venv = WORK / "ansible"
-    sh(uv, "venv", "--python", "3.12", str(venv))
-    sh(uv, "pip", "install", "--python", str(venv), ANSIBLE_PACKAGE)
-    archive = WORK / "ops-library.tar.gz"
-    sh("curl", "-fsSL", "-o", str(archive), f"https://codeload.github.com/ephes/ops-library/tar.gz/{OPS_LIBRARY_SHA}")
-    target = WORK / "collections" / "ansible_collections" / "local" / "ops_library"
-    target.mkdir(parents=True)
-    with tarfile.open(archive) as bundle:
-        top = f"ops-library-{OPS_LIBRARY_SHA}/"
-        members = [m for m in bundle.getmembers() if m.name.startswith(top) and "/rust/" not in m.name]
-        for member in members:
-            member.name = member.name[len(top) :]
-        bundle.extractall(target, members=[m for m in members if m.name], filter="data")
-    version = sh(str(venv / "bin" / "ansible-playbook"), "--version").splitlines()[0]
-    info = {
-        "ansible": ANSIBLE_PACKAGE,
-        "ansible_playbook": version,
-        "ops_library": OPS_LIBRARY_SHA,
-        "ops_library_tarball_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-    }
-    record("ansible.json", info)
-    return info
-
-
-def ansible(label: str, play: list[dict[str, Any]], extra: dict[str, Any]) -> dict[str, Any]:
-    play_path = WORK / f"{label}.yml"
-    vars_path = WORK / f"{label}.vars.json"
-    play_path.write_text(json.dumps(play))
-    fd = os.open(vars_path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
-    with os.fdopen(fd, "w") as stream:
-        json.dump(extra, stream)
-    env = {
-        **os.environ,
-        "ANSIBLE_COLLECTIONS_PATH": str(WORK / "collections"),
-        "ANSIBLE_STDOUT_CALLBACK": "json",
-        "ANSIBLE_LOCALHOST_WARNING": "False",
-        "ANSIBLE_INVENTORY_UNPARSED_WARNING": "False",
-        "ANSIBLE_RETRY_FILES_ENABLED": "False",
-        "ANSIBLE_HOME": str(WORK / "ansible-home"),
-        "ANSIBLE_LOCAL_TEMP": str(WORK / "ansible-tmp"),
-        "ANSIBLE_REMOTE_TEMP": str(WORK / "ansible-tmp"),
-        "ANSIBLE_PYTHON_INTERPRETER": "/usr/bin/python3",
-    }
-    playbook = str(WORK / "ansible" / "bin" / "ansible-playbook")
-    argv = [playbook, "-i", "localhost,", "-c", "local", str(play_path), "-e", f"@{vars_path}"]
-    result = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=1200)
-    vars_path.unlink()
-    assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
-    out = json.loads(result.stdout)
-    tasks = [
-        {"task": task["task"]["name"], "changed": bool(task["hosts"]["localhost"].get("changed"))}
-        for play_result in out["plays"]
-        for task in play_result["tasks"]
-        if "localhost" in task["hosts"]
-    ]
-    summary = {"stats": out["stats"]["localhost"], "changed_tasks": [t["task"] for t in tasks if t["changed"]]}
-    record(f"{label}.json", summary)
-    return summary
-
-
-def ansible_after_pyinfra(dev: dict[str, str]) -> None:
-    before = ev_snapshot()
-    play = [
-        {
-            "hosts": "localhost",
-            "gather_facts": True,
-            "roles": [{"role": "local.ops_library.encrypted_volume_prepare"}],
-        }
-    ]
-    extra = {
-        "encrypted_volume_device": dev["loop"],
-        "encrypted_volume_expected_luks_uuid": dev["uuid"],
-        "encrypted_volume_passphrase": PASSPHRASE,
-        "encrypted_volume_use_keyfile": True,
-        "encrypted_volume_allow_format": False,
-    }
-    result = ansible("ev-ansible-after-pyinfra", play, extra)
-    assert result["stats"]["changed"] == 0, result
-    assert ev_snapshot() == before
-    ev("ev-pyinfra-after-ansible-repeat", ev_config(dev), zero=True)
-
-
 DEV: dict[str, str] = {}
 
 
@@ -519,8 +430,6 @@ def main() -> None:
         DEV.update(setup_volume())
         record("volume.json", {k: v for k, v in DEV.items()})
         encrypted_volume_phases(DEV)
-        SUMMARY["ansible"] = ansible_setup()
-        ansible_after_pyinfra(DEV)
         SUMMARY["result"] = "passed"
     except BaseException:
         SUMMARY["result"] = "failed"

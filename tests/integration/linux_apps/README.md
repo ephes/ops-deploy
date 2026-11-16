@@ -34,16 +34,18 @@ fstab options rewritten and applied with `mount -o remount` only (same mount
 ID, no umount); keyfile drift rewritten; refusals for a wrong LUKS UUID, a
 non-LUKS device, a missing device, a read-only mount, a duplicate fstab entry (mounted and with the mapper closed),
 the mapper name open on another device, the device mapped under another name
-and a foreign mount at the mount point; recovery and final repeat; then the
-`encrypted_volume_prepare` role of ops-library `cf3a0c74` (Ansible 14.5.0)
-on the converged volume must report `changed=0` and leave every file and the
-mount as they are, followed by a pyinfra repeat.
+and a foreign mount at the mount point; recovery and final repeat.
+
+The phase that ran the `encrypted_volume_prepare` role of ops-library
+`cf3a0c74` (Ansible 14.5.0) on the converged volume, expecting `changed=0`, and
+then a pyinfra repeat, was removed on 2026-11-16: no host runs the role any
+more, and the pyinfra repeats above already prove the converged state.
 
 The open_webui phases (fresh install, updates, route rotation, faults and
 repairs) were removed with `ops_deploy.services.open_webui` when Open WebUI
 was retired on 2026-11-09; they are in the git history.
 
 Evidence (uploaded as `linux-apps-<run id>`): `summary.json`, one JSON per
-phase, the strace files of traced runs, Ansible summaries, the installed
+phase, the strace files of traced runs, the installed
 artifact proof, platform versions (kernel, cryptsetup, systemd) and the
 tail of the boot journal.

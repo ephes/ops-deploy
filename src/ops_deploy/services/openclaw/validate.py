@@ -24,7 +24,7 @@ from typing import Any
 
 import yaml
 
-from ops_deploy.services.openclaw.variables import FILES, ansible_bool, evaluate
+from ops_deploy.services.openclaw.variables import FILES, evaluate, to_bool
 
 HOST_REGISTERED = ("openclaw_weeknotes_s3_mc_stat", "openclaw_ca_bundle")
 
@@ -143,7 +143,7 @@ def host_checks(variables: dict[str, Any]) -> list[tuple[str, str]]:
     """(task name, shell test) of the stat-based asserts that apply to ``variables``."""
 
     checks: list[tuple[str, str]] = []
-    if ansible_bool(variables["openclaw_weeknotes_enabled"]) and variables["openclaw_weeknotes_backend"] == "s3":
+    if to_bool(variables["openclaw_weeknotes_enabled"]) and variables["openclaw_weeknotes_backend"] == "s3":
         mc = shlex.quote(str(variables["openclaw_weeknotes_s3_mc_host_path"]))
         checks.append(("validate | Weeknotes S3 client binary is executable", f"test -e {mc} && test -x {mc}"))
     if len(variables["openclaw_ca_store_path"]) > 0:

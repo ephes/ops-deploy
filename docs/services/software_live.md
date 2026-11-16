@@ -110,9 +110,11 @@ Daemon reload is conditional on actual unit/resource removal.
 ## Qualification status
 
 The S12 change replaces the native phases for Python/Rust switching and the Python
-rollback with an S12 upgrade phase and a refused invalid release; its native run and the
-Ansible coexistence phase against the S12 role are pending. The record below is the
-qualification of the pre-S12 implementation.
+rollback with an S12 upgrade phase and a refused invalid release; its native run is
+pending. The Ansible coexistence phase (the ops-library role run between two pyinfra
+repeats) was removed from the harness on 2026-11-16, when the last Ansible use left
+ops-deploy; no host runs the role. The record below is the qualification of the pre-S12
+implementation.
 
 Inventory engine selection has not changed. Tests include actual operations, owned SQLite
 semantics, source hashes and independently rendered Ansible files from exact `cf3a0c74`.

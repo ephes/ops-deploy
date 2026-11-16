@@ -10,7 +10,8 @@ payload (hashed; the htpasswd entry carries a random bcrypt salt and is left
 out). A config without ``fan_control`` (the macmini deploy) must reproduce it
 byte for byte. On 2026-10-27 only eight shared Rust host-script stdin hashes
 were refreshed for read-only layout validation; operations, commands and uploads
-remained identical.
+remained identical. On 2026-11-16 the same eight were refreshed again when the
+vendored ``rust_release.py.txt`` lost its Ansible import and filter adapters.
 """
 
 from __future__ import annotations

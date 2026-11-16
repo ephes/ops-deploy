@@ -20,8 +20,8 @@ from typing import Any
 
 import jinja2
 
-from ops_deploy.services.openclaw.variables import ansible_bool as bool_
 from ops_deploy.services.openclaw.variables import dict2items
+from ops_deploy.services.openclaw.variables import to_bool as bool_
 
 TEMPLATE_PACKAGE = "ops_deploy.services.openclaw"
 

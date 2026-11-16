@@ -13,8 +13,9 @@ take turns on a host::
     <root>/.staging-<version>/           transient
 
 The decisions (pin moves, prune plan, the version and consumer grammar) are
-ops-library's ``plugins/filter/rust_release.py``, vendored byte for byte as
-``templates/rust_release.py.txt`` (ops-deploy owns it now). The steps run on the host, at execution time, in
+``templates/rust_release.py.txt``, vendored from ops-library's
+``plugins/filter/rust_release.py`` and owned by ops-deploy since (it raises
+``ValueError`` and has no Ansible filter adapters any more). The steps run on the host, at execution time, in
 ``templates/rust_release_host.py.txt``: the helper sends both texts on stdin
 to ``/usr/bin/python3 -I -`` as root (standard library only). While planning,
 read-only ``--check`` probes decide whether a step is needed, so a converged

@@ -14,8 +14,8 @@ When ``data/config.json`` exists (the admin panel saved settings, which then
 override the environment file), the role's SMTP settings are merged into it on
 the host by ``files/smtp_config_sync.py``: every other key is kept, the file
 never leaves the host, and it is rewritten only when a setting differs in
-value or JSON type, not when the bytes merely differ from Ansible's
-``to_nice_json`` layout. A rewrite uses that layout.
+value or JSON type, not when the bytes merely differ from the
+``to_nice_json`` layout the retired role wrote. A rewrite uses that layout.
 
 Unlike the role, Traefik is never restarted (its file provider watches the
 directory), systemd is reloaded only when the drop-in changed, and Vaultwarden

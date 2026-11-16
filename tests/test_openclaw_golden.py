@@ -27,7 +27,7 @@ from ops_deploy.services._metrics_httpd import HttpdSwitchFields
 from ops_deploy.services.openclaw import OpenClawConfig, OpenClawSecrets, layout
 from ops_deploy.services.openclaw.config import SECRET_VARIABLES
 from ops_deploy.services.openclaw.deploy import config_request
-from ops_deploy.services.openclaw.variables import ansible_bool
+from ops_deploy.services.openclaw.variables import to_bool
 from tests.goldens import assert_golden
 
 CASES = Path(__file__).parent / "fixtures" / "openclaw"
@@ -66,17 +66,17 @@ def planned_files(v: dict[str, Any], *, existing: bool, present: set[str]) -> li
     if not existing:
         specs.append(layout.seed_file(v))
     specs += layout.workspace_prompts(v)
-    if ansible_bool(v["openclaw_audio_transcription_enabled"]):
+    if to_bool(v["openclaw_audio_transcription_enabled"]):
         specs.append(layout.audio_plan(v))
     specs += [layout.compose_file(v), layout.unit_file(v)]
-    if ansible_bool(v["openclaw_traefik_enabled"]):
+    if to_bool(v["openclaw_traefik_enabled"]):
         specs.append(layout.route_file(v))
     specs.append(layout.logrotate_file(v))
-    if ansible_bool(v["openclaw_weeknotes_enabled"]):
+    if to_bool(v["openclaw_weeknotes_enabled"]):
         specs += layout.weeknotes_files(v)
     specs += [spec for spec in layout.feature_files(v) if not (spec.create_only and spec.path in present)]
     specs += layout.workspace_skill_files(v)
-    if ansible_bool(v["openclaw_metrics_endpoint_enabled"]):
+    if to_bool(v["openclaw_metrics_endpoint_enabled"]):
         specs += layout.metrics_files(v).values()
     specs.append(layout.manifest_file(v))
     return specs
@@ -97,9 +97,9 @@ def directories(v: dict[str, Any]) -> dict[str, dict[str, str]]:
         specs += layout.workspace_directories(v)
     found = {spec.path: {"owner": spec.owner, "group": spec.group, "mode": spec.mode} for spec in specs}
     # Created by the deploy directly (traefik.yml and metrics.yml).
-    if ansible_bool(v["openclaw_traefik_enabled"]):
+    if to_bool(v["openclaw_traefik_enabled"]):
         found["/etc/traefik/dynamic"] = {"owner": "root", "group": "root", "mode": "0755"}
-    if ansible_bool(v["openclaw_metrics_endpoint_enabled"]):
+    if to_bool(v["openclaw_metrics_endpoint_enabled"]):
         for path in ("/var/lib/openclaw-metrics", "/etc/openclaw-metrics-endpoint"):
             found[path] = {"owner": "root", "group": "metrics", "mode": "0750"}
     return found

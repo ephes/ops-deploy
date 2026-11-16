@@ -15,9 +15,9 @@ invalid candidate refusal with unchanged live files/PID, and a real one-shot
 systemd restart failure with exact owned-file restoration. It installs DDNS
 against a private network-namespace BIND primary with a dummy TSIG key, verifies
 restricted A/AAAA updates/readback, authenticated endpoint output and no extra
-updater execution on repeat. Immutable ops-library source56495f7 is rendered by
-Ansible core2.21.5 to seed existing role files and independently generated bcrypt
-credentials; the first deployment over that state and its repeat must be no-ops.
+updater execution on repeat. Independently generated bcrypt credentials (htpasswd,
+not the deploy's own hash) then replace the endpoint's; the first deployment over
+that state and its repeat must be no-ops.
 Every repeat traces the connector commands and rejects file/helper upload or
 filesystem mutation syscalls, including temporary files later removed. It switches the endpoint to the existing pinned
 Rust release, repeats, repairs deliberately drifted owned root metadata/staging
@@ -57,6 +57,11 @@ It does not claim default-recursion success when that diagnostic fails. Loopback
 link-local/scoped, or malformed uplinks refuse before DNS fixture changes. No public inventory
 resolver policy changes, and no unknown port-53 process is terminated.
 
+
+The harness no longer needs Ansible or ops-library: the phase that seeded the
+retired `dns_deploy` role's rendered files (ops-library `56495f7`, Ansible
+core 2.21.5) was dropped on 2026-11-16, since the golden files under
+`tests/golden/dns` pin those bytes. The run below predates that change.
 
 Qualified run: [40508758685](https://github.com/ephes/ops-deploy/actions/runs/40508758685),
 implementation `77e470f4761b4a22c00fb99af0ae46611e02813e`, harness

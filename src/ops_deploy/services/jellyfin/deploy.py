@@ -105,7 +105,7 @@ class JellyfinConfig(RoleConfig):
     """The ``jellyfin_*`` role variables the deploy uses, without the prefix (role defaults).
 
     ``repo_distro``, ``repo_release`` and ``repo_arch`` have no default: the
-    role derives them from Ansible facts, here they are fixed per host and
+    retired role derived them from gathered facts, here they are fixed per host and
     checked against the host while planning.
     """
 

@@ -861,10 +861,11 @@ the current record, lists the record as unchanged; the rebuild itself is listed.
 
 ## Prepared owned application matrix
 
-The [owned native fixture](https://github.com/ephes/ops-deploy/tree/pyinfra-homeassistant-20261028/tests/integration/homeassistant)
-uses a disposable public GitHub Ubuntu24 systemd container, sharing its VM kernel.
-It is prepared source, not yet an application or inventory qualification. The
-matrix compares the unchanged original role with real installed typed HA 2026.10.2,
+The owned native fixture (removed on 2026-11-16, see below; last at
+[`f7e62e5`](https://github.com/ephes/ops-deploy/tree/f7e62e5b5c2e6b043a0a14825c5dbe83588d643d/tests/integration/homeassistant))
+used a disposable public GitHub Ubuntu24 systemd container, sharing its VM kernel.
+It was prepared source, not an application or inventory qualification. The
+matrix compared the unchanged original role with real installed typed HA 2026.10.2,
 a declared2026.10.1 upgrade, Python3.14.8 and Matter8.1.2. Synthetic loopback model,
 Wyoming and OTBR peers exercise actual application APIs without hardware or a
 real model-provider request. Existing-host prerequisites and every fault/reset
@@ -1391,5 +1392,7 @@ restarts Home Assistant or Matter); record an intended change with
 `OPS_DEPLOY_UPDATE_GOLDEN=1` and review the diff. The prepared Assist pipeline
 definitions (`golden/homeassistant/pipelines`) and the uv install argv
 (`golden/homeassistant/install-argv.json`) are kept the same way. The owned
-application matrix (`tests/integration/homeassistant`) still bootstraps its
-guest with the original role; it is not part of `just test`.
+application matrix (`tests/integration/homeassistant`) bootstrapped its guest
+with the original role and alternated role and typed runs; it was removed on
+2026-11-16 with the last Ansible use in ops-deploy. A matrix that bootstraps
+with the typed deploy instead has not been built.

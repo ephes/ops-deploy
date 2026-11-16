@@ -151,7 +151,7 @@ def box(tmp_path: Path) -> Host:
 def test_host_script_starts_with_the_vendored_decisions() -> None:
     assert HOST_SCRIPT.startswith(VENDORED.read_text())
     assert "def rust_release_prune_plan(" in HOST_SCRIPT
-    assert "\nimport ansible" not in HOST_SCRIPT
+    assert "ansible" not in VENDORED.read_text().lower()
 
 
 # -- install --------------------------------------------------------------------------

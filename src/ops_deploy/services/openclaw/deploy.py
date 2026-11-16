@@ -53,7 +53,7 @@ from ops_deploy.services.openclaw import render as r
 from ops_deploy.services.openclaw.config import OpenClawConfig, OpenClawNyxmonChecks, OpenClawSecrets
 from ops_deploy.services.openclaw.layout import DirSpec, FileSpec
 from ops_deploy.services.openclaw.validate import host_checks
-from ops_deploy.services.openclaw.variables import ansible_bool as bool_
+from ops_deploy.services.openclaw.variables import to_bool as bool_
 from ops_deploy.services.openclaw.variables import version_at_least
 from ops_deploy.services.thermal_monitoring.deploy import credentials_verify
 

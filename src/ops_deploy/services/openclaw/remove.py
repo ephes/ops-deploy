@@ -22,7 +22,7 @@ from pyinfra.operations import server, systemd
 
 from ops_deploy.base._common import RoleConfig, output
 from ops_deploy.services._lifecycle import exists, remove_account, remove_path, stop_disable
-from ops_deploy.services.openclaw.variables import ansible_bool, defaults, resolve
+from ops_deploy.services.openclaw.variables import defaults, resolve, to_bool
 
 FLAGS = ("confirm", "data", "image", "user", "traefik_config", "site_dir", "build_dir", "log_dir")
 
@@ -57,7 +57,7 @@ class OpenClawRemoveConfig(RoleConfig):
 @deploy("Remove OpenClaw")
 def deploy_openclaw_remove(cfg: OpenClawRemoveConfig) -> None:
     v = cfg.role_variables()
-    if not ansible_bool(v["openclaw_remove_confirm"]):
+    if not to_bool(v["openclaw_remove_confirm"]):
         raise DeployError(
             "Set openclaw_remove_confirm=true to allow removal. Data deletion is opt-in via openclaw_remove_data=true."
         )
@@ -78,7 +78,7 @@ def deploy_openclaw_remove(cfg: OpenClawRemoveConfig) -> None:
                 name=f"Remove container {container} (best effort)",
                 commands=[f"docker container rm -f {shlex.quote(container)} || true"],
             )
-    if ansible_bool(v["openclaw_remove_image"]):
+    if to_bool(v["openclaw_remove_image"]):
         reference = shlex.quote(f"reference={v['openclaw_image_name']}:*")
         ids = list(
             dict.fromkeys(line for line in output(f"docker images --filter={reference} --quiet").split() if line)
@@ -94,13 +94,13 @@ def deploy_openclaw_remove(cfg: OpenClawRemoveConfig) -> None:
         ("build_dir", "openclaw_build_dir"),
         ("log_dir", "openclaw_log_dir"),
     ):
-        if ansible_bool(v[f"openclaw_remove_{toggle}"]):
+        if to_bool(v[f"openclaw_remove_{toggle}"]):
             remove_path(v[key])
-    if ansible_bool(v["openclaw_remove_traefik_config"]):
+    if to_bool(v["openclaw_remove_traefik_config"]):
         remove_path(v["openclaw_traefik_config_path"])
-    if ansible_bool(v["openclaw_remove_data"]):
+    if to_bool(v["openclaw_remove_data"]):
         remove_path(v["openclaw_data_dir"])
-    if ansible_bool(v["openclaw_remove_user"]):
+    if to_bool(v["openclaw_remove_user"]):
         remove_account(v["openclaw_user"], v["openclaw_group"])
     logger.info(
         f"{host.name}: OpenClaw removal planned (data={cfg.data}, image={cfg.image}, "

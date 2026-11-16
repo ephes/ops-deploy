@@ -49,7 +49,6 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends fish strace
 fish -c true
-"$UV_BIN" pip install --python "$CONTROLLER_PYTHON" ansible-core==2.19.3
 FIXTURE=/opt/graphyard-conditions-fixture
 install -d -m 0755 "$FIXTURE"
 git clone https://github.com/ephes/graphyard.git "$FIXTURE/source"

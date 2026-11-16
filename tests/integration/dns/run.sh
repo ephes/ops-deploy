@@ -11,8 +11,6 @@ HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 IMPLEMENTATION_ROOT=$(dirname -- "$(dirname -- "$(dirname -- "${CONTROLLER_PYTHON:?}")")")
 [[ $(git -C "$IMPLEMENTATION_ROOT" rev-parse HEAD) == "$IMPLEMENTATION_SHA" ]]
 [[ $(git -C "$HERE" rev-parse HEAD) == "$HARNESS_SHA" ]]
-[[ $(git -C "${ROLE_SOURCE:?}" rev-parse HEAD) == 56495f751c1c664ad9ff2be73403e23efda02621 ]]
-[[ -x ${ANSIBLE_PLAYBOOK:?} ]]
 EVIDENCE=/var/tmp/dns-routine-evidence
 install -d -m 0700 "$EVIDENCE"
 "$CONTROLLER_PYTHON" - <<'PY'

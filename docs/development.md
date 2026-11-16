@@ -133,7 +133,9 @@ to one, rerun its test with `OPS_DEPLOY_UPDATE_GOLDEN=1` and review
 `git diff tests/golden` (see [Testing deploys](concepts/testing.md#golden-host-files)).
 There are no Ansible parity, drift or role-oracle tests any more, and no
 `just test-parity`: every deploy runs on pyinfra, and nothing in the suite
-needs an ops-library checkout or `ansible-core`.
+needs an ops-library checkout or `ansible-core`. The owned native harnesses
+under `tests/integration/` and their workflows run pyinfra only: since
+2026-11-16 none installs Ansible or checks out ops-library.
 
 ## Rules enforced by tests and lint
 

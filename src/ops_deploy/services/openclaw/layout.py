@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ops_deploy.services.openclaw import render as r
-from ops_deploy.services.openclaw.variables import ansible_bool as bool_
+from ops_deploy.services.openclaw.variables import to_bool as bool_
 
 Vars = Mapping[str, Any]
 # The container's uid/gid, which owns the bind-mounted data tree.

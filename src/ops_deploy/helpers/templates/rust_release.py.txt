@@ -1,6 +1,6 @@
-"""Decisions of the ``rust_release_binary`` role (pin moves and prune plans).
+"""Decisions for pinned Rust release binaries (pin moves and prune plans).
 
-The role keeps pinned Rust release binaries in ``<install_root>/<version>/``
+ops-deploy keeps pinned Rust release binaries in ``<install_root>/<version>/``
 (``rust/PLAN-foundation.md`` 6.1). The decisions that must never delete a
 version still in use live here as plain functions, so they are unit-tested
 directly and the pyinfra helper of ops-deploy (F4) can make the same decisions
@@ -12,16 +12,9 @@ Everything fails closed: input this module cannot interpret yields an
 
 from __future__ import annotations
 
-import base64
-import binascii
 import posixpath
 import re
 from typing import Any
-
-try:  # Ansible is not needed for the unit tests of the pure functions.
-    from ansible.errors import AnsibleFilterError
-except ImportError:  # pragma: no cover - exercised only without ansible-core
-    AnsibleFilterError = ValueError  # type: ignore[misc,assignment]
 
 # A release version as it appears in a tag (`<crate>-v<version>`) and as the
 # name of its directory: semver core plus an optional pre-release, no build
@@ -88,7 +81,7 @@ def rust_release_pin_content(version: str) -> str:
     """The exact bytes of a pin file (and of nothing else): ``<version>\\n``."""
 
     if not rust_release_version_ok(version):
-        raise AnsibleFilterError(f"not a release version: {version!r}")
+        raise ValueError(f"not a release version: {version!r}")
     return version + "\n"
 
 
@@ -201,7 +194,7 @@ def rust_release_prune_plan(
 ) -> dict[str, Any]:
     """Which version directories a prune keeps and removes.
 
-    - ``entries``: the ``files`` of ``ansible.builtin.find`` over the install
+    - ``entries``: the listing of the install
       root (non-recursive, without hidden entries): dicts with ``path``,
       ``mtime``, ``isdir`` and ``islnk``. Only real directories named like a
       version are candidates; everything else is left alone.
@@ -220,9 +213,9 @@ def rust_release_prune_plan(
     """
 
     if isinstance(keep_versions, bool) or not isinstance(keep_versions, int) or keep_versions < 1:
-        raise AnsibleFilterError(f"keep_versions must be an integer >= 1, not {keep_versions!r}")
+        raise ValueError(f"keep_versions must be an integer >= 1, not {keep_versions!r}")
     if not isinstance(roots, list) or not roots or not all(isinstance(r, str) and r.startswith("/") for r in roots):
-        raise AnsibleFilterError(f"roots must be a list of absolute paths, not {roots!r}")
+        raise ValueError(f"roots must be a list of absolute paths, not {roots!r}")
     unknown: list[str] = []
 
     pinned: set[str] = set()
@@ -276,50 +269,3 @@ def rust_release_prune_plan(
         "remove": remove,
         "unknown": unknown,
     }
-
-
-def rust_release_pin_records(results: Any) -> list[dict[str, Any]]:
-    """Pin records for ``rust_release_prune_plan`` from Ansible results.
-
-    ``results`` are the ``results`` of an ``ansible.builtin.slurp`` loop over
-    the ``files`` of an ``ansible.builtin.find`` of ``<root>/.pins`` (every
-    entry, hidden ones included; the slurp runs only for regular files and
-    may fail). A record's ``content`` is None when the file was not read.
-    """
-
-    records = []
-    for result in results if isinstance(results, list) else []:
-        entry = result.get("item", {}) if isinstance(result, dict) else {}
-        content = None
-        if isinstance(result, dict) and isinstance(result.get("content"), str) and not result.get("failed"):
-            try:
-                content = base64.b64decode(result["content"], validate=True).decode("utf-8")
-            except (binascii.Error, UnicodeDecodeError):
-                content = None
-        records.append(
-            {
-                "path": entry.get("path", "?") if isinstance(entry, dict) else "?",
-                "isreg": bool(entry.get("isreg")) and not entry.get("islnk") if isinstance(entry, dict) else False,
-                "content": content,
-            }
-        )
-    if not isinstance(results, list):
-        records.append({"path": repr(results), "isreg": False, "content": None})
-    return records
-
-
-class FilterModule:
-    """Expose the rust_release_binary decisions to Ansible."""
-
-    def filters(self) -> dict[str, Any]:
-        return {
-            "rust_release_version_ok": rust_release_version_ok,
-            "rust_release_consumer_ok": rust_release_consumer_ok,
-            "rust_release_name_ok": rust_release_name_ok,
-            "rust_release_root_ok": rust_release_root_ok,
-            "rust_release_sha256_ok": rust_release_sha256_ok,
-            "rust_release_pin_content": rust_release_pin_content,
-            "rust_release_pin_plan": rust_release_pin_plan,
-            "rust_release_pin_records": rust_release_pin_records,
-            "rust_release_prune_plan": rust_release_prune_plan,
-        }

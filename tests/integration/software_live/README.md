@@ -9,13 +9,11 @@ exact selected Git artifact and rejects editable installation.
 The real deployment creates accounts, units, credentials, state, HTTP endpoints and released
 Rust 0.1.1 binaries. Its collectors perform real read-only OS/package observations; the
 fixture never runs upgrade/reboot jobs. Only the collection calendar moves to 2099 to avoid
-expiry during strict snapshots; original schedules/templates have independent actual
-Ansible rendering evidence. Existing OnBootSec behavior is retained and collectors settle
-before snapshots. Original-role coexistence always collects and rewrites state; that phase
-is explicitly not a physical no-op.
+expiry during strict snapshots. Existing OnBootSec behavior is retained and collectors
+settle before snapshots.
 
 Phases cover bootstrap, authenticated/anonymous health, strict repeats with shell/fish,
-actual Ansible coexistence with the S12 role, stale/missing-state collection, policy-only changes,
+stale/missing-state collection, policy-only changes,
 fixture credential rotation, shadow comparison and removal, refusal of an invalid
 release before any change, the S12 upgrade of a pre-retirement host (Python base units
 with Rust drop-ins, Python program and bytecode cache removed, a foreign drop-in kept), owned SQLite creation/current/re-enabled/disabled
@@ -27,3 +25,6 @@ observed separately. No production keeper or blanket zero-I/O assertion is used.
 
 Native execution, review and inventory qualification are pending. Run via the
 `Software live integration` workflow after the feature implementation is reviewed.
+
+The Ansible coexistence phase (the ops-library `software_live` role between two pyinfra
+repeats) was removed on 2026-11-16; the harness installs neither Ansible nor ops-library.

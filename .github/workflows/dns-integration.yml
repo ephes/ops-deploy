@@ -33,12 +33,6 @@ jobs:
           ref: ${{ inputs.implementation_sha }}
           path: .implementation
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: ephes/ops-library
-          ref: 56495f751c1c664ad9ff2be73403e23efda02621
-          path: .role-source
-          persist-credentials: false
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           python-version: '3.13'
@@ -47,14 +41,12 @@ jobs:
         working-directory: .implementation
         run: |
           uv sync --locked
-          uv tool install ansible-core==2.21.5
       - name: Real ephemeral VM provisioning and deployment chain
         env:
           IMPLEMENTATION_SHA: ${{ inputs.implementation_sha }}
         run: |
           sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_RUN_ID="$GITHUB_RUN_ID" IMPLEMENTATION_SHA="$IMPLEMENTATION_SHA" HARNESS_SHA="$GITHUB_SHA" \
             CONTROLLER_PYTHON="$PWD/.implementation/.venv/bin/python" \
-            ROLE_SOURCE="$PWD/.role-source" ANSIBLE_PLAYBOOK="$(uv tool dir --bin)/ansible-playbook" \
             bash tests/integration/dns/run.sh
       - name: Capture diagnostic service state
         if: always()

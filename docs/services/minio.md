@@ -152,8 +152,12 @@ change the version or binary. An already matching client makes no download.
 Legacy Ansible/operator custom URLs are unchanged. The MinIO **server** source
 still returns410; no alternate server version or source is silently selected.
 
-The executed offline native KVM transport and all retained attempt limits are
-documented under `tests/integration/minio/kvm/README.md`. Inventory qualification is separately recorded below.
+The executed offline native KVM transport and all retained attempt limits were
+documented under `tests/integration/minio/kvm/README.md`. That harness, the
+hosted-guest route and the maintenance fixture were removed on 2026-11-16 with
+the retirement of MinIO (they also needed Ansible as the comparison side); read
+them at [`f7e62e5`](https://github.com/ephes/ops-deploy/tree/f7e62e5b5c2e6b043a0a14825c5dbe83588d643d/tests/integration/minio).
+Inventory qualification is separately recorded below.
 
 
 ## Inventory deployment qualification
@@ -263,5 +267,4 @@ operation again removes it.
 and client in a throwaway container: a plan, the refusals above, removal of two
 users, two repeats, a partly retired list, a real `Condition` change during a removal,
 and a check that no credential reached a client command line. It is proof of this component on those binaries, not of a
-production host. See `tests/integration/minio/README.md`
-for what ran.
+production host. It is the one MinIO harness kept: it needs no Ansible.

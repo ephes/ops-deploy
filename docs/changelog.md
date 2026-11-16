@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- Tests: the owned native integration harnesses no longer use Ansible, so
+  nothing in ops-deploy installs or runs it. Per harness:
+  - `dns`: the phase that rendered the retired `dns_deploy` role (ops-library
+    `56495f7`, Ansible core 2.21.5) over the converged host is replaced by a
+    credential seed: an independently generated htpasswd bcrypt hash, after
+    which the first deploy and its repeat must still be no-ops. The role's
+    bytes are pinned by `tests/golden/dns`. `dns-integration.yml` no longer
+    checks out ops-library or installs ansible-core (`ROLE_SOURCE` and
+    `ANSIBLE_PLAYBOOK` are gone).
+  - `graphyard_conditions`: the Ansible seed repeat and the pyinfra repeat
+    after it are removed, with `ansible_seed.py.txt` and the ansible-core
+    install; the other pyinfra repeats and recoveries stay.
+  - `linux_apps`: the `encrypted_volume_prepare` role run after pyinfra (and
+    its pyinfra repeat) is removed; the encrypted-volume phases stay.
+  - `software_live`: the coexistence phase with the ops-library role is
+    removed, with the Ansible and ops-library install in `run.sh`.
+  - `minio`: deleted (hosted guest, KVM route, maintenance fixture and their
+    unit tests): MinIO is being retired and its backups move to RustFS.
+    `minio/user_retirement` stays; it is pyinfra only.
+  - `homeassistant` and `paperless`: deleted, with `homeassistant-native.yml`,
+    `paperless-native.yml` and their fixture unit tests (13 test modules).
+    Both bootstrapped their guest with the original ops-library role and
+    alternated role and typed runs to qualify the takeover of Ansible-built
+    hosts, which is complete; rebuilding them on a typed bootstrap would be a
+    new harness that needs new native runs. The service docs link the last
+    commit that has them.
+
+  The kept harnesses are not rerun yet; their recorded runs predate this
+  change. `templates/rust_release.py.txt` no longer imports
+  `ansible.errors.AnsibleFilterError` (it raises `ValueError`, which hosts got
+  already because they have no Ansible) and drops its `FilterModule` and the
+  Ansible-result adapter `rust_release_pin_records`, which no step used; its
+  test now asserts the text names no Ansible at all. Hosts get the new script
+  text on stdin; behaviour is unchanged, and the eight shared Rust
+  host-script stdin hashes in `tests/golden/thermal_monitoring_plans.json`
+  are re-recorded (nothing else in it changes). OpenClaw's
+  `variables.ansible_bool` is renamed `to_bool` (same behaviour: Ansible's
+  `bool` filter, which its vendored templates rely on).
+
 - Daybook runtime: the `Adapter` list of `daybook_operations_runtime` admits
   `remarkable.reading.v1`, Daybook's reMarkable reading lane, so a profile
   declaring that kind validates; the contract test covers it.

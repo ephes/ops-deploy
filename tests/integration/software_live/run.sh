@@ -52,15 +52,8 @@ PY
 # Fixture bootstrap only. No apt/package commands run on inventory.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-# python3-apt is not a software-live dependency since S12; Ansible's package/apt
-# module installs it on first use, which would break the coexistence phase's
-# strict package equality, so the fixture provides it up front (the real hosts
-# keep it installed).
+# python3-apt is not a software-live dependency since S12; the fixture keeps
+# it installed like the real hosts do.
 apt-get install -y --no-install-recommends fish apache2-utils python3 python3-apt sudo util-linux ca-certificates git
-"$UV_BIN" pip install --python "$CONTROLLER_PYTHON" ansible==14.5.0
 install -d -m 0755 /opt/software-live-fixture
-# Actual immutable role and dependencies for Ansible coexistence.
-install -d /opt/software-live-fixture/collections/ansible_collections/local
-git clone https://github.com/ephes/ops-library.git /opt/software-live-fixture/collections/ansible_collections/local/ops_library
-git -C /opt/software-live-fixture/collections/ansible_collections/local/ops_library checkout --detach c177bfe8e82ef65a1e67e6728d8c10e593d5230e
 "$CONTROLLER_PYTHON" "$HERE/harness.py" "$EVIDENCE"

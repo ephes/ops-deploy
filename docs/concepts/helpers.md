@@ -382,8 +382,10 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   the same deploy in `after`.
 
 The decisions (pin moves, the prune plan, the version and consumer grammar)
-are ops-library's `plugins/filter/rust_release.py`, vendored byte for byte as
-`templates/rust_release.py.txt` (ops-deploy owns that copy now). The steps run on the host
+are `templates/rust_release.py.txt`, vendored from ops-library's
+`plugins/filter/rust_release.py` and owned by ops-deploy since; it no longer
+imports `ansible.errors` (bad input raises `ValueError`) and has no
+`FilterModule` or Ansible-result adapter. The steps run on the host
 at execution time, in `templates/rust_release_host.py.txt` (standard library
 only). Both texts are sent on stdin to `/usr/bin/python3 -I -` as root, so
 target hosts need a system Python 3.9 or later; every Ansible-managed host
