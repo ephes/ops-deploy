@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- tests: the real-PostgreSQL PostfixAdmin round trip
+  (`tests/test_postfixadmin_backup_restore.py`) first removes this user's
+  orphaned 56-byte PostgreSQL shared memory headers (`ipcs -m`: owner and
+  creator the current user, nothing attached, creator PID gone; an unrecognised
+  table such as Linux's removes nothing), and SIGTERM/SIGINT run
+  `pg_ctl stop -m immediate` for its cluster before the signal reaches pytest
+  (`tests/throwaway_postgres.py`). Killed throwaway clusters had filled all 32
+  `kern.sysv.shmmni` slots on Studio, so `initdb` failed at `shmget`. Verified
+  on Studio: SIGTERM during the fixture leaves no postmaster and no segment.
+  Kernel and sysctl settings are unchanged. Test tooling only.
+
 - unifi: the unit sets `RuntimeDirectory=unifi`, `RuntimeDirectoryMode=0750`
   and `RuntimeDirectoryPreserve=yes` like the vendor unit, matching ops-library
   `unifi_deploy`; the golden moves with it. `/usr/lib/unifi/run` links to

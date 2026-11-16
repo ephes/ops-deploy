@@ -40,6 +40,17 @@ Two more things keep the suite fast:
   Home Assistant pipelines) load cached bytecode instead of compiling the
   package each time. Children started with `-I` ignore the prefix and compile
   as before.
+- **Throwaway PostgreSQL** (`tests/throwaway_postgres.py`). A fixture that
+  starts its own cluster calls `remove_orphaned_segments()` before `initdb`
+  and keeps `immediate_stop_on_signals(pg_ctl, data)` open while the cluster
+  exists. The first removes only this user's 56-byte PostgreSQL shared
+  memory headers with nothing attached and a dead creator (orphans of
+  killed clusters, which once filled all 32 SysV slots on Studio), and logs
+  when `ipcs` fails or prints an unrecognised table (Linux) instead of
+  guessing. The second swaps the SIGTERM/SIGINT handlers for the fixture's
+  lifetime (main thread only): it runs `pg_ctl stop -m immediate`, then
+  re-delivers the signal to the previous handler, so pytest still stops as
+  usual. Used by `test_postfixadmin_backup_restore.py`.
 - **Stub executables** (`tests/stubs.py`). On macOS the first `exec` of a
   newly written file costs 0.2 to 0.6 s, under load more than a second; a
   second exec of the same inode, or of a hard link to it, a few ms. The cost

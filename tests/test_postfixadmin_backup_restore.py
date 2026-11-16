@@ -30,6 +30,7 @@ from ops_deploy.services.postfixadmin import (
 from ops_deploy.services.postfixadmin.backup_restore import FILES
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import stubs
+from tests.throwaway_postgres import immediate_stop_on_signals, remove_orphaned_segments
 
 PASSWORD = "fixture-db-password"  # pragma: allowlist secret
 STAMP = "20261104T120000"
@@ -416,67 +417,72 @@ def postgres(tmp_path: Path) -> Any:
     # ("invalid locale settings", "postmaster became multithreaded during
     # startup"), so they must not depend on the caller's LANG/LC_*.
     pg_env = {**os.environ, "LC_ALL": "C"}
-    subprocess.run(
-        [
-            PG_BIN / "initdb",
-            "-D",
-            data,
-            "-U",
-            "postgres",
-            "--auth-local=trust",
-            "--auth-host=scram-sha-256",
-            "--pwfile",
-            pwfile,
-            "-E",
-            "UTF8",
-        ],
-        check=True,
-        capture_output=True,
-        env=pg_env,
-    )
-    # PostgreSQL cannot bind port 0: take a free port and start; another process
-    # (a parallel test worker) may grab it in between, so try a fresh one then.
-    for _ in range(3):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        started = subprocess.run(
+    # Killed earlier runs leave their 56-byte shared memory header behind; free
+    # only those (this user's, unattached, creator dead) before initdb needs a slot.
+    remove_orphaned_segments()
+    # SIGTERM/SIGINT stop this cluster with `pg_ctl stop -m immediate` first.
+    with immediate_stop_on_signals(PG_BIN / "pg_ctl", data, env=pg_env):
+        subprocess.run(
             [
-                PG_BIN / "pg_ctl",
+                PG_BIN / "initdb",
                 "-D",
                 data,
-                "-w",
-                "-l",
-                tmp_path / "pg.log",
-                "-o",
-                f"-p {port} -k {sock} -c listen_addresses=localhost -c shared_memory_type=mmap",
-                "start",
+                "-U",
+                "postgres",
+                "--auth-local=trust",
+                "--auth-host=scram-sha-256",
+                "--pwfile",
+                pwfile,
+                "-E",
+                "UTF8",
             ],
+            check=True,
             capture_output=True,
             env=pg_env,
         )
-        if started.returncode == 0:
-            break
-    else:
-        started.check_returncode()
+        # PostgreSQL cannot bind port 0: take a free port and start; another process
+        # (a parallel test worker) may grab it in between, so try a fresh one then.
+        for _ in range(3):
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            started = subprocess.run(
+                [
+                    PG_BIN / "pg_ctl",
+                    "-D",
+                    data,
+                    "-w",
+                    "-l",
+                    tmp_path / "pg.log",
+                    "-o",
+                    f"-p {port} -k {sock} -c listen_addresses=localhost -c shared_memory_type=mmap",
+                    "start",
+                ],
+                capture_output=True,
+                env=pg_env,
+            )
+            if started.returncode == 0:
+                break
+        else:
+            started.check_returncode()
 
-    def sql(text: str, db: str = "mail", user: str = "postgres") -> str:
-        done = subprocess.run(
-            [PG_BIN / "psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-h", sock, "-p", str(port), "-U", user, "-d", db],
-            input=text,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return done.stdout
+        def sql(text: str, db: str = "mail", user: str = "postgres") -> str:
+            done = subprocess.run(
+                [PG_BIN / "psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-h", sock, "-p", str(port), "-U", user, "-d", db],
+                input=text,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return done.stdout
 
-    try:
-        sql(f"CREATE ROLE mail LOGIN PASSWORD '{PASSWORD}'; CREATE DATABASE mail OWNER mail;", db="postgres")
-        sql("SET ROLE mail;" + SCHEMA)
-        yield {"port": port, "sql": sql}
-    finally:
-        subprocess.run([PG_BIN / "pg_ctl", "-D", data, "-m", "fast", "stop"], capture_output=True, env=pg_env)
-        _shutil.rmtree(sock, ignore_errors=True)
+        try:
+            sql(f"CREATE ROLE mail LOGIN PASSWORD '{PASSWORD}'; CREATE DATABASE mail OWNER mail;", db="postgres")
+            sql("SET ROLE mail;" + SCHEMA)
+            yield {"port": port, "sql": sql}
+        finally:
+            subprocess.run([PG_BIN / "pg_ctl", "-D", data, "-m", "fast", "stop"], capture_output=True, env=pg_env)
+            _shutil.rmtree(sock, ignore_errors=True)
 
 
 def test_backup_and_restore_round_trip_on_postgresql(host: dict[str, Any], postgres: Any) -> None:

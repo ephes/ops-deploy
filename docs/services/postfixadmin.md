@@ -118,7 +118,9 @@ newer backup landed in between; `required_mount` guards the backup root.
 Tests: `tests/test_postfixadmin_backup_restore.py` (planned settings, the
 host program end to end against a fake `psql` with fixture rows, and a backup
 and restore round trip against a throwaway local PostgreSQL 16/17 when
-`initdb` is installed).
+`initdb` is installed; its fixture first removes orphaned shared memory
+headers of killed clusters and stops the cluster immediately on SIGTERM/SIGINT,
+see `tests/throwaway_postgres.py` in [Development](../development.md)).
 
 ## Removal
 
