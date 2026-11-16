@@ -176,6 +176,14 @@ Both monitor timers use `OnBootSec` and `OnActiveSec` (`timer_on_boot_sec`),
 (`timer_on_calendar`, default `*:0/5`) and `Persistent=true`, so a reboot or
 late timer restart cannot leave them at `NEXT n/a`.
 
+`Persistent=true` fires the job right after boot, so both services wait
+first: `After=`/`Wants=` `systemd-time-wait-sync.service` (the first NTP sync;
+a clock that is still off gets `RequestTimeTooSkewed` and a wrong lag) and an
+`ExecStartPre=` curl on `<endpoint>/health/ready` with retries for up to 180 s
+(RustFS and its Tailscale bind address still starting). A reboot therefore
+leaves no failed check behind; if NTP never syncs, the job waits and its
+status file goes stale instead.
+
 Errors in the status file and journal carry only the helper's constant
 diagnostics and HTTP status codes, never a credential, a server error code or
 a response body.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- rustfs: the replication monitor services (`rustfs-replication-heartbeat`,
+  `rustfs-replication-lag-check`) wait at boot for the first NTP sync
+  (`Wants=`/`After=systemd-time-wait-sync.service`, `After=time-sync.target`)
+  and for `<endpoint>/health/ready` (`ExecStartPre=` curl, retries up to
+  180 s). The `Persistent=true` catch-up started the lag check on macmini in
+  the same second as RustFS, with the clock still 17 minutes ahead, and left
+  it `failed` after the 2026-11-16 reboot. Timers are unchanged.
+
 - dns: `DnsConfig.ddns_static_records` (`DdnsStaticRecord`: `name`, `a`, `aaaa`)
   pins names of the DDNS zone to fixed addresses; `ddns-config.json` always
   carries `static_records` (empty by default, so both goldens gain that key).

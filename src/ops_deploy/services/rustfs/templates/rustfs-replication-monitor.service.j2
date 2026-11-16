@@ -5,8 +5,11 @@ Description=Write RustFS replication heartbeat objects
 {% else %}
 Description=Check RustFS replication lag and parity
 {% endif %}
-Wants=network-online.target
-After=network-online.target rustfs.service
+# At boot the Persistent= timer fires as soon as timers.target is up: wait for
+# the first NTP sync (a skewed clock gets RequestTimeTooSkewed and wrong lag)
+# and, in ExecStartPre=, for RustFS to answer, so a reboot leaves no failed run.
+Wants=network-online.target systemd-time-wait-sync.service
+After=network-online.target time-sync.target systemd-time-wait-sync.service rustfs.service
 
 [Service]
 Type=oneshot
@@ -16,6 +19,7 @@ EnvironmentFile={{ cfg.env_file }}
 {% endif %}
 EnvironmentFile={{ monitor.env_file }}
 Environment=RUSTFS_MONITOR_LIBRARY={{ monitor.library_dir }}
+ExecStartPre=/usr/bin/curl -fsS -o /dev/null --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 3 --retry-max-time 180 --retry-all-errors {{ cfg.endpoint }}/health/ready
 {% if monitor.role == "source" %}
 ExecStart=/usr/bin/python3 -I -B {{ monitor.script_path }} heartbeat {{ cfg.endpoint }} {{ monitor.replica_endpoint }} {{ monitor.jobs_path }}
 {% else %}

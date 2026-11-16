@@ -168,6 +168,14 @@ def test_units_bind_the_right_credentials_and_arguments() -> None:
         "probe http://100.64.0.10:9020 /var/lib/rustfs-replication-monitor /etc/rustfs-replication-monitor.json"
     ) in replica
     assert "ReadWritePaths=/var/lib/rustfs-replication-monitor" in replica
+    for unit in (source, replica):
+        # A boot-time run (Persistent= catch-up) waits for NTP and a ready RustFS
+        # instead of failing on a skewed clock or a store that is still starting.
+        assert "Wants=network-online.target systemd-time-wait-sync.service\n" in unit
+        assert "After=network-online.target time-sync.target systemd-time-wait-sync.service rustfs.service\n" in unit
+        assert "ExecStartPre=/usr/bin/curl " in unit
+        assert "--retry-all-errors http://" in unit
+    assert "--retry-all-errors http://100.64.0.10:9020/health/ready\n" in replica
     timer = render("rustfs-replication-monitor.timer.j2", REPLICA)
     assert "OnUnitActiveSec=300" in timer
     assert "OnBootSec=120" in timer
