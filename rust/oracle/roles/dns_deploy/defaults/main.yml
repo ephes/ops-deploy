@@ -99,6 +99,10 @@ dns_ddns_ipv6_enabled: true                      # Update IPv6 (AAAA records)
 dns_ddns_ipv4_source_url: "https://ipv4.icanhazip.com"
 dns_ddns_ipv6_source_url: "https://ipv6.icanhazip.com"
 dns_ddns_verify_nameservers: []                  # Empty = the zone's NS records
+# Names pinned to fixed addresses instead of the WAN address, relative to the zone
+# like the subdomain: [{name: "s3.home", a: ["100.64.0.1"], aaaa: []}]. Each entry
+# lists the complete A and AAAA sets; an empty set means that type must not exist.
+dns_ddns_static_records: []
 dns_ddns_log_max_size_mb: 10                     # Log rotation size
 
 # Gandi LiveDNS backend
