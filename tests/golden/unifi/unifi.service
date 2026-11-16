@@ -21,7 +21,7 @@ Environment="UNIFI_JVM_OPTS=-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Duni
 # The Mongo URI (with credentials) is read from a root:unifi 0640
 # Java @argfile so it stays out of this world-readable unit, `systemctl show`
 # and the process command line.
-ExecStart=/usr/bin/java \
+ExecStart=/usr/lib/jvm/java-17-openjdk-amd64/bin/java \
     @/etc/unifi-secrets/mongodb.jvmargs \
     --add-opens java.base/java.time=ALL-UNNAMED \
     --add-opens java.base/java.lang=ALL-UNNAMED \
@@ -36,7 +36,7 @@ ExecStart=/usr/bin/java \
     -Dunifi.db.name=unifi \
     -jar /usr/lib/unifi/lib/ace.jar start
 
-ExecStop=/usr/bin/java -jar /usr/lib/unifi/lib/ace.jar stop
+ExecStop=/usr/lib/jvm/java-17-openjdk-amd64/bin/java -jar /usr/lib/unifi/lib/ace.jar stop
 
 Restart=on-failure
 RestartSec=10

@@ -24,7 +24,7 @@ Environment="{{ env }}"
 # The Mongo URI (with credentials) is read from a root:{{ unifi_group }} 0640
 # Java @argfile so it stays out of this world-readable unit, `systemctl show`
 # and the process command line.
-ExecStart=/usr/bin/java \
+ExecStart={{ unifi_java_home }}/bin/java \
     @{{ unifi_mongodb_jvm_args_path }} \
     --add-opens java.base/java.time=ALL-UNNAMED \
     --add-opens java.base/java.lang=ALL-UNNAMED \
@@ -39,7 +39,7 @@ ExecStart=/usr/bin/java \
     -Dunifi.db.name={{ unifi_mongodb_database }} \
     -jar {{ unifi_install_dir }}/lib/ace.jar start
 
-ExecStop=/usr/bin/java -jar {{ unifi_install_dir }}/lib/ace.jar stop
+ExecStop={{ unifi_java_home }}/bin/java -jar {{ unifi_install_dir }}/lib/ace.jar stop
 
 Restart=on-failure
 RestartSec=10

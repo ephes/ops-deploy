@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- unifi: the unit's `ExecStart`/`ExecStop` run
+  `/usr/lib/jvm/java-17-openjdk-amd64/bin/java` (`unifi_java_home`, the path
+  the preflight already requires) instead of `/usr/bin/java`, matching
+  ops-library `unifi_deploy`; the golden moves with it. `/usr/bin/java` follows
+  the alternatives link, which pointed to OpenJDK 25 on macmini after the
+  Minecraft 26.3 switch; UniFi 9.5 accepts only Java 17-24 and exited with
+  status 255 on every start after the 2026-11-16 reboot. The unit change
+  makes the next deploy restart the controller.
+
 - rustfs: the replication monitor services (`rustfs-replication-heartbeat`,
   `rustfs-replication-lag-check`) wait at boot for the first NTP sync
   (`Wants=`/`After=systemd-time-wait-sync.service`, `After=time-sync.target`)

@@ -28,7 +28,7 @@ from ops_deploy.services.unifi.deploy import (
     TIGHTEN_LOGS,
     payload,
 )
-from ops_deploy.services.unifi.render import render_template
+from ops_deploy.services.unifi.render import render_template, role_vars
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests.goldens import assert_golden
@@ -342,6 +342,19 @@ def test_templates_match_golden(template: str) -> None:
     # Recorded when they equalled the unifi_deploy role's renders, as deployed.
     rendered = render_template(CFG, template, mongodb_password=SENTINEL)
     assert_golden(GOLDEN / template.removesuffix(".j2"), rendered)
+
+
+def test_unit_runs_java_17_not_the_alternatives_link() -> None:
+    # /usr/bin/java follows the alternatives link, which Minecraft's JDK 25
+    # took over on macmini; UniFi 9.5 refuses Java outside 17-24 (exit 255).
+    java = f"{role_vars(CFG)['unifi_java_home']}/bin/java"
+    assert java == "/usr/lib/jvm/java-17-openjdk-amd64/bin/java"
+    assert f'Path("{java}").is_file()' in (PACKAGE / "files/preflight.py").read_text()
+    unit = render_template(CFG, "unifi.service.j2", mongodb_password=SENTINEL)
+    execs = [line for line in unit.splitlines() if line.startswith("Exec")]
+    assert [line.split("=", 1)[0] for line in execs] == ["ExecStart", "ExecStop"]
+    assert all(line.split("=", 1)[1].startswith(f"{java} ") for line in execs)
+    assert "/usr/bin/java" not in unit
 
 
 def mongodb_state() -> dict[str, Any]:
