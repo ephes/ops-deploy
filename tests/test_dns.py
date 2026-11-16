@@ -53,9 +53,12 @@ def test_ddns_static_records_render_and_validate() -> None:
         {"name": "s3.home", "a": ["100.64.0.1"], "aaaa": []},
         {"name": "v6.home", "a": [], "aaaa": ["2001:db8::1"]},
     ]
-    assert json.loads(render("ddns-config.json.j2", role_vars(DnsConfig(), "192.0.2.1", "100.64.0.1", 2)))[
-        "static_records"
-    ] == []
+    assert (
+        json.loads(render("ddns-config.json.j2", role_vars(DnsConfig(), "192.0.2.1", "100.64.0.1", 2)))[
+            "static_records"
+        ]
+        == []
+    )
     for bad in (
         {"name": "s3.home"},
         {"name": "*.x.home", "a": ["100.64.0.1"]},
@@ -64,12 +67,17 @@ def test_ddns_static_records_render_and_validate() -> None:
         {"name": "s3.home", "aaaa": ["100.64.0.1"]},
         {"name": "s3.home", "a": ["100.64.0.1"], "ttl": 5},
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigValidationError):
             DnsConfig(ddns_static_records=(bad,))
     # "*.home" is already refused by the name pattern (no wildcards).
     for clash in ("home", "HOME", "S3.HOME"):
         with pytest.raises(ValueError, match="unique"):
-            DnsConfig(ddns_static_records=({"name": "s3.home", "a": ["100.64.0.1"]}, {"name": clash, "a": ["100.64.0.1"]}))
+            DnsConfig(
+                ddns_static_records=(
+                    {"name": "s3.home", "a": ["100.64.0.1"]},
+                    {"name": clash, "a": ["100.64.0.1"]},
+                )
+            )
 
 
 def host_module() -> Any:
