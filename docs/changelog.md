@@ -8,7 +8,11 @@
   and for `<endpoint>/health/ready` (`ExecStartPre=` curl, retries up to
   180 s). The `Persistent=true` catch-up started the lag check on macmini in
   the same second as RustFS, with the clock still 17 minutes ahead, and left
-  it `failed` after the 2026-11-16 reboot. Timers are unchanged.
+  it `failed` after the 2026-11-16 reboot. fractal_monitoring's
+  `minio-replication-lag-check.service` does the same (also `After=tailscaled.service`;
+  readiness is `<destination_endpoint>/minio/health/live`), which had failed
+  the same way after fractal's reboot; its golden moves with it. Timers are
+  unchanged.
 
 - dns: `DnsConfig.ddns_static_records` (`DdnsStaticRecord`: `name`, `a`, `aaaa`)
   pins names of the DDNS zone to fixed addresses; `ddns-config.json` always

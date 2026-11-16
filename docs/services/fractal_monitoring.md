@@ -79,6 +79,11 @@ Small component-specific restart debt preserves failed rollouts for a retry.
 except that `minio-replication-lag-check.timer` adds `OnActiveSec`
 (`timer_on_boot_sec`), an `OnCalendar` backstop (`timer_on_calendar`, default
 `*:0/5`) and `Persistent=true`, so it cannot stall at `NEXT n/a` after a reboot.
+Because `Persistent=true` fires it right after boot, its service waits first:
+`After=`/`Wants=` `systemd-time-wait-sync.service` (first NTP sync), `After=`
+`tailscaled.service`, and an `ExecStartPre=` curl on
+`<destination_endpoint>/minio/health/live` with retries for up to 180 s, so a
+reboot leaves no failed check behind.
 Collector paths, endpoints, data-directory permissions, no-login accounts without
 home creation, timer policies and source version/SHA are typed inputs. Existing
 endpoint account group/shell policy is enforced without creating its home.

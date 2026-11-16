@@ -1,11 +1,15 @@
 [Unit]
 Description=MinIO replication lag/parity monitor
-Wants=network-online.target
-After=network-online.target
+# At boot the Persistent= timer fires as soon as timers.target is up: wait for
+# the first NTP sync and, in ExecStartPre=, for MinIO on its Tailscale name to
+# answer, so a reboot leaves no failed run.
+Wants=network-online.target systemd-time-wait-sync.service
+After=network-online.target time-sync.target systemd-time-wait-sync.service tailscaled.service
 
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/default/minio
+ExecStartPre=/usr/bin/curl -fsS -o /dev/null --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 3 --retry-max-time 180 --retry-all-errors /minio/health/live
 ExecStart=/usr/local/bin/minio-replication-lag-probe.py \
    \
   /etc/minio-replication-monitor-jobs.json
