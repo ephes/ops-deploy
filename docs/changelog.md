@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- unifi: the unit sets `RuntimeDirectory=unifi`, `RuntimeDirectoryMode=0750`
+  and `RuntimeDirectoryPreserve=yes` like the vendor unit, matching ops-library
+  `unifi_deploy`; the golden moves with it. `/usr/lib/unifi/run` links to
+  `/run/unifi`, a tmpfs directory that only the vendor unit or init script
+  created, so after every reboot of macmini the admission refused with
+  `installation_layout_missing_use_ansible` until someone recreated it by
+  hand. The directory now exists whenever the controller has started since
+  boot and stays after a stop. The unit change makes the next deploy restart
+  the controller.
+
 - unifi: the unit's `ExecStart`/`ExecStop` run
   `/usr/lib/jvm/java-17-openjdk-amd64/bin/java` (`unifi_java_home`, the path
   the preflight already requires) instead of `/usr/bin/java`, matching

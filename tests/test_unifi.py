@@ -233,6 +233,16 @@ def test_unit_creates_private_logs() -> None:
     assert "UMask=0027" in service.splitlines()
 
 
+def test_unit_recreates_the_tmpfs_run_directory() -> None:
+    # /usr/lib/unifi/run links to /run/unifi (tmpfs): without RuntimeDirectory=
+    # it is gone after every reboot and admission refuses the layout.
+    assert '"/usr/lib/unifi/run"' in (PACKAGE / "files/preflight.py").read_text()
+    unit = render_template(CFG, "unifi.service.j2")
+    service = unit.split("[Service]\n", 1)[1].split("\n[", 1)[0].splitlines()
+    for line in ("RuntimeDirectory=unifi", "RuntimeDirectoryMode=0750", "RuntimeDirectoryPreserve=yes"):
+        assert line in service
+
+
 def test_route_drift_only_writes_route_and_does_not_restart() -> None:
     run = run_deploy_fake(deploy_unifi, CFG, SECRETS, responses=converged(**fakehost.file(ROUTE, "drift\n")))
     assert run.succeeded, run.error

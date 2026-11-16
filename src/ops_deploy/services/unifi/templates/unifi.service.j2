@@ -11,6 +11,12 @@ Group={{ unifi_group }}
 # server.log carries the MongoDB URI with its password: new logs 0640, dirs 0750.
 UMask=0027
 WorkingDirectory={{ unifi_install_dir }}
+# {{ unifi_install_dir }}/run links to /run/unifi, a tmpfs gone after every
+# reboot. Like the vendor unit, create it on start; keep it after a stop
+# (until the next reboot) so the deploy admission still finds it.
+RuntimeDirectory=unifi
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 Environment="JAVA_HOME={{ unifi_java_home }}"
 Environment="PATH={{ unifi_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"

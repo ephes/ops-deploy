@@ -70,7 +70,11 @@ Java 17 and MongoDB 8 packages use presence semantics, preserving installed
 patch versions rather than requesting upgrades. The unit runs
 `/usr/lib/jvm/java-17-openjdk-amd64/bin/java` directly, never `/usr/bin/java`:
 the alternatives link may point to another service's newer JDK (Minecraft's
-Java 25 on macmini), which UniFi 9.5 refuses (supported: 17-24). The MongoDB repository remains
+Java 25 on macmini), which UniFi 9.5 refuses (supported: 17-24). Like the
+vendor unit, it sets `RuntimeDirectory=unifi` (`RuntimeDirectoryMode=0750`,
+`RuntimeDirectoryPreserve=yes`): `/usr/lib/unifi/run` links to `/run/unifi`, a
+tmpfs directory the admission requires, which otherwise is missing after every
+reboot. The MongoDB repository remains
 Ubuntu noble/8.0. The role's logging settings are reconciled while retaining
 storage, authorization, networking and other existing directives. Missing or
 ambiguous required sections are refused. MongoDB restarts only for changed
