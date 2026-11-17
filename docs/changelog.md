@@ -17,8 +17,8 @@
 - echoport: the `mc_admin` account provisioner is removed (`McAdminProvisioner`,
   `files/minio_account.py`). `MinioAccount.provisioner` accepts only
   `rustfs_admin`, now its default; `MinioAccount.admin_alias` is removed
-  (unknown keys are ignored by that model, so a caller still passing
-  `admin_alias="local"` keeps working but should drop it). The policy file
+  (the model refuses unknown keys: callers drop `admin_alias="local"`). The
+  policy file
   path (`policy_dir`), the account, the alias and every rendered file are
   unchanged.
 - Echoport runners: the MinIO store is removed from `MinioAccess` and
