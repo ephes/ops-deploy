@@ -142,7 +142,7 @@ The scripts that carry it:
 | `infra.tailscale` | `tailscale_metrics_httpd.py` |
 | `openclaw` | `openclaw_metrics_httpd.py` |
 | `os_apt_maintenance` | `os_apt_maintenance_httpd.py` |
-| `os_lifecycle` | `os_lifecycle_httpd.py` |
+| `os_lifecycle`, `nfs_tls_status` | `os_lifecycle_httpd.py` (nfs_tls_status installs it as `nfs_tls_status_httpd.py`) |
 | `dns_metrics_endpoint` | `dns_metrics_httpd.py` |
 | `dns` | `ddns_status_httpd.py` |
 | `rustfs` | `replication_status.py` |

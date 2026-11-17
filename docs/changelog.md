@@ -5,8 +5,9 @@
 - Python HTTP endpoints: one idle or slow tailnet client no longer stalls an
   endpoint (ops-control security audit 2026-11-12, E1). The 14 Python servers
   (mail `metrics_httpd.py`, torrent VPN, thermal, Fractal storage and backup,
-  Tailscale, OpenClaw, os_apt_maintenance, os_lifecycle, DNS metrics, DDNS
-  status, RustFS replication status, logyard health, static site) now carry
+  Tailscale, OpenClaw, os_apt_maintenance, os_lifecycle (also run by
+  nfs_tls_status), DNS metrics, DDNS status, RustFS replication status,
+  logyard health, static site) now carry
   the same verbatim block (`services/_metrics_httpd/files/bounded_httpd.py`):
   a thread per connection with at most 32 at once, a 10 s per-read timeout and
   a 15 s total deadline for the request line and headers, armed again for
