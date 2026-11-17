@@ -1,17 +1,17 @@
 """archive: Django app (``archive``) plus its enrichment worker (``archive-metadata-worker``).
 
 Port of the ``archive_deploy`` Ansible role (rsync method) together with the
-playbook steps around it in ops-control's ``deploy-archive.yml``: the MinIO
-media bucket and service account (through root's MinIO admin alias on the host,
-never the MinIO root credentials), the one-time move of a local media tree into
-MinIO, and the Echoport backup target. The role's templates are shipped
+playbook steps around it in ops-control's ``deploy-archive.yml``: the one-time
+move of a local media tree into the S3 media bucket and the Echoport backup
+target. (The playbook's MinIO bucket and service-account step is gone with
+MinIO; on RustFS the bucket and account come from the RustFS deploy.) The role's templates are shipped
 unchanged and rendered the way Ansible renders them, so env files, units and
 the Traefik route are byte-identical (goldens:
 ``tests/test_archive_golden.py``).
 
 Unlike the role, steps that would change nothing are skipped: migrate and
 collectstatic run when code, dependencies or the env changed; the admin
-account, the MinIO setup and the Echoport target are probed first (read-only)
+account, the media migration and the Echoport target are probed first (read-only)
 and only written when they differ from what this deploy would set.
 """
 
@@ -39,7 +39,6 @@ from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.helpers import (
     TraefikRoute,
     http_check,
-    mark_read_only,
     service_rollout,
     system_user,
     systemd_unit,
@@ -55,8 +54,6 @@ from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import target_shell
 
 FILES = Path(__file__).parent / "files"
-MINIO_BOOTSTRAP = (FILES / "minio_bootstrap.sh").read_text()
-MINIO_PROBE = (FILES / "minio_probe.sh").read_text()
 MEDIA_MIGRATE = (FILES / "media_migrate.sh").read_text()
 ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
 
@@ -89,19 +86,6 @@ SETTING_KEYS = (
 
 class _Part(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class MinioBootstrap(_Part):
-    """The playbook's MinIO bucket/service-account step (S3 backend only).
-
-    Bucket, policy and user are managed through ``admin_alias``, root's MinIO
-    admin alias on the host (``minio_host_alias`` of the MinIO deploy), as
-    ``deploy-archive.yml`` does: the MinIO root credentials are never needed.
-    """
-
-    policy_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")] = "archive-media-rw"
-    mc: PurePosixPath = PurePosixPath("/usr/local/bin/mc")
-    admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
 
 
 class EchoportTarget(_Part):
@@ -178,7 +162,6 @@ class ArchiveConfig(BaseServiceConfig):
     traefik_entrypoints: tuple[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")], ...] = ("web-secure",)
     traefik_cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]*$")] = ""
     traefik_middlewares: tuple[Annotated[str, Field(pattern=_MIDDLEWARE)], ...] = ()
-    minio: MinioBootstrap | None = None
     echoport: EchoportTarget | None = None
 
     @field_validator("media_storage_location")
@@ -247,15 +230,10 @@ def check_secrets(secrets: SecretValues) -> None:
     """The role's asserts, naming keys only."""
 
     secrets.require(ArchiveConfig.required_secret_keys)
-    # The media secret reaches the MinIO scripts as one line on stdin (the
+    # The media secret reaches the media migration as one line on stdin (the
     # playbook's CR/LF assert); every other value is held to the same rule.
     if any("\n" in value or "\r" in value for value in secrets.values()):
         raise ValueError("secret values must be single lines")
-    # The MinIO step uses root's admin alias on the host; the root credentials
-    # must never travel from the controller.
-    shipped = [key for key in ("minio_root_user", "minio_root_password") if key in secrets]
-    if shipped:
-        raise ValueError(f"the MinIO root credentials are not used, do not pass them: {', '.join(shipped)}")
     weak = [
         key
         for key in ("django_secret_key", "api_token", "summary_api_key")
@@ -385,7 +363,7 @@ def _python_changed(cfg: ArchiveConfig) -> OperationMeta:
     )
 
 
-# -- playbook pre_tasks: MinIO --------------------------------------------------
+# -- playbook pre_tasks: S3 media ---------------------------------------------------
 
 
 def _app_alias(cfg: ArchiveConfig, secrets: SecretValues) -> str:
@@ -401,41 +379,8 @@ def _app_alias(cfg: ArchiveConfig, secrets: SecretValues) -> str:
     return json.dumps(alias)
 
 
-def _minio(cfg: ArchiveConfig, secrets: SecretValues, env: OperationMeta) -> None:
-    assert cfg.minio is not None
-    minio = cfg.minio
-    mc, admin, bucket = minio.mc, minio.admin_alias, cfg.media_storage_bucket_name
-    # The script answers "ok" or "bootstrap:<reason>"; only a crash is a failure.
-    args = (mc, admin, cfg.media_storage_endpoint_url, bucket, minio.policy_name, cfg.env_path)
-    check = _bash(MINIO_PROBE, "minio-probe", *args)
-    state = probe(check, name="MinIO media bucket and service account")
-    missing = shlex.quote(
-        f"mc admin info {admin} failed: the admin alias is not configured for root on this host "
-        "or MinIO is unreachable. Run the MinIO deploy (minio_bootstrap_with_mc) first."
-    )
-    mark_read_only(
-        server.shell(
-            name=f"Require the MinIO admin alias {admin} of root",
-            commands=[
-                f"{shlex.join([str(mc), 'admin', 'info', admin])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
-            ],
-        )
-    )
-    secret_stdin(
-        name="Ensure MinIO media bucket and service account",
-        command=_bash(
-            MINIO_BOOTSTRAP, "minio-bootstrap", mc, admin, bucket, cfg.media_storage_access_key_id, minio.policy_name
-        ),
-        content=SecretContent(f"{secrets['media_storage_secret_access_key']}\n{_app_alias(cfg, secrets)}\n"),
-        # New app credentials in .env: the account may need them too.
-        _if=lambda: (state or "").strip() != "ok" or env.did_change(),
-    )
-    if state is None:
-        verify_probe(check, name="MinIO media bucket and service account", expect="ok")
-
-
 def _media_migration(cfg: ArchiveConfig, secrets: SecretValues) -> None:
-    mc = cfg.minio.mc if cfg.minio is not None else PurePosixPath("/usr/local/bin/mc")
+    mc = PurePosixPath("/usr/local/bin/mc")
     common = (mc, cfg.media_storage_bucket_name, cfg.media_location)
     check = _bash(MEDIA_MIGRATE, "media-migrate", *common, "probe")
     state = probe(check, name="local archive-media migration")
@@ -566,7 +511,7 @@ def deploy_archive(cfg: ArchiveConfig, secrets: SecretValues, rsync: RsyncRunner
     env_content, shell_env = render_env(cfg, secrets, shell=False), render_env(cfg, secrets, shell=True)
 
     system_user(cfg.user, home=cfg.home, directories=[cfg.site_path, cfg.static_root])
-    # Before the MinIO scripts, which use python3 too.
+    # Before the media migration script, which uses python3 too.
     apt.packages(name="Install runtime packages", packages=["python3", "python3-venv", "sqlite3", "rsync"])
     env = secret_file(
         name="Write .env", path=cfg.env_path, content=env_content, mode="0600", user=cfg.user, group=cfg.user
@@ -580,8 +525,6 @@ def deploy_archive(cfg: ArchiveConfig, secrets: SecretValues, rsync: RsyncRunner
         group=cfg.user,
     )
     if cfg.s3:
-        if cfg.minio is not None:
-            _minio(cfg, secrets, env)
         _media_migration(cfg, secrets)
 
     excludes = cfg.source_excludes

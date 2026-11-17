@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- archive: the MinIO bucket and service-account step is removed:
+  `MinioBootstrap`, `ArchiveConfig.minio` (`None` by default and in the only
+  caller), `files/minio_bootstrap.sh` and `files/minio_probe.sh`, and the
+  refusal of `minio_root_user`/`minio_root_password` secrets. On RustFS the
+  bucket and account come from the RustFS deploy. The local media migration
+  into the S3 bucket and every rendered file are unchanged.
+
 - fractal_monitoring: the MinIO replication lag monitor is removed:
   `ReplicationLagConfig`, `FractalMonitoringConfig.replication`, the
   `minio-replication-lag-check` service and timer, the lag program and the
