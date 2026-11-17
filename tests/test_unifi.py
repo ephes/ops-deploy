@@ -243,6 +243,15 @@ def test_unit_recreates_the_tmpfs_run_directory() -> None:
         assert line in service
 
 
+def test_unit_treats_the_sigterm_exit_as_a_clean_stop() -> None:
+    # The JVM exits 143 (128 + SIGTERM) when systemd stops it; without this
+    # every restart logged "Failed with result 'exit-code'".
+    unit = render_template(CFG, "unifi.service.j2")
+    service = unit.split("[Service]\n", 1)[1].split("\n[", 1)[0].splitlines()
+    assert "KillSignal=SIGTERM" in service
+    assert [line for line in service if line.startswith("SuccessExitStatus=")] == ["SuccessExitStatus=143"]
+
+
 def test_route_drift_only_writes_route_and_does_not_restart() -> None:
     run = run_deploy_fake(deploy_unifi, CFG, SECRETS, responses=converged(**fakehost.file(ROUTE, "drift\n")))
     assert run.succeeded, run.error

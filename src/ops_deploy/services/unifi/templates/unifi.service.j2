@@ -54,6 +54,9 @@ TimeoutStopSec=60
 KillMode=mixed
 KillSignal=SIGTERM
 SendSIGKILL=yes
+# The JVM exits 143 (128 + SIGTERM) when systemd stops it: a clean stop,
+# not a failure (otherwise every restart logs "Failed with result 'exit-code'").
+SuccessExitStatus=143
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=true

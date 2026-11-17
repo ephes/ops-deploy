@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- UniFi: the unit sets `SuccessExitStatus=143` (template, golden file and a
+  unit test). The JVM exits 143 (128 + SIGTERM) when systemd stops it, so
+  every restart on macmini logged `Failed with result 'exit-code'`. ops-library
+  is archived since 2026-11-17, so this template is no longer byte-identical
+  to its `unifi_deploy` role. Redeploy UniFi to rewrite the unit.
+
 - backup: `UsbReplicationConfig.retired_targets` (default `()`, which renders
   the USB script unchanged) lists datasets on the rotating USB pool whose
   source is gone. After the import and key load and before any mount,

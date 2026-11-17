@@ -74,7 +74,9 @@ Java 25 on macmini), which UniFi 9.5 refuses (supported: 17-24). Like the
 vendor unit, it sets `RuntimeDirectory=unifi` (`RuntimeDirectoryMode=0750`,
 `RuntimeDirectoryPreserve=yes`): `/usr/lib/unifi/run` links to `/run/unifi`, a
 tmpfs directory the admission requires, which otherwise is missing after every
-reboot. The MongoDB repository remains
+reboot. `SuccessExitStatus=143` makes a stop a clean exit: the JVM exits 143
+(128 + SIGTERM) when systemd stops it, which otherwise logged
+`Failed with result 'exit-code'` on every restart. The MongoDB repository remains
 Ubuntu noble/8.0. The role's logging settings are reconciled while retaining
 storage, authorization, networking and other existing directives. Missing or
 ambiguous required sections are refused. MongoDB restarts only for changed
@@ -290,9 +292,10 @@ by `********`.
 
 ## Shared configuration
 
-Role templates remain byte-identical to ops-library: custom systemd unit,
-private MongoDB Java argument file, Traefik route, MongoDB logrotate and daily
-log monitor. The argfile is `root:unifi 0640` under a `root:unifi 0750`
+Role templates were ported byte-identical from ops-library (archived on
+2026-11-17, so ops-deploy owns them now): custom systemd unit, private MongoDB
+Java argument file, Traefik route, MongoDB logrotate and daily log monitor.
+Since the archive the unit differs only by `SuccessExitStatus=143`. The argfile is `root:unifi 0640` under a `root:unifi 0750`
 directory. Credentials travel in redacted stdin and are never in commands,
 unit environment variables or logs. MongoDB passwords must be nonempty,
 non-placeholder URI-unreserved text (`A-Z a-z 0-9 . _ ~ -`); HA passwords
