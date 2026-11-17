@@ -266,7 +266,6 @@
   every validation, first, converged and changed deploys on the fake host).
   ops-control's `dns_monitoring` service (the former
   `deploy-dns-monitoring.yml`) needs an ops-deploy pin that includes it.
-||||||| parent of 7a91cfc (# docs: stub cache, worksteal, bytecode cache and just test-changed)
 - Traefik transactions: the engine (`infra/traefik_tx/engine.py`) ports the
   rest of ops-library's reference engine (3110a0f1): `enroll`, `alias`,
   `metrics_bind` and `acme_storage` (with `validate_alias`,
