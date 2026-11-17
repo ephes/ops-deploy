@@ -12,6 +12,9 @@ byte for byte. On 2026-10-27 only eight shared Rust host-script stdin hashes
 were refreshed for read-only layout validation; operations, commands and uploads
 remained identical. On 2026-11-16 the same eight were refreshed again when the
 vendored ``rust_release.py.txt`` lost its Ansible import and filter adapters.
+On 2026-11-17 only the upload hash of ``thermal_metrics_httpd.py`` changed when
+the Python endpoints got the bounded-httpd block (thread per connection, cap,
+header deadline); operations, commands and the other uploads remained identical.
 """
 
 from __future__ import annotations

@@ -813,7 +813,7 @@ def test_status_endpoint_serves_only_its_path(status: types.ModuleType, tmp_path
 
     for job in JOBS:
         write_state(tmp_path / "state", job.name)
-    server = status.HTTPServer(("127.0.0.1", 0), status.Handler)
+    server = status.BoundedThreadingTCPServer(("127.0.0.1", 0), status.Handler)
     server.settings = (str(tmp_path / "state"), str(status_jobs(tmp_path)), 960)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

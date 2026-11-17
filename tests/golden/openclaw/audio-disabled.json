@@ -253,7 +253,7 @@
       "mode": "0755"
     },
     "/usr/local/bin/openclaw_metrics_httpd.py": {
-      "sha256": "7e2546704308a4398a0dad17b63a5bc67103f0c62f928734a806bb186f72c7d2",
+      "sha256": "242011ccbbf50716141613e387a124d664d5c85d8fb68e2543e967687c28ee07",
       "owner": "root",
       "group": "root",
       "mode": "0755"

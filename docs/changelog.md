@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Python HTTP endpoints: one idle or slow tailnet client no longer stalls an
+  endpoint (ops-control security audit 2026-11-12, E1). The 14 Python servers
+  (mail `metrics_httpd.py`, torrent VPN, thermal, Fractal storage and backup,
+  Tailscale, OpenClaw, os_apt_maintenance, os_lifecycle, DNS metrics, DDNS
+  status, RustFS replication status, logyard health, static site) now carry
+  the same verbatim block (`services/_metrics_httpd/files/bounded_httpd.py`):
+  a thread per connection with at most 32 at once, a 10 s per-read timeout and
+  a 15 s total deadline for the request line and headers, armed again for
+  each keep-alive request. Before, nine of them served one connection at a
+  time without a deadline, and the threaded ones let a client dripping a byte
+  inside the read timeout hold its thread forever. `tests/test_bounded_httpd.py`
+  starts every script and checks a parallel scrape against idle, half-sent and
+  dripping clients, and keeps the copies identical. The scripts' goldens change
+  (thermal plans: only the endpoint script's upload hash); each deploy
+  rewrites the script and restarts its endpoint unit once.
+- `metrics_httpd.py` (mail endpoint): a failing collector answers
+  `502 Metrics script failed` and logs its stderr to the journal, instead of
+  putting the stderr into the HTTP status line (audit E2: multi-line or
+  non-latin-1 stderr broke the response and leaked internal paths).
+
 - UniFi: the unit sets `SuccessExitStatus=143` (template, golden file and a
   unit test). The JVM exits 143 (128 + SIGTERM) when systemd stops it, so
   every restart on macmini logged `Failed with result 'exit-code'`. ops-library

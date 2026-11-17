@@ -78,6 +78,12 @@ A zero-mutating repeat assumes no new entries arrive between the plans.
 Missing queue directories are left alone. The unit restarts only
 when its inputs change; a converged repeat performs no mutating operations.
 
+A failing collector (non-zero exit) answers `502 Metrics script failed`. Its
+stderr goes to the unit's journal (`metrics script exited with <code>: ...`),
+never into the HTTP status line or body. The Python server is bounded against
+idle and slow clients like every Python endpoint (see
+[metrics-httpd: Python endpoints](metrics_httpd.md#python-endpoints-bounded-httpd)).
+
 ## Torrent VPN endpoint
 
 `TorrentVpnMetricsEndpointConfig` defaults to

@@ -2527,7 +2527,7 @@
    ],
    [
     "/usr/local/bin/thermal_metrics_httpd.py",
-    "d6303f1f392a77d097b0792baf33d93edaf6e81bfaaf2cd81224a608b91ce523"
+    "5d88ded91a140f30e953dbd7e8fd6ac6e95d7ddbcf836b4fc18935a9e4bd44b6"
    ],
    [
     "/etc/systemd/system/thermal-metrics-collector.service",

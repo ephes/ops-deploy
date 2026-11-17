@@ -721,10 +721,7 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[in
     report.write_text('{"host": "x", "meta": {"stale": true}}')
     os.utime(report, (NOW, NOW))
 
-    class Server(httpd.socketserver.TCPServer):  # type: ignore[name-defined,misc]
-        allow_reuse_address = True
-
-    instance = Server(("127.0.0.1", 0), httpd.Handler)
+    instance = httpd.BoundedThreadingTCPServer(("127.0.0.1", 0), httpd.Handler)
     instance.cfg = {
         "path": "/.well-known/os-lifecycle",
         "json_path": str(report),

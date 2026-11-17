@@ -109,6 +109,57 @@ installed release, its `--check-config`, and the check of step 6.
   daemon-reload && systemctl restart <unit>`; flip the inventory before the
   next deploy.
 
+## Python endpoints: bounded-httpd
+
+Every Python HTTP endpoint ops-deploy installs carries the same block,
+`services/_metrics_httpd/files/bounded_httpd.py`, copied verbatim into the
+script (between the `bounded-httpd begin` and `end` markers). It closes
+ops-control `docs/SECURITY_AUDIT_OPSLIB_ENDPOINTS_2026_11_12.md` E1: a
+single-threaded `socketserver.TCPServer` without a timeout let one idle
+tailnet connection stall every Nyxmon check of the endpoint.
+
+- `BoundedThreadingTCPServer`: one daemon thread per connection, at most
+  `BOUNDED_HTTPD_MAX_CONNECTIONS` (32) at once. One more connection is closed
+  as soon as it is accepted, so threads stay bounded without a unit
+  `TasksMax=` (which would also cap the Rust release behind the same unit).
+- `BoundedRequestMixin` (the first base of every handler class): each read
+  waits at most the handler's `timeout` (`BOUNDED_HTTPD_READ_TIMEOUT`, 10 s;
+  the DNS metrics endpoint keeps its own `request_timeout`), and the request
+  line and headers must arrive within `BOUNDED_HTTPD_HEADER_DEADLINE` (15 s)
+  in total. A client that drips one byte just inside the read timeout is cut
+  off too. The deadline is armed again for each request of a keep-alive
+  connection; once the headers are in, the response is written with the plain
+  read timeout.
+
+The scripts that carry it:
+
+| Deploy | Script |
+|---|---|
+| `metrics_endpoint` | `metrics_httpd.py` |
+| `torrent_vpn_metrics_endpoint` | `torrent_vpn_metrics_httpd.py` |
+| `thermal_monitoring` | `thermal_metrics_httpd.py` |
+| `fractal_monitoring` | `storage_metrics_httpd.py`, `backup_metrics_httpd.py` |
+| `infra.tailscale` | `tailscale_metrics_httpd.py` |
+| `openclaw` | `openclaw_metrics_httpd.py` |
+| `os_apt_maintenance` | `os_apt_maintenance_httpd.py` |
+| `os_lifecycle` | `os_lifecycle_httpd.py` |
+| `dns_metrics_endpoint` | `dns_metrics_httpd.py` |
+| `dns` | `ddns_status_httpd.py` |
+| `rustfs` | `replication_status.py` |
+| `logyard` | `logyard_health_httpd.py` |
+| `static_site` | `static-site-httpd.py` |
+
+The block is Python 3.8+ and uses only the standard library. A change to it
+goes into the canonical file and every copy at once:
+`tests/test_bounded_httpd.py` fails while any copy differs, while an endpoint
+script builds another server class or a handler lacks the mixin, and while a
+Python server outside this list appears. It also starts each script as on the
+host and checks that an idle, a half-sent and a dripping connection never
+stall a parallel scrape and are closed after the header deadline, plus the
+connection cap, keep-alive and the slow-but-steady case on the canonical
+block. Deploying a changed script restarts its unit, as any script change
+does.
+
 ## Differences from the role
 
 - The check of step 6 is one host script instead of the role's shell task
