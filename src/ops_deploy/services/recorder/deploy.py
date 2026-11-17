@@ -88,6 +88,9 @@ class RecorderConfig(BaseServiceConfig):
     live_room_prefix: EnvValue = "rec-"
     # None leaves RECORDER_MAX_CHUNK_BYTES out (the binary's 4 MiB default).
     max_chunk_bytes: int | None = Field(default=None, ge=1, le=999_999_999_999_999_999)
+    # None leaves RECORDER_UPLOAD_BUFFER_BYTES out (the binary's 64 MiB default):
+    # the bytes of chunk uploads buffered at the same time over all takes.
+    upload_buffer_bytes: int | None = Field(default=None, ge=1, le=999_999_999_999_999_999)
     # Empty: the binary keeps objects on the local filesystem under data_dir.
     s3_endpoint: EnvValue = ""
     s3_bucket: EnvValue = "recorder"
@@ -97,6 +100,9 @@ class RecorderConfig(BaseServiceConfig):
     mail_domain: EnvValue = "mg.wersdoerfer.de"
     mail_from: EnvValue = "Recorder <recorder@wersdoerfer.de>"
     systemd_nofile: int = Field(default=65536, ge=1024)
+    # MemoryMax= of the unit; empty leaves it out. recorderd idles below 10 MB
+    # and bounds its upload buffers at 64 MiB, so 1G is a backstop, not a budget.
+    systemd_memory_max: Annotated[str, Field(pattern=r"^([0-9]+[KMGT]?|infinity)?$")] = "1G"
     healthcheck_retries: int = Field(default=10, ge=1)
     healthcheck_timeout: int = Field(default=30, ge=1)
     # The playbook's post-deploy gate: scripts/smoke.sh through the external URL. None skips it.
@@ -170,6 +176,8 @@ def env_lines(cfg: RecorderConfig, secrets: SecretValues) -> list[tuple[str, str
     ]
     if cfg.max_chunk_bytes is not None:
         out.append(("RECORDER_MAX_CHUNK_BYTES", str(cfg.max_chunk_bytes)))
+    if cfg.upload_buffer_bytes is not None:
+        out.append(("RECORDER_UPLOAD_BUFFER_BYTES", str(cfg.upload_buffer_bytes)))
     if cfg.s3_endpoint:
         out += [
             ("RECORDER_S3_ENDPOINT", cfg.s3_endpoint),

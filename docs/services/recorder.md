@@ -40,7 +40,8 @@ never values.
 
 ## Configuration (`RecorderConfig`)
 
-Defaults follow the role's `defaults/main.yml` and the playbook.
+Defaults follow the role's `defaults/main.yml` and the playbook, except
+`systemd_memory_max`, which the role did not have.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -55,9 +56,11 @@ Defaults follow the role's `defaults/main.yml` and the playbook.
 | `traefik_entrypoints`, `traefik_cert_resolver` | `("web-secure",)`, `""` | empty resolver: `tls: {}` (wildcard cert) |
 | `live_room_prefix` | `rec-` | |
 | `max_chunk_bytes` | `None` | `None` leaves `RECORDER_MAX_CHUNK_BYTES` out |
+| `upload_buffer_bytes` | `None` | `None` leaves `RECORDER_UPLOAD_BUFFER_BYTES` out (the binary's 64 MiB): chunk-upload bytes buffered at once over all takes |
 | `s3_endpoint`, `s3_bucket`, `s3_use_ssl` | `""`, `recorder`, `false` | empty endpoint: local object store under `data_dir` |
 | `mail_api_url`, `mail_domain`, `mail_from` | role defaults | used when the secrets do not set them |
 | `systemd_nofile` | `65536` | |
+| `systemd_memory_max` | `1G` | the unit's `MemoryMax=`; empty leaves it out. A backstop: recorderd idles below 10 MB and bounds its own upload buffers |
 | `healthcheck_retries`, `healthcheck_timeout` | `10`, `30` | |
 | `smoke_url` | `None` | the playbook's post-deploy gate; `None` skips it |
 | `expect_accounts` | `true` | passes `--expect-accounts` to the smoke script |

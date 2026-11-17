@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- recorder: the unit sets `MemoryMax=` from the new
+  `RecorderConfig.systemd_memory_max` (default `1G`; empty renders the unit as
+  before), a backstop for the public chunk-upload endpoint, whose buffers
+  recorderd now bounds itself. New `RecorderConfig.upload_buffer_bytes`
+  (default `None`: not rendered) sets `RECORDER_UPLOAD_BUFFER_BYTES`. The unit
+  is no longer byte-identical to the archived `recorder_deploy` role; the next
+  recorder deploy rewrites it and restarts the service.
+
 - Python HTTP endpoints: one idle or slow tailnet client no longer stalls an
   endpoint (ops-control security audit 2026-11-12, E1). The 14 Python servers
   (mail `metrics_httpd.py`, torrent VPN, thermal, Fractal storage and backup,
@@ -23,6 +31,7 @@
   putting the stderr into the HTTP status line (audit E2: multi-line or
   non-latin-1 stderr broke the response and leaked internal paths).
 
+||||||| parent of fc9f830 (recorder: bound the unit's memory and expose the upload buffer budget)
 - UniFi: the unit sets `SuccessExitStatus=143` (template, golden file and a
   unit test). The JVM exits 143 (128 + SIGTERM) when systemd stops it, so
   every restart on macmini logged `Failed with result 'exit-code'`. ops-library

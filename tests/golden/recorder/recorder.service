@@ -15,6 +15,11 @@ Restart=always
 RestartSec=5s
 LimitNOFILE=65536
 
+# Upper bound for the whole service. The upload endpoint is public and buffers
+# chunk bodies in memory; recorderd bounds that itself (one upload per take,
+# RECORDER_UPLOAD_BUFFER_BYTES), this is the backstop for anything it misses.
+MemoryMax=1G
+
 # Hardening — the service writes only under its data dir (SQLite + scratch).
 NoNewPrivileges=true
 PrivateTmp=true

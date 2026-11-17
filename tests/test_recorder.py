@@ -234,6 +234,9 @@ def test_config_rejects_bad_inputs(tmp_path: Path) -> None:
     for bad in (
         {"source_path": tmp_path},
         {"max_chunk_bytes": 0},
+        {"upload_buffer_bytes": 0},
+        {"systemd_memory_max": "1 G"},
+        {"systemd_memory_max": "1G\nUser=root"},
         {"public_url": 'https://x/"q'},
         {"s3_bucket": 'a"b'},
         {"goarch": "386"},
