@@ -1,4 +1,4 @@
-"""Original SSH/directory preparation for the two explicitly typed pull jobs."""
+"""Original SSH/directory preparation for the explicitly typed pull job (mail)."""
 
 from pathlib import PurePosixPath
 

@@ -25,10 +25,7 @@ from .render import ENV
 
 
 class BackupSourceConfig(RoleConfig):
-    minio_enabled: bool = True
     mail_enabled: bool = True
-    minio_source_path: AbsolutePath = "/opt/backups/minio"
-    minio_command_path: AbsolutePath = "/usr/local/sbin/minio-offsite-rsync-allow.sh"
     mail_stage_path: AbsolutePath = "/mnt/cryptdata/mail-backup-stage"
     mail_vmail_path: AbsolutePath = "/mnt/cryptdata/vmail"
     mail_stage_command: AbsolutePath = "/usr/local/sbin/mail-backup-stage.sh"
@@ -56,7 +53,6 @@ class BackupRestoreAccessConfig(RoleConfig):
 
 def source_render(cfg: BackupSourceConfig, resource: str) -> str:
     return ENV.get_template(resource + ".j2").render(
-        fractal_minio_offsite_replication_source_path=cfg.minio_source_path,
         fractal_mail_offsite_replication_source_stage_path=cfg.mail_stage_path,
         fractal_mail_offsite_replication_source_vmail_path=cfg.mail_vmail_path,
         fractal_mail_backup_stage_script_path=cfg.mail_stage_command,
@@ -120,7 +116,6 @@ def put(cfg: BackupSourceConfig, name: str, destination: str, mode: str = "0755"
 @deploy("Prepare original delegated backup source")
 def deploy_backup_source(
     cfg: BackupSourceConfig,
-    minio_public_key: SecretStr | None = None,
     mail_public_key: SecretStr | None = None,
     mail_private_key: SecretStr | None = None,
     restore_client: bool = True,
@@ -128,10 +123,9 @@ def deploy_backup_source(
     # Original pre-task assertions require these public/private source fields
     # before installing wrappers, including when client preparation is deferred.
     # Validation is retained; macmini authorization remains owned elsewhere.
-    minio = public_key_input(minio_public_key) if cfg.minio_enabled else None
     mail = public_key_input(mail_public_key) if cfg.mail_enabled else None
     private = key_input(mail_private_key) if cfg.mail_enabled else None
-    if minio is None and mail is None:
+    if mail is None:
         return
     require_linux("original backup source")
     files.directory(
@@ -141,9 +135,6 @@ def deploy_backup_source(
         group="root",
         mode="0700",
     )
-    if minio is not None:
-        put(cfg, "minio-offsite-rsync-allow.sh", cfg.minio_command_path)
-
     if mail is not None and private is not None:
         put(cfg, "mail-backup-stage.sh", cfg.mail_stage_command, "0750")
         put(cfg, "mail-offsite-allow.sh", cfg.mail_command_path)

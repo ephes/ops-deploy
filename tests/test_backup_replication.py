@@ -16,7 +16,6 @@ from pydantic import ValidationError
 
 from ops_deploy.infra.backup import (
     MailReplicationConfig,
-    MinioArchiveConfig,
     SnapshotRetention,
     SyncoidConfig,
     SyncoidJob,
@@ -48,7 +47,7 @@ def jobs() -> tuple[SyncoidJob, ...]:
     return (SyncoidJob(source="fast/data", target="tank/data"),)
 
 
-@pytest.mark.parametrize("model", [SyncoidConfig, UsbReplicationConfig, MinioArchiveConfig, MailReplicationConfig])
+@pytest.mark.parametrize("model", [SyncoidConfig, UsbReplicationConfig, MailReplicationConfig])
 def test_disabled_original_policy_needs_no_secret_or_runtime_config(model: Any) -> None:
     assert not model(enabled=False).enabled
 
@@ -100,16 +99,12 @@ def test_exact_three_policy_defaults_and_raw_rollback_switch() -> None:
     local = SyncoidConfig(jobs=jobs())
     usb = UsbReplicationConfig(pool="vault", device="/dev/disk/by-id/owned", jobs=jobs())
     mail = MailReplicationConfig(source_host="owned.example")
-    archive = MinioArchiveConfig(source_host="owned.example")
     assert local.default_args == ("--no-rollback",)
     assert local.on_calendar == "02:00"
     assert usb.on_calendar == "Sun 04:00"
     assert usb.anchor_mode == "sync_snapshot"
     assert mail.snapshot_keep == 30
     assert mail.on_calendar == "04:00"
-    assert archive.on_calendar == "05:00"
-    assert not archive.rsync_delete
-    assert not archive.require_archives
     assert "--delete" in mail.vmail_rsync_extra_args
     assert "--delete" not in mail.stage_rsync_extra_args
     assert not any("private_key" in name or name == "key" for name in type(mail).model_fields)
@@ -120,14 +115,14 @@ def test_exact_three_policy_defaults_and_raw_rollback_switch() -> None:
     [
         {"on_calendar": "01:00\nExecStart=bad"},
         {"source_host": "owned;bad"},
-        {"source_path": "/a/../b"},
-        {"rsync_extra_args": ["--rsh=$(bad)"]},
+        {"source_vmail_path": "/a/../b"},
+        {"vmail_rsync_extra_args": ["--rsh=$(bad)"]},
         {"spindown_enabled": True},
     ],
 )
 def test_template_or_path_ambiguity_refuses_before_operations(changes: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
-        MinioArchiveConfig.model_validate({"source_host": "owned.example", **changes})
+        MailReplicationConfig.model_validate({"source_host": "owned.example", **changes})
 
 
 def test_retention_keeps_original_days_and_managed_prefix_contract() -> None:
@@ -202,7 +197,6 @@ def test_secret_path_symlink_refuses_before_content_read(tmp_path: Path) -> None
 MODELS: dict[str, type[BackupConfig]] = {
     "zfs_syncoid_replication": SyncoidConfig,
     "zfs_usb_replication": UsbReplicationConfig,
-    "minio_offsite_replication": MinioArchiveConfig,
     "mail_offsite_replication": MailReplicationConfig,
 }
 
@@ -262,14 +256,12 @@ def test_source_preparation_never_authorizes_keys_on_macmini(monkeypatch: pytest
     raw = SecretStr("ssh-ed25519 " + public_key() + " synthetic-comment")
     inspect.unwrap(module.deploy_backup_source)(
         cfg=module.BackupSourceConfig(mail_restore_host="owned.example"),
-        minio_public_key=raw,
         mail_public_key=raw,
         mail_private_key=SecretStr("synthetic-private-only"),
         restore_client=False,
     )
     assert writes == [
         "/root/.ssh",
-        "/usr/local/sbin/minio-offsite-rsync-allow.sh",
         "/usr/local/sbin/mail-backup-stage.sh",
         "/usr/local/sbin/mail-offsite-allow.sh",
     ]
@@ -290,7 +282,9 @@ def test_invalid_source_public_key_refuses_before_any_source_file_operation(monk
     monkeypatch.setattr(module.files, "directory", forbidden)
     with pytest.raises(DeployError, match="public key is invalid"):
         inspect.unwrap(module.deploy_backup_source)(
-            cfg=module.BackupSourceConfig(mail_enabled=False), minio_public_key=SecretStr("invalid-public-key")
+            cfg=module.BackupSourceConfig(mail_restore_host="owned.example"),
+            mail_public_key=SecretStr("invalid-public-key"),
+            mail_private_key=SecretStr("synthetic-private-only"),
         )
 
 
@@ -337,7 +331,6 @@ def test_mail_private_key_filter_is_applied_by_actual_callers_only(monkeypatch: 
     expected = source.get_secret_value() + "\n"
     for module_name, cfg, filtered in [
         ("mail", MailReplicationConfig(source_host="owned.example"), True),
-        ("archive", MinioArchiveConfig(source_host="owned.example"), False),
     ]:
         module = importlib.import_module("ops_deploy.infra.backup." + module_name)
         seen: list[str] = []

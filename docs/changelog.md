@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- backup: the MinIO archive pull is removed: `MinioArchiveConfig`,
+  `deploy_minio_archive`, the `minio-offsite-replication` service, timer,
+  failure unit, script and alert templates, and on the source side
+  `BackupSourceConfig.minio_enabled`, `minio_source_path`,
+  `minio_command_path`, `deploy_backup_source(minio_public_key=...)` and the
+  forced command `minio-offsite-rsync-allow.sh`. `BackupSourceConfig` refuses
+  the removed fields (unknown keys fail): callers that passed
+  `minio_enabled=False` drop it. The mail pull and its source are unchanged
+  (their goldens are byte-identical).
+
 - minio: `services.minio` is removed (the MinIO server deploy, its IAM
   convergence, the policy rollback and user retirement operations, their
   goldens, fixtures and the container harness). MinIO is retired and deleted

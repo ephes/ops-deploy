@@ -652,8 +652,8 @@ Binary size comparisons use Decimal multiplication and truncation, including
 an ordinary managed `zfs set` on each invocation; it is not a read-only no-op.
 
 `ops_deploy.infra.backup` provides `SyncoidConfig`, `UsbReplicationConfig`,
-`MinioArchiveConfig`, `MailReplicationConfig` and their four `deploy_*`
-functions. `SyncoidJob`, `UsbDrive` and `SnapshotRetention` retain explicit
+`MailReplicationConfig` and their three `deploy_*` functions (the MinIO
+archive pull, `MinioArchiveConfig`, is removed with MinIO). `SyncoidJob`, `UsbDrive` and `SnapshotRetention` retain explicit
 rollback, force-delete, partial-receive, bookmark-rotation and managed-prefix
 retention policies. The original scripts/templates are preserved; Sanoid stays
 its separate existing API. Deploy configures packages, declared directories,
@@ -667,7 +667,7 @@ On-host private-file equality stays in RAM and produces no credential digest or
 file export; Linux OpenSSH validates private keys through a private anonymous
 RAM descriptor. Existing content is preserved when only mode/ownership changes. Mail-role and
 macmini restore-client private keys retain the original `regex_replace` literal
-newline transformation; MinIO private-key bytes remain unmodified.
+newline transformation.
 Known-host management performs a fresh ordinary peer keyscan every invocation,
 compares before writing and preserves unrelated entries, aliases, comments and
 other key types. It retains the original keyscan trust policy; it does not add

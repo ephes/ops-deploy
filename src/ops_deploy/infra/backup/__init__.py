@@ -1,9 +1,7 @@
 """Typed original configuration for scheduled replication; no deploy starts a backup."""
 
-from .archive import deploy_minio_archive
 from .config import (
     MailReplicationConfig,
-    MinioArchiveConfig,
     SnapshotRetention,
     SyncoidConfig,
     SyncoidJob,
@@ -25,7 +23,6 @@ __all__ = [
     "BackupRestoreAccessConfig",
     "BackupSourceConfig",
     "MailReplicationConfig",
-    "MinioArchiveConfig",
     "SnapshotRetention",
     "SyncoidConfig",
     "SyncoidJob",
@@ -35,7 +32,6 @@ __all__ = [
     "deploy_backup_restore_client",
     "deploy_backup_source",
     "deploy_mail_replication",
-    "deploy_minio_archive",
     "deploy_syncoid",
     "deploy_usb_replication",
 ]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from .config import BackupConfig, MailReplicationConfig, MinioArchiveConfig, SyncoidConfig, UsbReplicationConfig
+from .config import BackupConfig, MailReplicationConfig, SyncoidConfig, UsbReplicationConfig
 
 ENV = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -32,12 +32,6 @@ def context(cfg: BackupConfig) -> dict[str, object]:
         )
     elif isinstance(cfg, SyncoidConfig):
         prefix = "zfs_syncoid_replication"
-    elif isinstance(cfg, MinioArchiveConfig):
-        prefix = "minio_offsite_replication"
-        values.update(
-            status_file=cfg.status_file or cfg.status_dir + "/status.json",
-            latest_marker_file=cfg.latest_marker_file or cfg.status_dir + "/latest-archive.marker",
-        )
     elif isinstance(cfg, MailReplicationConfig):
         prefix = "mail_offsite_replication"
         values.update(

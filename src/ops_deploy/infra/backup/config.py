@@ -215,31 +215,6 @@ class OffsiteConfig(BackupConfig):
         return self
 
 
-class MinioArchiveConfig(OffsiteConfig):
-    service_name: UnitName = "minio-offsite-replication"
-    timer_name: UnitName = "minio-offsite-replication"
-    on_calendar: str = "05:00"
-    randomized_delay_sec: str = "15m"
-    timeout_sec: str = "4h"
-    source_path: AbsolutePath = "/opt/backups/minio"
-    ssh_key_path: AbsolutePath = "/root/.ssh/minio-offsite-replication-ed25519"
-    destination_path: AbsolutePath = "/tank/backups/minio"
-    status_dir: AbsolutePath = "/var/lib/minio-offsite-replication"
-    archive_patterns: tuple[str, ...] = ("*.tar.gz", "*.tar.zst")
-    rsync_extra_args: tuple[str, ...] = ("--archive", "--hard-links", "--numeric-ids", "--partial-dir=.rsync-partial")
-    rsync_delete: bool = False
-    require_archives: bool = False
-    alert_subject_prefix: str = "[minio-offsite]"
-    alert_script_path: AbsolutePath = "/usr/local/bin/minio-offsite-alert.sh"
-    script_path: AbsolutePath = "/usr/local/bin/minio-offsite-replication.sh"
-
-    @model_validator(mode="after")
-    def _patterns(self) -> MinioArchiveConfig:
-        if self.enabled and (not self.archive_patterns or any(not p.strip() for p in self.archive_patterns)):
-            raise ValueError("original archive selection requires nonempty literal patterns")
-        return self
-
-
 class MailReplicationConfig(OffsiteConfig):
     service_name: UnitName = "mail-offsite-replication"
     timer_name: UnitName = "mail-offsite-replication"

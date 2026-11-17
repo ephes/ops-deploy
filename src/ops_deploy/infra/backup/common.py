@@ -1,4 +1,4 @@
-"""Original package/file/timer mechanics shared by the four explicit policies."""
+"""Original package/file/timer mechanics shared by the explicit policies."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def key_input(content: SecretStr | None) -> SecretStr:
 
 
 def mail_key_input(content: SecretStr | None) -> SecretStr:
-    """Exact original mail-role/restore-client regex; MinIO remains raw.
+    """Exact original mail-role/restore-client regex.
 
     The original re.sub pattern also adds one LF to a value already ending in
     LF. Preserve that literal source transformation, not a new normalization.
