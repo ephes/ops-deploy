@@ -248,7 +248,7 @@ def iam_namespace(backend: str) -> dict[str, Any]:
     return namespace
 
 
-@pytest.fixture(params=["echoport-minio", "minio", "rustfs"])
+@pytest.fixture(params=["echoport-minio", "rustfs"])
 def policy_matches(request: pytest.FixtureRequest, fake_mc: Path) -> Callable[[dict[str, Any], dict[str, Any]], bool]:
     def matches(declared: dict[str, Any], stored: dict[str, Any]) -> bool:
         if request.param == "echoport-minio":

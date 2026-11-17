@@ -105,7 +105,6 @@ nav:
       - Voice Memo work (disabled state): services/daybook_voice_memo_work.md
       - os_lifecycle: services/os_lifecycle.md
       - jellyfin: services/jellyfin.md
-      - minio: services/minio.md
       - legacy_retirement: services/legacy_retirement.md
       - Home Assistant (in preparation): services/homeassistant.md
       - rustfs (prepared): services/rustfs.md

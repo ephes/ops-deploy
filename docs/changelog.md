@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- minio: `services.minio` is removed (the MinIO server deploy, its IAM
+  convergence, the policy rollback and user retirement operations, their
+  goldens, fixtures and the container harness). MinIO is retired and deleted
+  on every host; RustFS is the only S3 store. The pinned `mc` it installed
+  now comes from `services._echoport.mc` (`MC_VERSION`, `MC_SHA256`); callers
+  of `services.minio.config.MC_VERSION`/`MC_SHA256` read them there.
+
 - mc: `ops_deploy.services._echoport.mc` holds the pinned MinIO Client (`MC_VERSION`
   `RELEASE.2025-08-13T08-35-41Z`, linux-amd64, `MC_SHA256`, `MC_DOWNLOAD_URL`)
   and `install_mc(path)`: `/usr/local/bin/mc`, `root:root 0755`, kept when its
