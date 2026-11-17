@@ -18,7 +18,7 @@ from pyinfra.api import DeployError
 
 from ops_deploy.services._echoport.mc import MC_SHA256
 from ops_deploy.services._echoport_runner import RunnerConfig, runner_script, service_config, sudoers_rule
-from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest, render_account_policy
+from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest
 from ops_deploy.services._echoport_runner.generic import (
     GenericRunnerRegistration,
     install_generic_registration,
@@ -53,7 +53,6 @@ LIVE_SUDOERS = (
 STEPS = ("init", "backup", "download", "upload", "verify", "extract", "stop", "restore", "start", "result")
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
 MC_PRESENT = fakehost.mc_installed()
-ACCOUNT_PROBE = "def statements(doc)"
 STORED = "select data::text from service where name"
 
 
@@ -73,16 +72,8 @@ def runner() -> RunnerConfig:
 
 
 def access(target: str, alias: str, *, retired: tuple[str, ...] = ("minio",)) -> MinioAccess:
-    url = "http://127.0.0.1:9020" if alias.startswith("rustfs-") else "http://127.0.0.1:9001"
-    return MinioAccess(
-        target=target,
-        os_user="root",
-        alias=alias,
-        url=url,
-        scoped=True,
-        retired_aliases=retired,
-        **({"store": "rustfs", "rustfs_account": True} if alias.startswith("rustfs-") else {}),
-    )
+    # Every target is on RustFS; the recorded macmini case keeps its alias names.
+    return MinioAccess(target=target, os_user="root", alias=alias, url="http://127.0.0.1:9020", retired_aliases=retired)
 
 
 def registration(aliases: dict[str, str] | None = None, **changes: Any) -> GenericRunnerRegistration:
@@ -116,18 +107,10 @@ def converged(cfg: GenericRunnerRegistration) -> dict[Any, Any]:
         **ANCESTORS,
         **MC_PRESENT,
         **fakehost.deb_installed(*cfg.packages),
-        ACCOUNT_PROBE: ["policy=ok user=attached"],
         re.compile(r"alias list minio \)"): ["none"],
-        **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
     }
     for a in cfg.accesses:
-        responses[re.compile(rf"mc ls {a.alias}/backups/{a.target}/ >/dev/null && echo ok")] = ["ok"]
         responses[re.compile(rf"alias list {a.alias} \)")] = [alias_digest(a.url, a.account.user, secret(a.target))]
-        responses.update(
-            fakehost.file(
-                f"/etc/minio/policies/backup-{a.target}.json", render_account_policy(a.account), mode="-rw-r-----"
-            )
-        )
     for path in ("/usr/local/libexec", run.libexec_root, run.runner_dir, run.services, run.service_dir):
         responses.update(fakehost.directory(path))
     responses.update(fakehost.directory("/etc/sudoers.d"))
@@ -181,12 +164,10 @@ def test_a_converged_host_gets_no_mutating_operation() -> None:
 
 
 def test_a_first_run_follows_the_playbooks_order() -> None:
-    # Two targets, one of them moved to RustFS.
-    cfg = registration({"archive": "backup-archive", "nyxmon": "rustfs-backup-nyxmon"})
+    cfg = registration({"archive": "rustfs-backup-archive", "nyxmon": "rustfs-backup-nyxmon"})
     responses: dict[Any, Any] = {
         **ANCESTORS,
         **MC_PRESENT,
-        ACCOUNT_PROBE: ["policy=missing user=missing"],
         re.compile(r"alias list minio \)"): ["present-digest"],
     }
     run = run_deploy_fake(register_generic_runner, cfg, secrets=secrets(cfg), responses=responses)
@@ -198,14 +179,13 @@ def test_a_first_run_follows_the_playbooks_order() -> None:
         "Install the echoport-backup runner script",
         "Write config.json of echoport-backup",
         "Sync FastDeploy services for echoport-backup",
-        "Create or update MinIO user of archive",
-        "Configure mc alias backup-archive of root",
+        "Configure mc alias rustfs-backup-archive of root",
         "Remove retired mc alias minio of root",
         "Configure mc alias rustfs-backup-nyxmon of root",
     ]
     assert [n for n in names if n in order] == order
-    # RustFS creates its own accounts; the retired alias goes once.
-    assert "Create or update MinIO user of nyxmon" not in names
+    # RustFS creates the accounts; the retired alias goes once.
+    assert not any("MinIO user" in n or "MinIO policy" in n for n in names)
     assert names.count("Remove retired mc alias minio of root") == 1
     assert not any(s in run.all_text() for s in secrets(cfg).values())
 
@@ -234,7 +214,7 @@ def test_a_bad_secret_refuses_before_any_write() -> None:
     cfg = registration()
     given = {**secrets(cfg), "nyxmon": "CHANGEME"}
 
-    assert "32 to 40 characters" in refused(run_deploy_fake(deploy(cfg, given), responses=converged(cfg)))
+    assert "placeholder CHANGEME" in refused(run_deploy_fake(deploy(cfg, given), responses=converged(cfg)))
 
 
 @pytest.mark.parametrize(
@@ -255,7 +235,6 @@ def test_a_bad_secret_refuses_before_any_write() -> None:
         (lambda v, a: (v, a[:-1]), "in order"),
         (lambda v, a: ({**v, "echoport_backup_default_bucket": "other"}, a), "every access's bucket"),
         (lambda v, a: ({**v, "echoport_backup_minio_require_prefix_alias": "yes"}, a), "must be a bool"),
-        (lambda v, a: (v, (*a[:-1], a[-1].model_copy(update={"scoped": False}))), "scoped account"),
         (lambda v, a: (v, (*a[:-1], a[-1].model_copy(update={"retired_aliases": ()}))), "same aliases"),
     ],
 )

@@ -76,33 +76,31 @@ the same way, with ansible-core's `quote` (`shlex.quote`) as well.
 
 The port of `common/backup_minio_account.yml`. ops-control resolves the
 target from `playbooks/vars/backup_minio_accounts.yml` into a `MinioAccess`
-(target, OS user, alias, store URL, whether it is switched, store, retired
-aliases) and passes the access key and secret. The registrations install the
+(target, OS user, alias, store URL, retired aliases) and passes the access key
+and secret. Every target is on RustFS with its own scoped account
+(`store: rustfs`, `scoped` and `rustfs_account` true, the defaults; anything
+else is refused): the MinIO store, where this created the account through
+root's MinIO admin alias, and the shared alias with the MinIO root
+credentials are removed with MinIO. The registrations install the
 pinned `mc` (`ops_deploy.services._echoport.mc.install_mc`: `RELEASE.2025-08-13T08-35-41Z`,
 linux-amd64, `/usr/local/bin/mc`, `root:root 0755`) before the access: a file
 with the pinned sha256 is kept, anything else is downloaded and verified
 before it replaces the file. While planning, a host without `mc` reads every
 alias as missing.
 
-- a switched target on MinIO gets its scoped account through root's MinIO
-  admin alias (`minio_deploy`'s `backup_account`, as the echoport deploy ports
-  it): policy `backup-<target>` (read, write and list `backups/<prefix>/`,
-  no delete), user `bk-<sha256(target)[:17]>`; the secret goes to
-  `mc admin user add` on stdin. The policy and user are written only when the
-  probe finds them missing or different, or when the runner's alias does not
-  hold the secret yet or cannot list `backups/<prefix>/` with it (for a runner
-  without an alias, every run, as the role);
+- the access key must be the account user `bk-<sha256(target)[:17]>` and the
+  secret must not be `CHANGEME` (the MinIO role's 32-to-40-character check
+  went with the MinIO store);
 - the runner user's `mc` alias is imported from a private file in a
   root-owned `0711` temporary directory when its stored URL, access key or
   secret differs (`mc alias import`; the credentials never reach argv), and
   the retired aliases are removed when present;
-- `store: rustfs` needs a switched target with `rustfs_account: true`; the
-  RustFS deploy creates that account, and the run proves it with
-  `mc ls <alias>/backups/<target>/` as the runner user.
+- the RustFS deploy creates the account, and the run proves it with
+  `mc ls <alias>/backups/<target>/` as the runner user;
+- a runner without an alias (`os_user` `none`, rclone) changes nothing here.
 
-The registry's own refusals (an unmanaged entry, retiring the shared alias
-while one of the user's targets is not switched) stay with ops-control's
-resolution.
+The registry's own refusals (an unmanaged entry, a target without its secret
+or RustFS account) stay with ops-control's resolution.
 
 ## Work dir (`access.work_dir`)
 
@@ -339,7 +337,7 @@ the deploy user: its sudoers file has the `fastdeploy -> deploy` line only.
 | `known_hosts` | `deploy_known_host_ed25519.yml` per name, then "Ensure known_hosts ownership" (`deploy:deploy 0644`) | `access.known_hosts_entries`, then `files.file` |
 | `mc` | "Ensure mc is installed" | `_echoport.mc.install_mc`: the pinned client, no change when its sha256 matches |
 | `packages` | `ansible.builtin.package` | `apt.packages`, no cache update |
-| `access` | `backup_minio_account.yml` | `access.minio_access`: the scoped account and the deploy user's alias; a media runner (`os_user` `none`) gets the account only, upserted on every run as the role does (no alias proves its secret current) |
+| `access` | `backup_minio_account.yml` | `access.minio_access`: the deploy user's alias of the scoped RustFS account; a media runner (`os_user` `none`) gets nothing here (the RustFS deploy owns its account) |
 | `work_dir` | `backup_work_dir.yml` | `access.work_dir` |
 | `credentials` | the media credentials directory (`root:deploy 0750`) and file (`root:deploy 0640`, `no_log`) | `files.directory` and `ops.secret_file`; the content is the playbook's `copy` content (`media_credentials`: four `to_json` values, the block's final newline); the directory must not be `/` or a top-level one |
 | `runner` | `fastdeploy_runner` | `install_runner` |
@@ -353,8 +351,7 @@ playbooks refuse or never do: a template that is no vendored runner or lacks
 `_work_dir.py.j2`, a media template without `--no-check-dest` (their
 "Require a media runner that works with a scoped MinIO account"), a `run_as`
 rule, an access or work dir of another user, a target without its scoped
-account (the media playbooks' fallback to the MinIO root credentials stays
-with the playbook), known hosts in another file, and template variables that
+account, known hosts in another file, and template variables that
 differ from what the registration provisions (`echoport_backup_*` as for A1,
 and every `*_work_dir`, `*_work_mount`, `*_credentials_file`, `*_minio_url`
 and `*_default_bucket`). A variable the registration leaves out is checked
@@ -364,7 +361,7 @@ reads, and the source bucket must be an S3 bucket name (the template writes it
 into a Python string unescaped). Every refusal comes while
 planning, before any write; the playbooks fail at their task instead, after
 the earlier tasks wrote. On a converged host the plan has no mutating
-operation, apart from a media runner's MinIO user upsert. No Echoport row is
+operation. No Echoport row is
 written: the rows stay managed by hand.
 
 Class B part 2 (django-chat-staging-db, ggs-lennestrasse-staging-db,
@@ -546,8 +543,8 @@ ops-control's `register-echoport-backup.yml` runs ops-library's
 `echoport_backup` role and then `common/backup_minio_account.yml` once for
 every target the generic runner `echoport-backup` serves. The runner picks
 the `mc` alias by the first segment of the object key
-(`MINIO_PREFIX_ALIASES`), so each target has its own scoped MinIO account
-and root alias. `GenericRunnerRegistration` holds the role's
+(`MINIO_PREFIX_ALIASES`), so each target has its own scoped account on
+RustFS and root alias. `GenericRunnerRegistration` holds the role's
 `fastdeploy_runner` settings (`backup.py.j2`, run as root, sudoers file
 `/etc/sudoers.d/echoport_backup`), one `MinioAccess` per target in the
 playbook's loop order, and the template variables. It refuses a prefix alias
@@ -557,13 +554,12 @@ accesses'. `install_generic_registration` (`register_generic_runner` as a
 deploy) runs, in the playbook's order:
 
 - the role's `sqlite3` package (no cache update);
-- the role's pinned `mc` through the MinIO deploy's `binary` helper: kept
-  when its sha256 is the pinned one, else downloaded and verified before it
-  replaces the file (`root:root 0755`, as `get_url` with the checksum);
+- the role's pinned `mc` (`_echoport.mc.install_mc`): kept when its sha256
+  is the pinned one, else downloaded and verified before it replaces the file
+  (`root:root 0755`, as `get_url` with the checksum);
 - the runner (`install_runner`);
-- per target, `access.minio_access`: the scoped MinIO account (or, for a
-  target with `store: rustfs`, only the proof through its alias) and root's
-  alias.
+- per target, `access.minio_access`: root's alias and the proof of the
+  target's RustFS account through it.
 
 Two differences from the playbook: a host without `mc` reads every alias as
 missing while planning (the pinned client is installed before the aliases);
@@ -595,7 +591,7 @@ targets) and plans no mutating operation on that host.
 - `tests/test_echoport_runner_deploy_registration.py`: the seven A2 and A3
   runners render through `DeployRunnerRegistration` to the same sha256 (the
   media source bucket from the fixtures' secret), a host the playbook left
-  plans no mutating operation (a media runner: only its MinIO user upsert),
+  plans no mutating operation,
   the parts run in each playbook's order, two known hosts end as two
   `known_hosts` tasks leave the file (checked against the real `ssh-keygen`),
   and the credentials file is the playbooks' `copy` content.

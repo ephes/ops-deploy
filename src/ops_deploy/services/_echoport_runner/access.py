@@ -3,12 +3,12 @@
 Ports of the ops-control includes every register playbook shares:
 
 - :func:`minio_access`: ``playbooks/common/backup_minio_account.yml`` (with
-  ``minio_deploy``'s ``backup_account`` and ``echoport_backup``'s
-  ``minio_alias``). Which account, alias, store and secret a target gets is
-  decided in ops-control from ``playbooks/vars/backup_minio_accounts.yml``;
-  :class:`MinioAccess` carries the result. The registry's own refusals (an
-  unmanaged entry, retiring the shared alias while a target still needs it)
-  stay with that resolution.
+  ``echoport_backup``'s ``minio_alias``) for a target on RustFS: the RustFS
+  deploy creates the scoped account, this sets the runner's ``mc`` alias and
+  proves the account through it. Which account, alias and secret a target
+  gets is decided in ops-control from ``playbooks/vars/backup_minio_accounts.yml``;
+  :class:`MinioAccess` carries the result. (The MinIO store, where this
+  created the account through root's MinIO admin alias, is gone with MinIO.)
 - :func:`work_dir`: ``playbooks/common/backup_work_dir.yml``.
 - :func:`known_host`: ``playbooks/common/deploy_known_host_ed25519.yml``.
 
@@ -42,8 +42,7 @@ from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.ops import secret_stdin
-from ops_deploy.services.echoport.deploy import MC_ALIAS_PROBE, McAdminProvisioner, MinioAccount
-from ops_deploy.services.echoport.deploy import _templates as _policy_templates
+from ops_deploy.services.echoport.deploy import MC_ALIAS_PROBE, MinioAccount
 from ops_deploy.services.vibe_coding.render import known_hosts
 
 _ALIAS = r"^[A-Za-z][A-Za-z0-9_-]*$"
@@ -54,11 +53,11 @@ User = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}$")]
 PlainPath = Annotated[str, Field(pattern=r"^/[A-Za-z0-9._/-]*$")]
 
 
-# -- MinIO account and mc alias ---------------------------------------------------
+# -- object-store account and mc alias --------------------------------------------
 
 
 class RunnerAccount(MinioAccount):
-    """``minio_deploy``'s ``backup_account`` as the include calls it: read, write and list ``<bucket>/<prefix>/``.
+    """A runner's scoped account: read, write and list ``<bucket>/<prefix>/`` (created by the RustFS deploy).
 
     ``name`` is the target, the user ``bk-<sha256(name)[:17]>`` (the registry's
     ``backup_minio_account_user``), the policy ``backup-<name>``.
@@ -78,34 +77,35 @@ class RunnerAccount(MinioAccount):
 class MinioAccess(RoleConfig):
     """One target's object-store access, as ops-control resolves it from the registry.
 
-    ``scoped``: the target has a secret in ``minio-backup-accounts.yml`` (its
-    own account; else the shared alias with the MinIO root credentials).
-    ``store``: where the runner writes; ``rustfs`` needs a scoped target whose
-    entry declares ``rustfs_account: true`` (the RustFS deploy creates that
-    account; this include only proves it). ``os_user`` ``none``: a runner that
-    reads its credentials from its own file (rclone) and gets no alias.
+    Every target is on RustFS (``store``) with its own scoped account
+    (``scoped``, a secret in ``minio-backup-accounts.yml``) that the RustFS
+    deploy creates (``rustfs_account``); this include only proves it. The
+    MinIO store and the shared alias with the MinIO root credentials are gone
+    with MinIO. ``os_user`` ``none``: a runner that reads its credentials from
+    its own file (rclone) and gets no alias.
     """
 
     target: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")]
     os_user: Literal["none"] | User
     alias: Alias
     url: Url
-    scoped: bool
-    store: Literal["minio", "rustfs"] = "minio"
-    rustfs_account: bool = False
+    scoped: bool = True
+    store: Literal["rustfs"] = "rustfs"
+    rustfs_account: bool = True
     retired_aliases: tuple[Alias, ...] = ()
     bucket: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]{2,62}$")] = "backups"
     prefixes: tuple[Prefix, ...] = ()
     mc: PlainPath = "/usr/local/bin/mc"
-    admin_alias: Alias = "local"
-    policy_dir: PlainPath = "/etc/minio/policies"
     # The home ``mc`` runs with for ``os_user`` (default ``/root`` or ``/home/<user>``).
     home: PlainPath | None = None
 
     @model_validator(mode="after")
     def _store_and_aliases(self) -> MinioAccess:
-        if self.store == "rustfs" and not (self.scoped and self.rustfs_account):
-            raise ValueError("store rustfs needs a secret and rustfs_account: true (then just deploy-one rustfs) first")
+        if not (self.scoped and self.rustfs_account):
+            raise ValueError(
+                "a target needs its scoped account (a secret) and rustfs_account: true"
+                " (then just deploy-one rustfs) first"
+            )
         if self.alias in self.retired_aliases:
             raise ValueError("the alias must not be retired in the same run")
         return self
@@ -118,29 +118,7 @@ class MinioAccess(RoleConfig):
 
     @property
     def account(self) -> RunnerAccount:
-        return RunnerAccount(
-            name=self.target,
-            bucket=self.bucket,
-            prefixes=self.prefixes,
-            admin_alias=self.admin_alias,
-            policy_dir=PurePosixPath(self.policy_dir),
-        )
-
-
-def render_account_policy(account: RunnerAccount) -> str:
-    """``backup-account-policy.json.j2`` of ``minio_deploy`` for the account's prefixes."""
-
-    return (
-        _policy_templates()
-        .get_template("backup-account-policy.json.j2")
-        .render(
-            minio_backup_account_bucket=account.bucket,
-            minio_backup_account_prefixes=list(account.key_prefixes),
-            minio_backup_account_whole_bucket=False,
-            minio_backup_account_allow_put=account.allow_put,
-            minio_backup_account_allow_delete=account.allow_delete,
-        )
-    )
+        return RunnerAccount(name=self.target, bucket=self.bucket, prefixes=self.prefixes)
 
 
 def _mc(cfg: MinioAccess, *args: str) -> str:
@@ -162,66 +140,6 @@ def alias_digest(url: str, access_key: str, secret_key: str) -> str:
     """What :func:`alias_check` prints for an alias holding these values."""
 
     return hashlib.sha256("\n".join((url, access_key, secret_key)).encode()).hexdigest()
-
-
-def _account(cfg: MinioAccess, secret_key: str) -> None:
-    """``minio_deploy``'s ``backup_account`` through root's MinIO admin alias (as the echoport deploy ports it).
-
-    The policy is created and the user upserted only when the probe finds them
-    missing or different; the secret counts as current when the runner's alias
-    already holds it and lists the target's prefix with it. A runner without an alias (``os_user`` ``none``) gives no
-    such proof, so its user is upserted on every run, as the role does.
-    """
-
-    # The role's input check; the value is never printed.
-    if not (32 <= len(secret_key) <= 40 and secret_key != "CHANGEME"):
-        raise DeployError("a backup account secret must have 32 to 40 characters and not be CHANGEME")
-    account = cfg.account
-    admin = McAdminProvisioner(PurePosixPath(cfg.mc), account.admin_alias)
-    document = render_account_policy(account)
-    state = probe(admin.state("probe", account, document), name=f"MinIO account {account.name}")
-    found = dict(part.partition("=")[::2] for part in (state or "").split())
-    stored = login = ""
-    if cfg.os_user != "none":
-        stored = (probe(alias_check(cfg, cfg.alias), name=f"mc alias {cfg.alias} of {cfg.os_user}") or "").strip()
-        # The server must accept the secret too (a user re-added by hand or restored keeps another one).
-        listing = f"{_mc(cfg, 'ls', f'{cfg.alias}/{account.bucket}/{account.key_prefixes[0]}/')} >/dev/null && echo ok"
-        login = output(when_present([cfg.user_home, cfg.mc], listing, otherwise="no")).strip()
-    exists = found.get("user") in ("attached", "unattached")
-    current = exists and stored == alias_digest(cfg.url, account.user, secret_key) and login == "ok"
-
-    mark_read_only(server.shell(name=f"Require {admin.admin}", commands=[admin.require_admin()]))
-    files.directory(
-        name="Create MinIO policy directory", path=str(account.policy_dir), user="root", group="root", mode="0750"
-    )
-    policy_file = files.put(
-        name=f"Install MinIO policy {account.policy}",
-        src=StringIO(document),
-        dest=str(account.policy_path),
-        user="root",
-        group="root",
-        mode="0640",
-        create_remote_dir=False,
-    )
-    server.shell(
-        name=f"Create or update MinIO policy {account.policy}",
-        commands=[admin.create_policy(account)],
-        _if=lambda: policy_file.did_change() or found.get("policy") != "ok",
-    )
-    secret_stdin(
-        name=f"Create or update MinIO user of {account.name}",
-        command=admin.add_user(account),
-        content=SecretContent(f"{account.user}\n{secret_key}\n"),
-        _if=lambda: not current,
-    )
-    server.shell(
-        name=f"Attach MinIO policy {account.policy}",
-        commands=[admin.attach_policy(account)],
-        _if=lambda: found.get("user") != "attached",
-    )
-    mark_read_only(
-        server.shell(name=f"Verify MinIO account {account.name}", commands=[admin.state("verify", account, document)])
-    )
 
 
 def _alias(cfg: MinioAccess, access_key: str, secret_key: str) -> None:
@@ -263,31 +181,28 @@ def _alias(cfg: MinioAccess, access_key: str, secret_key: str) -> None:
 
 
 def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
-    """``backup_minio_account.yml`` for one target (call inside a deploy, on the store's host).
+    """``backup_minio_account.yml`` for one target (call inside a deploy, on the runner's host).
 
-    ``access_key``/``secret_key``: the scoped account's user and secret, or the
-    MinIO root credentials for a target that is not switched yet.
+    ``access_key``/``secret_key``: the scoped account's user and secret. The
+    RustFS deploy created the account; the runner's alias is set (when it
+    differs) and proves it reaches the target's own prefix.
     """
 
     if not access_key or not secret_key:
-        raise DeployError(f"{cfg.target}: the MinIO access key and secret key are required (values withheld)")
-    if cfg.scoped and access_key != cfg.account.user:
+        raise DeployError(f"{cfg.target}: the access key and secret key are required (values withheld)")
+    if secret_key == "CHANGEME":
+        raise DeployError(f"{cfg.target}: the account secret is the placeholder CHANGEME")
+    if access_key != cfg.account.user:
         raise DeployError(f"{cfg.target}: a scoped target's access key must be its account user {cfg.account.user}")
-    if cfg.os_user == "none" and not (cfg.scoped and cfg.store == "minio"):
-        return
-    if cfg.scoped and cfg.store == "minio":
-        _account(cfg, secret_key)
     if cfg.os_user == "none":
         return
     _alias(cfg, access_key, secret_key)
-    if cfg.store == "rustfs":
-        # The RustFS deploy created the account: prove the alias reaches the target's own prefix.
-        mark_read_only(
-            server.shell(
-                name=f"Prove the RustFS account of {cfg.target} through the runner's alias",
-                commands=[f"{_mc(cfg, 'ls', f'{cfg.alias}/{cfg.bucket}/{cfg.target}/')} >/dev/null"],
-            )
+    mark_read_only(
+        server.shell(
+            name=f"Prove the RustFS account of {cfg.target} through the runner's alias",
+            commands=[f"{_mc(cfg, 'ls', f'{cfg.alias}/{cfg.bucket}/{cfg.target}/')} >/dev/null"],
         )
+    )
 
 
 # -- work dir ---------------------------------------------------------------------
@@ -611,6 +526,5 @@ __all__ = [
     "known_host",
     "known_hosts_entries",
     "minio_access",
-    "render_account_policy",
     "work_dir",
 ]

@@ -17,7 +17,6 @@ from typing import Any
 
 import pytest
 
-from ops_deploy.services._echoport_runner.access import RunnerAccount, render_account_policy
 from ops_deploy.services.echoport import deploy as echoport
 from tests import stubs
 
@@ -197,50 +196,6 @@ def test_mc_alias_probe_prints_only_a_digest() -> None:
         assert result.stdout == ""
 
 
-FAKE_MC = """#!/bin/sh
-# mc admin {policy,user} info --json ALIAS NAME: the file $FAKE_MC_DIR/<policy|user>.json, else an error.
-[ "$1 $3 $4 $5" = "admin info --json local" ] || { echo "unexpected: $*" >&2; exit 2; }
-file="$FAKE_MC_DIR/$2.json"
-[ -f "$file" ] || { echo '{"status": "error"}'; exit 1; }
-cat "$file"
-"""
-
-
-@pytest.fixture
-def fake_mc(tmp_path: Path) -> Path:
-    stubs.install(tmp_path / "mc", FAKE_MC)
-    return tmp_path
-
-
-def account(
-    root: Path, mode: str, *, policy: Any = None, user: Any = None, document: str | None = None
-) -> subprocess.CompletedProcess[str]:
-    for name, value in (("policy", policy), ("user", user)):
-        path = root / f"{name}.json"
-        path.unlink(missing_ok=True)
-        if value is not None:
-            # mc indents its JSON.
-            path.write_text(json.dumps(value, indent=1))
-    spec = echoport.MinioAccount()
-    argv = [str(root / "mc"), "local", spec.policy, spec.user, document or echoport.render_policy(spec)]
-    env = {"PATH": os.environ["PATH"], "FAKE_MC_DIR": str(root)}
-    return subprocess.run(
-        [sys.executable, "-I", "-c", echoport.MINIO_ACCOUNT, mode, *argv], env=env, capture_output=True, text=True
-    )
-
-
-def stored_policy() -> dict[str, Any]:
-    # How MinIO hands the document back: actions reordered, a lone resource as a string.
-    document = json.loads(echoport.render_policy(echoport.MinioAccount()))
-    for statement in document["Statement"]:
-        statement["Action"] = sorted(statement["Action"], reverse=True)
-    document["Statement"][0]["Resource"] = "arn:aws:s3:::backups"
-    return {"status": "success", "policy": "backup-echoport-retention", "policyInfo": {"Policy": document}}
-
-
-GOOD_USER = {"status": "success", "policyName": "backup-echoport-retention", "userStatus": "enabled"}
-
-
 def iam_namespace(backend: str) -> dict[str, Any]:
     namespace: dict[str, Any] = {"__name__": f"{backend}_iam_host"}
     source = Path(f"src/ops_deploy/services/{backend}/files/iam_host.py").read_text()
@@ -248,21 +203,13 @@ def iam_namespace(backend: str) -> dict[str, Any]:
     return namespace
 
 
-@pytest.fixture(params=["echoport-minio", "rustfs"])
-def policy_matches(request: pytest.FixtureRequest, fake_mc: Path) -> Callable[[dict[str, Any], dict[str, Any]], bool]:
+@pytest.fixture
+def policy_matches() -> Callable[[dict[str, Any], dict[str, Any]], bool]:
+    """RustFS's policy comparison (``iam_host.normalized``), which the account probe uses."""
+
+    normalized = iam_namespace("rustfs")["normalized"]
+
     def matches(declared: dict[str, Any], stored: dict[str, Any]) -> bool:
-        if request.param == "echoport-minio":
-            result = account(
-                fake_mc,
-                "probe",
-                policy={"policyInfo": {"Policy": stored}},
-                user=GOOD_USER,
-                document=json.dumps(declared),
-            )
-            assert result.returncode == 0, result.stderr
-            assert result.stdout.strip() in ("policy=ok user=attached", "policy=differs user=attached")
-            return result.stdout.strip() == "policy=ok user=attached"
-        normalized = iam_namespace(request.param)["normalized"]
         return bool(normalized(declared) == normalized(stored))
 
     return matches
@@ -320,63 +267,6 @@ def test_policy_condition_comparison(
     before = json.dumps([document, returned])
     assert policy_matches(document, returned) is equal
     assert json.dumps([document, returned]) == before
-
-
-def test_weeknotes_home_policy_round_trip(
-    policy_matches: Callable[[dict[str, Any], dict[str, Any]], bool],
-) -> None:
-    spec = RunnerAccount(name="weeknotes_home", prefixes=("weeknotes_home", "weeknotes-home"))
-    rendered = render_account_policy(spec)
-    document = json.loads(rendered)
-    listing = next(s for s in document["Statement"] if s["Action"] == ["s3:ListBucket"])
-    assert listing["Condition"] == {"StringLike": {"s3:prefix": ["weeknotes_home/*", "weeknotes-home/*"]}}
-    stored = json.loads(rendered)
-    for statement in stored["Statement"]:
-        if "Condition" in statement:
-            statement["Condition"]["StringLike"]["s3:prefix"].sort()
-    assert policy_matches(document, stored)
-    assert render_account_policy(spec) == rendered
-
-
-def test_account_probe_states(fake_mc: Path) -> None:
-    def state(**files: Any) -> str:
-        result = account(fake_mc, "probe", **files)
-        assert result.returncode == 0, result.stderr
-        return result.stdout.strip()
-
-    assert state() == "policy=missing user=missing"
-    assert state(policy=stored_policy(), user=GOOD_USER) == "policy=ok user=attached"
-    other = stored_policy()
-    other["policyInfo"]["Policy"]["Statement"][2]["Action"].append("s3:PutObject")
-    assert state(policy=other, user=GOOD_USER) == "policy=differs user=attached"
-    two = {**GOOD_USER, "policyName": "readwrite,backup-echoport-retention"}
-    assert state(policy=stored_policy(), user=two) == "policy=ok user=attached"
-    assert state(policy=stored_policy(), user={**GOOD_USER, "policyName": ""}) == "policy=ok user=unattached"
-
-
-def test_account_verify_is_the_roles_last_assert(fake_mc: Path) -> None:
-    assert account(fake_mc, "verify", policy=stored_policy(), user=GOOD_USER).returncode == 0
-    for user, reason, hint in (
-        (None, "is missing", False),
-        ({**GOOD_USER, "policyName": "readwrite,backup-echoport-retention"}, "not exactly", True),
-        ({**GOOD_USER, "memberOf": [{"name": "admins"}]}, "belongs to a group", True),
-        ({**GOOD_USER, "userStatus": "disabled"}, "not enabled", False),
-    ):
-        result = account(fake_mc, "verify", policy=stored_policy(), user=user)
-        assert result.returncode != 0
-        assert reason in result.stderr
-        assert ("Detach other policies or groups" in result.stderr) is hint
-    result = account(fake_mc, "verify", user=GOOD_USER)
-    assert result.returncode != 0
-    assert "policy backup-echoport-retention is missing" in result.stderr
-    assert "Detach" not in result.stderr
-    other = stored_policy()
-    other["policyInfo"]["Policy"]["Statement"][2]["Action"].append("s3:PutObject")
-    result = account(fake_mc, "verify", policy=other, user=GOOD_USER)
-    assert result.returncode != 0
-    assert result.stderr.strip() == (
-        "MinIO account: policy backup-echoport-retention differs from the installed document."
-    )
 
 
 @pytest.mark.parametrize(

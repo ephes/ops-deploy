@@ -11,7 +11,7 @@ import pytest
 from pyinfra.api import DeployError
 
 from ops_deploy.services._echoport_runner import RunnerConfig, runner_script, service_config, sudoers_rule
-from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest, render_account_policy
+from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest
 from ops_deploy.services._echoport_runner.registration import (
     DEFAULT_IPV4_FALLBACK,
     RunnerRegistration,
@@ -27,7 +27,6 @@ EXPECTED = runner_sha256()
 SECRET = "fixture-account-secret-0123456789abcdef"  # pragma: allowlist secret
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
 MC_PRESENT = fakehost.mc_installed()
-ACCOUNT_PROBE = "def statements(doc)"
 ROUTE = "ip -4 route get 8.8.8.8"
 STORED = "select data::text from service where name"
 # The address inputs.json gives homeassistant's ansible_default_ipv4.
@@ -89,15 +88,8 @@ def converged(cfg: RunnerRegistration, *, address: str = HOMEASSISTANT_ADDRESS) 
         ROUTE: [route],
         **fakehost.deb_installed(*cfg.packages),
         re.compile(rf"mc ls {access.alias}/backups/{access.target}/ >/dev/null && echo ok"): ["ok"],
-        ACCOUNT_PROBE: ["policy=ok user=attached"],
         re.compile(rf"alias list {access.alias} \)"): [alias_digest(access.url, access.account.user, SECRET)],
         re.compile(r"alias list minio \)"): ["none"],
-        **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
-        **fakehost.file(
-            f"/etc/minio/policies/backup-{access.target}.json",
-            render_account_policy(access.account),
-            mode="-rw-r-----",
-        ),
     }
     for path in ("/usr/local/libexec", runner.libexec_root, runner.runner_dir, runner.services, runner.service_dir):
         responses.update(fakehost.directory(path))
@@ -165,14 +157,13 @@ def test_a_converged_host_gets_no_mutating_operation(name: str) -> None:
 
 def test_a_first_run_installs_packages_access_and_runner_in_the_playbooks_order() -> None:
     cfg = registration()
-    responses = {**ANCESTORS, **MC_PRESENT, ACCOUNT_PROBE: ["policy=missing user=missing"]}
+    responses = {**ANCESTORS, **MC_PRESENT}
     run = run_deploy_fake(register_runner, cfg, secret_key=SECRET, responses=responses)
 
     assert run.succeeded, run.error
     names = [name.removeprefix("Echoport backup runner registration | ") for name in run.changed_ops]
     order = [
         "Install the packages of snappymail-backup",
-        "Create or update MinIO user of snappymail",
         "Configure mc alias backup-snappymail of root",
         "Install the snappymail-backup runner script",
         "Write config.json of snappymail-backup",

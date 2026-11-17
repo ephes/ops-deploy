@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- echoport: the `mc_admin` account provisioner is removed (`McAdminProvisioner`,
+  `files/minio_account.py`). `MinioAccount.provisioner` accepts only
+  `rustfs_admin`, now its default; `MinioAccount.admin_alias` is removed
+  (unknown keys are ignored by that model, so a caller still passing
+  `admin_alias="local"` keeps working but should drop it). The policy file
+  path (`policy_dir`), the account, the alias and every rendered file are
+  unchanged.
+- Echoport runners: the MinIO store is removed from `MinioAccess` and
+  `minio_access`. `store` accepts only `rustfs` (now the default), `scoped`
+  and `rustfs_account` default to and must be true (the shared alias with the
+  MinIO root credentials is gone), and `admin_alias` and `policy_dir` are
+  removed (`MinioAccess` refuses unknown keys). `minio_access` no longer
+  creates a policy, policy file or user through root's MinIO admin alias; it
+  sets the runner's alias and proves the RustFS account through it, as it
+  did for `store: rustfs`. A media runner without an alias changes nothing
+  any more (it upserted its MinIO user on every run). The MinIO role's
+  32-to-40-character secret check went with it; `CHANGEME` is still refused.
+  `render_account_policy` is removed. Rendered runner scripts are unchanged.
+
 - daybook_voice_memo_attention_reader: removed. It provisioned the reader
   identity on MinIO through `mc admin`; MinIO is gone and nothing registers
   the deploy any more.

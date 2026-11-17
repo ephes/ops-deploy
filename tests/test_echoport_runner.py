@@ -28,7 +28,6 @@ from ops_deploy.services._echoport_runner.access import (
     known_host,
     known_hosts_entries,
     minio_access,
-    render_account_policy,
     work_dir,
 )
 from ops_deploy.testing import run_deploy_fake
@@ -280,12 +279,8 @@ def test_a_template_is_rendered_with_the_plays_variables() -> None:
     assert hashlib.sha256(run.upload(cfg.script)).hexdigest() == runner_sha256()["snappymail-backup"]
 
 
-# -- MinIO account and mc alias ---------------------------------------------------------
+# -- object-store account and mc alias ------------------------------------------------
 
-# A line of the echoport deploy's files/minio_account.py, which the probe command carries.
-ACCOUNT_PROBE = "def statements(doc)"
-ROOT_ALIAS_KEY = "fixture-root-user"
-ROOT_SECRET = "fixture-root-password-value"  # pragma: allowlist secret
 ACCOUNT_SECRET = "fixture-account-secret-0123456789abcdef"  # pragma: allowlist secret
 
 
@@ -293,10 +288,8 @@ def access(**changes: Any) -> MinioAccess:
     values: dict[str, Any] = {
         "target": "paperless",
         "os_user": "root",
-        "alias": "backup-paperless",
-        "url": "http://127.0.0.1:9001",
-        "scoped": True,
-        "retired_aliases": ("minio",),
+        "alias": "rustfs-backup-paperless",
+        "url": "http://127.0.0.1:9020",
         **changes,
     }
     return MinioAccess(**values)
@@ -312,18 +305,12 @@ MC_PRESENT = fakehost.mc_installed()
 def access_converged(cfg: MinioAccess, access_key: str, secret: str) -> dict[Any, Any]:
     return {
         **MC_PRESENT,
-        re.compile(rf"mc ls {cfg.alias}/backups/{cfg.target}/ >/dev/null && echo ok"): ["ok"],
-        ACCOUNT_PROBE: ["policy=ok user=attached"] if cfg.scoped else [],
         alias_probe(cfg.alias): [alias_digest(cfg.url, access_key, secret)],
         **{alias_probe(retired): ["none"] for retired in cfg.retired_aliases},
-        **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
-        **fakehost.file(
-            f"/etc/minio/policies/backup-{cfg.target}.json", render_account_policy(cfg.account), mode="-rw-r-----"
-        ),
     }
 
 
-def test_scoped_account_converged_is_a_noop() -> None:
+def test_converged_access_is_a_noop() -> None:
     cfg = access()
     user = cfg.account.user
 
@@ -335,37 +322,30 @@ def test_scoped_account_converged_is_a_noop() -> None:
     assert run.succeeded, run.error
     assert run.mutating_changed_ops == []
     assert ACCOUNT_SECRET not in run.all_text()
+    # RustFS created the account: nothing is administered, the alias proves it.
+    assert not any("admin" in c for c in run.executed_commands)
+    assert run.executed_commands[-1] == (
+        "runuser -u root -- env HOME=/root /usr/local/bin/mc ls rustfs-backup-paperless/backups/paperless/ >/dev/null"
+    )
 
 
-def test_scoped_account_is_created_and_the_alias_imported_from_stdin() -> None:
-    cfg = access()
+def test_the_alias_is_imported_from_stdin_and_retired_ones_removed() -> None:
+    cfg = access(retired_aliases=("minio",))
     user = cfg.account.user
 
     def deploy() -> None:
         minio_access(cfg, access_key=user, secret_key=ACCOUNT_SECRET)
 
-    responses: dict[Any, Any] = {
-        **MC_PRESENT,
-        ACCOUNT_PROBE: ["policy=missing user=missing"],
-        alias_probe(cfg.alias): ["none"],
-        alias_probe("minio"): ["0" * 64],
-    }
+    responses: dict[Any, Any] = {**MC_PRESENT, alias_probe(cfg.alias): ["none"], alias_probe("minio"): ["0" * 64]}
     run = run_deploy_fake(deploy, responses=responses)
 
     assert run.succeeded, run.error
     assert user == "bk-" + hashlib.sha256(b"paperless").hexdigest()[:17]
-    assert [name for name in run.changed_ops if "Verify" not in name and "Require" not in name] == [
-        "Create MinIO policy directory",
-        "Install MinIO policy backup-paperless",
-        "Create or update MinIO policy backup-paperless",
-        "Create or update MinIO user of paperless",
-        "Attach MinIO policy backup-paperless",
-        "Configure mc alias backup-paperless of root",
+    assert run.mutating_changed_ops == [
+        "Configure mc alias rustfs-backup-paperless of root",
         "Remove retired mc alias minio of root",
     ]
     stdin = dict(run.stdin)
-    add = next(command for command in stdin if "admin user add" in command)
-    assert stdin[add] == f"{user}\n{ACCOUNT_SECRET}\n"
     imported = next(command for command in stdin if "alias import" in command)
     assert json.loads(stdin[imported]) == {
         "url": cfg.url,
@@ -374,31 +354,12 @@ def test_scoped_account_is_created_and_the_alias_imported_from_stdin() -> None:
         "api": "s3v4",
         "path": "auto",
     }
-    assert "runuser -u root -- env HOME=/root /usr/local/bin/mc alias import backup-paperless" in imported
+    assert "runuser -u root -- env HOME=/root /usr/local/bin/mc alias import rustfs-backup-paperless" in imported
     assert ACCOUNT_SECRET not in "\n".join(run.executed_commands + run.fact_commands)
-    policy = json.loads(run.upload("/etc/minio/policies/backup-paperless.json"))
-    actions = [statement["Action"] for statement in policy["Statement"]]
-    assert actions[-1] == ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
-    assert policy["Statement"][-1]["Resource"] == ["arn:aws:s3:::backups/paperless/*"]
 
 
-def test_unscoped_target_keeps_the_shared_alias_with_the_root_credentials() -> None:
-    cfg = access(scoped=False, alias="minio", retired_aliases=())
-
-    def deploy() -> None:
-        minio_access(cfg, access_key=ROOT_ALIAS_KEY, secret_key=ROOT_SECRET)
-
-    run = run_deploy_fake(deploy, responses={**MC_PRESENT, alias_probe("minio"): ["none"]})
-
-    assert run.succeeded, run.error
-    assert run.mutating_changed_ops == ["Configure mc alias minio of root"]
-    assert not any("admin" in c for c in run.executed_commands)
-    assert ROOT_SECRET not in run.all_text()
-    assert ROOT_ALIAS_KEY not in run.all_text()
-
-
-def test_rustfs_store_proves_the_account_and_creates_nothing_on_minio() -> None:
-    cfg = access(store="rustfs", rustfs_account=True, alias="rustfs-backup-paperless", url="http://127.0.0.1:9020")
+def test_rclone_runner_gets_no_alias_and_changes_nothing() -> None:
+    cfg = access(os_user="none")
     user = cfg.account.user
 
     def deploy() -> None:
@@ -407,45 +368,13 @@ def test_rustfs_store_proves_the_account_and_creates_nothing_on_minio() -> None:
     run = run_deploy_fake(deploy, responses=access_converged(cfg, user, ACCOUNT_SECRET))
 
     assert run.succeeded, run.error
-    assert not any("admin" in c for c in run.executed_commands)
-    assert run.executed_commands[-1] == (
-        "runuser -u root -- env HOME=/root /usr/local/bin/mc ls rustfs-backup-paperless/backups/paperless/ >/dev/null"
-    )
-
-
-def test_rclone_runner_gets_no_alias() -> None:
-    cfg = access(os_user="none", retired_aliases=())
-    user = cfg.account.user
-
-    def deploy() -> None:
-        minio_access(cfg, access_key=user, secret_key=ACCOUNT_SECRET)
-
-    run = run_deploy_fake(deploy, responses=access_converged(cfg, user, ACCOUNT_SECRET))
-
-    assert run.succeeded, run.error
-    assert not any("alias import" in c or "alias remove" in c for c in run.executed_commands)
+    assert run.ops == []
     assert not any("alias list" in c for c in run.fact_commands)
-    # Without an alias nothing proves the stored secret current: the upsert runs, as in the role.
-    assert run.mutating_changed_ops == ["Create or update MinIO user of paperless"]
-
-
-def test_a_secret_the_server_rejects_is_upserted_again() -> None:
-    cfg = access()
-    user = cfg.account.user
-
-    def deploy() -> None:
-        minio_access(cfg, access_key=user, secret_key=ACCOUNT_SECRET)
-
-    responses = access_converged(cfg, user, ACCOUNT_SECRET)
-    responses[re.compile(r"mc ls backup-paperless/backups/paperless/ >/dev/null && echo ok")] = []
-    run = run_deploy_fake(deploy, responses=responses)
-
-    assert run.mutating_changed_ops == ["Create or update MinIO user of paperless"]
 
 
 def test_without_mc_the_alias_reads_as_missing() -> None:
     # The registrations install mc first; while planning a host without it has no alias yet.
-    check = alias_check(access(), "backup-paperless")
+    check = alias_check(access(), "rustfs-backup-paperless")
 
     assert check.startswith("if test -e /root && test -e /usr/local/bin/mc; then ")
     assert check.endswith("else echo none; fi")
@@ -454,9 +383,10 @@ def test_without_mc_the_alias_reads_as_missing() -> None:
 @pytest.mark.parametrize(
     "changes",
     [
-        {"store": "rustfs"},
-        {"store": "rustfs", "rustfs_account": True, "scoped": False},
-        {"alias": "minio"},
+        {"store": "minio"},
+        {"scoped": False},
+        {"rustfs_account": False},
+        {"retired_aliases": ("rustfs-backup-paperless",)},
         {"alias": "1bad"},
         {"url": "ftp://x"},
         {"os_user": "Root"},
@@ -469,7 +399,7 @@ def test_access_the_include_refuses_is_refused(changes: dict[str, Any]) -> None:
 
 @pytest.mark.parametrize(
     ("key", "secret"),
-    [("", ACCOUNT_SECRET), ("bk-other", ACCOUNT_SECRET), (None, "short"), (None, "")],
+    [("", ACCOUNT_SECRET), ("bk-other", ACCOUNT_SECRET), (None, "")],
 )
 def test_bad_credentials_refuse_without_showing_them(key: str | None, secret: str) -> None:
     cfg = access()
@@ -477,7 +407,7 @@ def test_bad_credentials_refuse_without_showing_them(key: str | None, secret: st
     def deploy() -> None:
         minio_access(cfg, access_key=cfg.account.user if key is None else key, secret_key=secret)
 
-    message = refused(run_deploy_fake(deploy, responses={**MC_PRESENT, ACCOUNT_PROBE: ["policy=ok user=attached"]}))
+    message = refused(run_deploy_fake(deploy, responses={**MC_PRESENT}))
     if secret:
         assert secret not in message
 

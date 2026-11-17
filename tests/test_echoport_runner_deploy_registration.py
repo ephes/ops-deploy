@@ -22,7 +22,6 @@ from ops_deploy.services._echoport_runner.access import (
     WorkDir,
     alias_digest,
     controller_keyscan,
-    render_account_policy,
 )
 from ops_deploy.services._echoport_runner.registration import (
     CredentialsFile,
@@ -46,7 +45,6 @@ SOURCE_KEY = "fixture-source-access-key"  # pragma: allowlist secret
 SOURCE_SECRET = "fixture-source-secret-key-value"  # pragma: allowlist secret
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
 MC_PRESENT = fakehost.mc_installed()
-ACCOUNT_PROBE = "def statements(doc)"
 STORED = "select data::text from service where name"
 KNOWN = "/home/deploy/.ssh/known_hosts"
 KINDS = "if [ -L"
@@ -195,17 +193,7 @@ def converged(cfg: DeployRunnerRegistration) -> dict[Any, Any]:
         responses.update(
             _file("/home/deploy/.ssh/id_ed25519.pub", PUBLIC, user="deploy", group="deploy", mode="-rw-r--r--")
         )
-    responses.update(
-        {
-            ACCOUNT_PROBE: ["policy=ok user=attached"],
-            **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
-            **fakehost.file(
-                f"/etc/minio/policies/backup-{access.target}.json",
-                render_account_policy(access.account),
-                mode="-rw-r-----",
-            ),
-        }
-    )
+    responses.update({})
     if access.os_user != "none":
         responses[re.compile(rf"mc ls {access.alias}/backups/{access.target}/ >/dev/null && echo ok")] = ["ok"]
         responses[re.compile(rf"alias list {access.alias} \)")] = [
@@ -298,16 +286,13 @@ def test_a_converged_host_gets_no_mutating_operation(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", MEDIA)
-def test_a_converged_media_host_upserts_only_the_minio_user(name: str) -> None:
-    # No alias proves the stored secret current, so the user is upserted on every
-    # run, as minio_deploy's backup_account does in the playbook.
+def test_a_converged_media_host_changes_nothing(name: str) -> None:
+    # The RustFS deploy owns the media runner's account; without an alias there is nothing to set.
     cfg = registration(name)
     run = run_deploy_fake(deploy(cfg), responses=converged(cfg))
 
     assert run.succeeded, run.error
-    assert [name.removeprefix("Echoport backup runner registration | ") for name in run.mutating_changed_ops] == [
-        f"Create or update MinIO user of {_target(name)}"
-    ]
+    assert run.mutating_changed_ops == []
     for value in (SECRET, SOURCE_KEY, SOURCE_SECRET):
         assert value not in run.all_text()
     assert not any(re.search(r"alias (list|import|remove)", c) for c in run.executed_commands)
@@ -318,7 +303,6 @@ def test_a_staging_runner_is_installed_in_its_playbooks_order() -> None:
     responses = {
         **ANCESTORS,
         **MC_PRESENT,
-        ACCOUNT_PROBE: ["policy=missing user=missing"],
         "mountpoint -q": ["mounted"],
     }
     responses[KINDS] = ["dir", "dir", "missing"]
@@ -328,7 +312,6 @@ def test_a_staging_runner_is_installed_in_its_playbooks_order() -> None:
     assert run.succeeded, run.error
     order = [
         "Install the packages of homepage-staging-backup",
-        "Create or update MinIO user of homepage-staging",
         "Configure mc alias backup-homepage-staging of deploy",
         "Ensure the work dir /mnt/cryptdata/backups/tmp/homepage-staging-backup",
         "Install the homepage-staging-backup runner script",
@@ -345,7 +328,7 @@ def test_a_staging_runner_is_installed_in_its_playbooks_order() -> None:
 
 def test_a_production_db_runner_installs_the_deploy_key_first() -> None:
     cfg = registration("homepage-production-db-backup")
-    responses = {**ANCESTORS, **MC_PRESENT, ACCOUNT_PROBE: ["policy=ok user=attached"], "mountpoint -q": ["mounted"]}
+    responses = {**ANCESTORS, **MC_PRESENT, "mountpoint -q": ["mounted"]}
     responses[KINDS] = ["dir", "dir", "dir"]
     responses["base64 -w0"] = ["absent"]
     run = run_deploy_fake(deploy(cfg), responses=responses)
@@ -377,7 +360,6 @@ def test_a_media_runner_writes_its_credentials_file_and_no_alias() -> None:
     responses = {
         **ANCESTORS,
         **MC_PRESENT,
-        ACCOUNT_PROBE: ["policy=missing user=missing"],
         "mountpoint -q": ["mounted"],
     }
     responses[KINDS] = ["dir", "dir", "dir"]
@@ -385,9 +367,7 @@ def test_a_media_runner_writes_its_credentials_file_and_no_alias() -> None:
 
     assert run.succeeded, run.error
     names = ops(run)
-    assert names.index("Create or update MinIO user of homepage-media") < names.index(
-        "Install the packages of homepage-media-backup"
-    )
+    assert not any("MinIO user" in name for name in names)
     assert (
         names.index("Ensure the credentials directory /etc/echoport-media")
         < names.index("Install the credentials file /etc/echoport-media/homepage-media-backup.json")

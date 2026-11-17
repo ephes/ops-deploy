@@ -15,16 +15,17 @@ cfg = EchoportConfig(
     secrets=SecretRef("secrets/prod/echoport.yml"),
     traefik_host="echoport.example.com",
     django_allowed_hosts=("127.0.0.1", "echoport.example.com"),
-    minio_url="http://127.0.0.1:9001",
+    minio_url="http://127.0.0.1:9020",
     nyxmon=NyxmonCheck(),
 )
 deploy_echoport(cfg, store.load(cfg.secrets))
 ```
 
 With `minio_account=MinioAccount()` (as ops-control configures it) the cleanup
-user's alias uses the scoped MinIO account `echoport-retention` instead of
-MinIO's root account, and the deploy creates or updates that account through
-root's MinIO admin alias first, as `deploy-echoport.yml` does. ops-control
+user's alias uses the scoped account `echoport-retention` instead of the
+store's root account, and the deploy creates or updates that account through
+RustFS's native admin API first (the `minio_*` names are historical; they name
+rendered settings such as `MINIO_ALIAS` and stay). ops-control
 registers it with secrets from three SOPS files (see its `docs/PYINFRA.md`).
 
 ## Secrets
@@ -66,7 +67,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `scheduler_enabled`, `scheduler_interval` | `true`, `*/5` | crontab minute field |
 | `cleanup_enabled`, `cleanup_hour` | `true`, `3` | needs `minio_url` |
 | `minio_mc_path`, `minio_alias`, `minio_url`, `minio_verify_bucket` | `/usr/local/bin/mc`, `minio`, none, `backups` | the cleanup user's alias and the bucket it must reach |
-| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, admin_alias, policy_dir, provisioner, rustfs_env_file)`, defaults `echoport-retention`, `backups`, `false`, `true`, `local`, `/etc/minio/policies`, `mc_admin`, `/etc/default/rustfs`: the alias's own account (see below); needs `cleanup_enabled` |
+| `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, policy_dir, provisioner, rustfs_env_file)`, defaults `echoport-retention`, `backups`, `false`, `true`, `/etc/minio/policies`, `rustfs_admin` (the only value), `/etc/default/rustfs`: the alias's own account (see below); needs `cleanup_enabled` |
 | `store_aliases` | `()` | `StoreAlias(alias, url, verify_bucket, account)`: one more alias of the cleanup user per other object store, each with its own account there (see "One alias per store"); needs `minio_account` |
 | `staging_db_refresh_*` | off | `enabled`, `hour` (`2`), `minute` (`20`), `targets`, `triggered_by` |
 | `nyxmon` | `None` | `NyxmonCheck(...)`: the playbook's Nyxmon check (see below) |
@@ -101,22 +102,21 @@ for another single-file release.
    `root:root 0755`), which Echoport (`MINIO_MC_PATH`) and the cleanup alias
    use. While planning, a host without `mc` reads the alias as missing.
 2. With `minio_account`, the playbook's `backup_account` include of
-   `minio_deploy`, before anything else: a read-only check that
-   `mc admin info local` succeeds (no MinIO change without root's admin
-   alias); `/etc/minio/policies` (`0750`) and the policy
-   `backup-echoport-retention.json` (`0640`, the role's template: list, read
-   (`GetObject`, `GetObjectVersion`) and delete in the whole bucket, no
-   `PutObject`); `mc admin policy create`
-   when the file changed or the server's policy is missing or differs;
-   `mc admin user add` (an upsert; user and secret on stdin, output withheld)
-   for the user `bk-` + the first 17 hex digits of SHA-256 of the name, when
-   the user is missing or the secret is not proven (the cleanup user's alias
-   does not already hold it, or cannot list the bucket with it); `mc admin
-   policy attach` when the policy is not attached. A read-only probe (the
-   account's secret is not an argument) decides; a read-only check at the end
-   is the role's last assert: the user is enabled, holds exactly that policy,
-   belongs to no group, and the policy holds the document. The MinIO root
-   credentials are never used.
+   `minio_deploy`, on RustFS, before anything else: a read-only check that
+   RustFS's admin API answers with the root credentials of `rustfs_env_file`
+   (no change without it); `/etc/minio/policies` (`0750`, the path is kept) and
+   the policy `backup-echoport-retention.json` (`0640`, the role's template:
+   list, read (`GetObject`, `GetObjectVersion`) and delete in the whole bucket,
+   no `PutObject`); `create-policy` when the file changed or the server's
+   policy is missing or differs; `add-user` (user and secret on stdin, output
+   withheld) for the user `bk-` + the first 17 hex digits of SHA-256 of the
+   name, when the user is missing or the secret is not proven (the cleanup
+   user's alias does not already hold it, or cannot list the bucket with it);
+   `attach` when the policy is not attached. A read-only probe (the account's
+   secret is not an argument) decides; a read-only check at the end is the
+   role's last assert: the user is enabled, holds exactly that policy, belongs
+   to no group, and the policy holds the document. The root credentials never
+   leave the host.
 3. `system_user`: group, user, `/home/echoport`, `site`, `site/cache`,
    `logs`. An existing user is not modified (on macmini it is a non-system
    user with group `users`, which the role created without a system flag);
@@ -194,51 +194,42 @@ MinIO account's policy file is `minio_deploy`'s
 ### Other S3 stores
 
 Echoport's cleanup job and the alias are store-neutral: `mc rm`, `mc ls` and
-`mc stat` behave the same against MinIO and RustFS 1.0.3 (checked with mc
-RELEASE.2025-08-13, including the `--json` "Object does not exist" error
-Echoport reads), so `minio_url` may name either store. Only creating the
-account is store-specific. `_minio_account` runs it through an
-`AccountProvisioner` (`deploy.py`): `require_admin`, `state` (probe/verify),
-`create_policy`, `add_user` (stdin) and `attach_policy`, each a shell command.
-`MinioAccount.provisioner` picks the implementation:
+`mc stat` behave the same against any S3 store (checked against RustFS 1.0.3
+with mc RELEASE.2025-08-13, including the `--json` "Object does not exist"
+error Echoport reads). Only creating the account is store-specific.
+`_minio_account` runs it through an `AccountProvisioner` (`deploy.py`):
+`require_admin`, `state` (probe/verify), `create_policy`, `add_user` (stdin)
+and `attach_policy`, each a shell command. `MinioAccount.provisioner` names
+the implementation; `rustfs_admin` (`RustfsAdminProvisioner`) is the only one
+(`mc_admin`, MinIO's admin API through root's `mc` alias, is removed with
+MinIO). It speaks RustFS's native admin API (`/rustfs/admin/v3`). Every
+command runs `files/rustfs_account.py` with the RustFS deploy's
+`files/iam_host.py` loaded as its library
+(`ops_deploy.services.rustfs.deploy.iam_client_command`), so there is one
+SigV4 client. It reads the root credentials, the loopback address and the
+region from RustFS's root-only environment file on the host
+(`rustfs_env_file`, what `services/rustfs` writes); they never reach the
+controller or a command line. A disabled user refuses instead of being
+upserted (like the RustFS deploy, which never enables a user). `attach` adds
+the policy and keeps others, so verify then refuses the extra ones.
 
-- `mc_admin` (default, `McAdminProvisioner`): MinIO's admin API through root's
-  mc alias `admin_alias`. It does not work against RustFS: `mc admin info`
-  fails there, and `mc admin policy info --json` wraps the document as
-  `{"policy_name", "policy", ...}`, so `files/minio_account.py` would report
-  the policy as differing on every run.
-- `rustfs_admin` (`RustfsAdminProvisioner`): RustFS's native admin API
-  (`/rustfs/admin/v3`). Every command runs `files/rustfs_account.py` with the
-  RustFS deploy's `files/iam_host.py` loaded as its library
-  (`ops_deploy.services.rustfs.deploy.iam_client_command`), so there is one
-  SigV4 client. It reads the root credentials, the loopback address and the
-  region from RustFS's root-only environment file on the host
-  (`rustfs_env_file`, what `services/rustfs` writes); they never reach the
-  controller or a command line, and `admin_alias` is not used. The steps,
-  their order and the stdin-only secret are the same as with `mc_admin`. A disabled
-  user refuses instead of being upserted (like the RustFS deploy, which never
-  enables a user). `attach` adds the policy and keeps others, as `mc admin
-  policy attach` does, so verify then refuses the extra ones.
-
-Both provisioners compare policies after normalizing statement order,
+The provisioner compares policies after normalizing statement order,
 Action/Resource sets and Condition string values. Condition string-list order is
 ignored, and a scalar string equals a one-element list for every operator and key.
 Different Condition values still differ.
 
-With `rustfs_admin`, point `minio_url` at RustFS (macmini:
-`http://127.0.0.1:9020`); the alias keeps its name, so Echoport's
-`MINIO_ALIAS` does not change. With that one alias, the retention job and
-`mc stat` checks reach only the store it names.
+Point `minio_url` at the RustFS primary; with that one alias, the retention
+job and `mc stat` checks reach only the store it names.
 
 ### One alias per store
 
-While targets move from MinIO to RustFS one at a time, the cleanup user
+While targets move from one store to another one at a time, the cleanup user
 needs an alias for each store, and the caller picks one per target (the
 upload check through `EchoportSite.minio_alias`, Echoport's retention per
 target). `store_aliases` adds them next to `minio_alias`: for example
 `StoreAlias(alias="rustfs", url="http://127.0.0.1:9020",
-account=MinioAccount(provisioner="rustfs_admin"))`. For each, before anything
-else, step 2 runs with that alias's account and provisioner, and step 12
+account=MinioAccount())`. For each, before anything else, step 2 runs with
+that alias's account, and step 12
 imports and proves that alias; step names carry ` (<alias>)`, the steps of
 `minio_alias` keep theirs. Every account takes `minio_secret_key`; with the
 same `name` it is the same user and policy on each store. Refused: two
@@ -253,7 +244,7 @@ the account may and may not do, the refusals, and no credential in any output.
 
 Differences, all on the "change only what differs" side:
 
-- migrate, collectstatic, the admin account, the MinIO policy and account
+- migrate, collectstatic, the admin account, the account's policy and user
   (the role creates the policy and upserts the user on every run), the `mc`
   alias, the crontab and the Nyxmon check run only when needed (the role and playbook run migrate,
   collectstatic and `ensure_superuser` on every deploy and rewrite the route
@@ -274,9 +265,10 @@ Differences, all on the "change only what differs" side:
   code change, package source change, lockfile change, secret rotation, admin
   password rotation, unit and route drift, basic auth rotation, each cron job,
   disabled jobs, missing log files and staging script, `mc` alias drift and an
-  unreachable bucket, the MinIO account (each probe state, policy file drift,
-  a secret MinIO refuses, secret rotation, a missing admin alias of root, a
-  failed verification, the derived user name and secret rules), pending migrations, missing static manifest, a venv on
+  unreachable bucket, the scoped account on RustFS (each probe state, policy
+  file drift, a secret the store refuses, secret rotation, missing RustFS
+  admin access, a failed verification, the derived user name and secret
+  rules), pending migrations, missing static manifest, a venv on
   the wrong Python, foreign-owned files, the Nyxmon check (differs, missing
   database, payload), a listener failure, validation, leak checks.
 - `tests/test_echoport_golden.py`: the env file, unit, staging script, route

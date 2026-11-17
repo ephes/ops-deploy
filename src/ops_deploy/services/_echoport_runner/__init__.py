@@ -8,8 +8,8 @@ playbook passes) plus the parts its playbook uses:
 
 - :func:`deploy_runner`: the role's nine steps (this module);
 - :mod:`.render`: the role's runner templates, rendered as Ansible renders them;
-- :mod:`.access`: ``common/backup_minio_account.yml`` (the scoped MinIO account
-  and the runner user's ``mc`` alias), :func:`.access.work_dir`
+- :mod:`.access`: ``common/backup_minio_account.yml`` (the runner user's ``mc``
+  alias of the target's scoped RustFS account), :func:`.access.work_dir`
   (``common/backup_work_dir.yml``) and :func:`.access.known_host`
   (``common/deploy_known_host_ed25519.yml``);
 - :mod:`.target`: a playbook's own Echoport target script with a check mode,

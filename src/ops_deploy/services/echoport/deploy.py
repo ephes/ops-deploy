@@ -11,12 +11,12 @@ are). The crontab entries use Ansible's own format
 
 Unlike the role, steps that would change nothing are skipped: migrate and
 collectstatic run when code, dependencies or the env file changed (or while a
-migration is pending), and the admin account, the scoped MinIO account, the
+migration is pending), and the admin account, the scoped account, the
 cleanup user's ``mc`` alias, the crontab and the Nyxmon check are probed first
 (read-only) and written only when they differ from what this deploy would set.
 ``db.sqlite3*`` is never touched. Credentials reach the host on stdin only; the
-store's root credentials never do (the account is managed through root's MinIO
-admin alias, or RustFS's environment file, on the host).
+store's root credentials never do (the account is managed through RustFS's
+environment file on the host).
 """
 
 from __future__ import annotations
@@ -65,7 +65,6 @@ ADMIN_PROBE = (FILES / "admin_probe.py").read_text()
 MC_ALIAS_PROBE = (FILES / "mc_alias_probe.py").read_text()
 CRON_EDIT = (FILES / "cron_edit.py").read_text()
 NYXMON_CHECK = (FILES / "nyxmon_check.py").read_text()
-MINIO_ACCOUNT = (FILES / "minio_account.py").read_text()
 RUSTFS_ACCOUNT = (FILES / "rustfs_account.py").read_bytes()
 
 # Never transferred, and protected from --delete (the role's rsync options).
@@ -128,31 +127,28 @@ class NyxmonCheck(_Part):
 
 
 class MinioAccount(_Part):
-    """The playbook's scoped MinIO account for the cleanup user's ``mc`` alias.
+    """The playbook's scoped account for the cleanup user's ``mc`` alias (the class name is historical).
 
     Port of ``minio_deploy``'s ``tasks_from: backup_account`` as
     ``deploy-echoport.yml`` includes it: a user that may list, read and delete
     in the whole bucket, never write or use the admin API, with the policy
-    ``backup-<name>``. It is created or updated on the host through root's
-    MinIO admin alias or, with ``provisioner="rustfs_admin"``, RustFS's native
-    admin API; the root credentials never reach the controller. The secret
-    is ``minio_secret_key``; the user name is derived from ``name`` (MinIO
-    allows 20 characters), as the playbook's ``backup_minio_account_user``.
+    ``backup-<name>``. It is created or updated on the host through RustFS's
+    native admin API; the root credentials never reach the controller. The
+    secret is ``minio_secret_key``; the user name is derived from ``name`` (20
+    characters), as the playbook's ``backup_minio_account_user``.
     """
 
     name: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")] = "echoport-retention"
     bucket: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9.-]{2,62}$")] = "backups"
     allow_put: bool = False
     allow_delete: bool = True
-    # ``minio_host_alias`` of the MinIO deploy (root's mc configuration).
-    admin_alias: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")] = "local"
+    # Where the policy document is installed on the host (the path MinIO used; kept).
     policy_dir: PurePosixPath = PurePosixPath("/etc/minio/policies")
-    # How the account is created and checked (:class:`AccountProvisioner`).
-    # ``mc_admin``: MinIO's admin API through ``mc admin`` and ``admin_alias``.
-    # ``rustfs_admin``: RustFS's native admin API with the root credentials of
-    # ``rustfs_env_file`` on the host (``admin_alias`` is not used). The policy
-    # document, the alias and the cleanup job stay the same.
-    provisioner: Literal["mc_admin", "rustfs_admin"] = "mc_admin"
+    # How the account is created and checked (:class:`AccountProvisioner`):
+    # RustFS's native admin API with the root credentials of
+    # ``rustfs_env_file`` on the host. (``mc_admin``, MinIO's admin API, is
+    # gone with MinIO.)
+    provisioner: Literal["rustfs_admin"] = "rustfs_admin"
     # The environment file ops-deploy's RustFS deploy writes (root-only).
     rustfs_env_file: PurePosixPath = PurePosixPath("/etc/default/rustfs")
 
@@ -746,52 +742,16 @@ class AccountProvisioner(Protocol):
         ...
 
 
-class McAdminProvisioner:
-    """MinIO's admin API through ``mc admin`` and root's admin alias (``minio_deploy``'s ``backup_account``)."""
-
-    def __init__(self, mc: PurePosixPath, admin_alias: str) -> None:
-        self.mc, self.alias = str(mc), admin_alias
-
-    @property
-    def admin(self) -> str:
-        return f"the MinIO admin alias {self.alias} of root"
-
-    def require_admin(self) -> str:
-        missing = shlex.quote(
-            f"mc admin info {self.alias} failed: the admin alias is not configured for root on this host "
-            "or MinIO is unreachable. Deploy MinIO with minio_bootstrap_with_mc first."
-        )
-        return f"{shlex.join([self.mc, 'admin', 'info', self.alias])} >/dev/null || {{ echo {missing} >&2; exit 1; }}"
-
-    def state(self, mode: Literal["probe", "verify"], account: MinioAccount, document: str) -> str:
-        args = [mode, self.mc, self.alias, account.policy, account.user, document]
-        return shlex.join(["python3", "-I", "-c", MINIO_ACCOUNT, *args])
-
-    def create_policy(self, account: MinioAccount) -> str:
-        return shlex.join([self.mc, "admin", "policy", "create", self.alias, account.policy, str(account.policy_path)])
-
-    def add_user(self, account: MinioAccount) -> str:
-        failed = shlex.quote(
-            f"mc admin user add for {account.user} failed; mc output is withheld (it can quote the secret)"
-        )
-        # ``mc admin user add`` is an upsert; it reads the user and the secret from stdin.
-        add = shlex.join([self.mc, "admin", "user", "add", self.alias])
-        return f"{add} >/dev/null 2>&1 || {{ echo {failed} >&2; exit 1; }}"
-
-    def attach_policy(self, account: MinioAccount) -> str:
-        return shlex.join([self.mc, "admin", "policy", "attach", self.alias, account.policy, "--user", account.user])
-
-
 class RustfsAdminProvisioner:
     """RustFS's native admin API (``/rustfs/admin/v3``), as ops-deploy's RustFS deploy speaks it.
 
     Every command runs ``files/rustfs_account.py`` with the RustFS deploy's
     ``files/iam_host.py`` as its library (one SigV4 client). The root
     credentials, the loopback address and the region come from RustFS's
-    root-only environment file on the host, so, as with MinIO, they never reach
-    the controller. Differences to ``mc admin``: ``add_user`` refuses to touch a
-    disabled user (like the RustFS deploy), and the policy is compared after
-    normalization (statement order, one-element sets).
+    root-only environment file on the host, so they never reach the
+    controller. ``add_user`` refuses to touch a disabled user (like the RustFS
+    deploy), and the policy is compared after normalization (statement order,
+    one-element sets).
     """
 
     def __init__(self, env_file: PurePosixPath) -> None:
@@ -825,18 +785,14 @@ def account_provisioner(cfg: EchoportConfig, account: MinioAccount | None = None
 
     account = account or cfg.minio_account
     assert account is not None
-    if account.provisioner == "mc_admin":
-        return McAdminProvisioner(cfg.minio_mc_path, account.admin_alias)
-    if account.provisioner == "rustfs_admin":
-        return RustfsAdminProvisioner(account.rustfs_env_file)
-    raise ValueError(f"unknown account provisioner {account.provisioner!r}")  # pragma: no cover
+    return RustfsAdminProvisioner(account.rustfs_env_file)
 
 
 def _minio_account(cfg: EchoportConfig, secrets: SecretValues, store: _Store) -> None:
     """The playbook's ``backup_account`` include: the cleanup alias's own account.
 
     Like the role, everything goes through the store's admin access on the host
-    (:func:`account_provisioner`; for MinIO root's admin alias) and the secret
+    (:func:`account_provisioner`) and the secret
     reaches it on stdin. Unlike it, the policy is created and the user upserted
     only when the probe finds them missing or different: the secret counts as
     current when the cleanup user's alias already holds it and lists the bucket

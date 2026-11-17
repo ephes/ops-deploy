@@ -48,11 +48,11 @@ SECRET_VALUES = {
     "basic_auth_password": "echoport-fixture-basic-pw",
     "minio_secret_key": "echoport-fixture-minio-secret-0123",
 }
-# The MinIO account of the cleanup alias (deploy-echoport.yml's echoport-retention).
+# The scoped account of the cleanup alias on RustFS (deploy-echoport.yml's echoport-retention).
 ACCOUNT = MinioAccount()
 ACCOUNT_USER = "bk-" + hashlib.sha256(b"echoport-retention").hexdigest()[:17]
 POLICY_FILE = "/etc/minio/policies/backup-echoport-retention.json"
-ACCOUNT_PROBE = " probe /usr/local/bin/mc local backup-echoport-retention "
+ACCOUNT_PROBE = " probe /etc/default/rustfs backup-echoport-retention "
 ACCOUNT_LOGIN = "/usr/local/bin/mc ls minio/backups >/dev/null && echo ok"
 # Without an account: the alias takes both credentials from the secrets.
 ROOT_STYLE = {**SECRET_VALUES, "minio_access_key": "echoport-fixture-minio-user"}
@@ -75,7 +75,7 @@ CRONS = {
     "staging": "Echoport staging DB refresh",
 }
 READ_ONLY = [
-    "Deploy echoport | Require the MinIO admin alias local of root",
+    "Deploy echoport | Require RustFS admin access through /etc/default/rustfs",
     "Deploy echoport | Verify MinIO account echoport-retention",
     "Deploy echoport | Verify echoport certifi/pip trust",
     "Deploy echoport | Verify the cleanup user can reach the MinIO bucket",
@@ -225,16 +225,12 @@ def test_first_run_installs_everything(cfg: EchoportConfig) -> None:
     assert len(run.stdin) == 5
     assert ROUTE in [path for path, _ in run.secret_files]
     stdin = dict(run.stdin)
-    user_add = next(c for c in commands if "admin user add local" in c)
+    account = [c for c in commands if c.startswith("python3 -I -B -c ")]
+    assert [rustfs_args(c)[0] for c in account] == ["require", "create-policy", "add-user", "attach", "verify"]
+    user_add = account[2]
     assert stdin[user_add] == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
-    # The account first, through root's admin alias, before anything else.
-    account_ops = [
-        "/usr/local/bin/mc admin info local",
-        "/usr/local/bin/mc admin policy create local backup-echoport-retention " + POLICY_FILE,
-        user_add,
-        f"/usr/local/bin/mc admin policy attach local backup-echoport-retention --user {ACCOUNT_USER}",
-    ]
-    positions = [next(i for i, c in enumerate(commands) if c.startswith(op)) for op in account_ops]
+    # The account first, through RustFS's admin API, before anything else.
+    positions = [commands.index(c) for c in account[:4]]
     assert positions == sorted(positions)
     assert positions[-1] < commands.index("useradd -d /home/echoport -s /bin/bash -g echoport -r -M echoport")
     assert run.upload(POLICY_FILE).decode() == render_policy(ACCOUNT)
@@ -475,7 +471,7 @@ def test_disabled_jobs_are_removed_not_added(tmp_path: Path) -> None:
         f"Cron job {name}: absent" for name in CRONS.values()
     }
     assert not any(path.endswith(".log") or path == REFRESH for path in run.uploaded_paths)
-    assert not any("alias import" in c or "mc admin" in c for c in run.executed_commands)
+    assert not any("alias import" in c or "python3 -I -B -c " in c for c in run.executed_commands)
 
 
 def test_missing_log_files_and_staging_script_are_created(cfg: EchoportConfig) -> None:
@@ -764,13 +760,13 @@ def test_policy_file_drift_reinstalls_and_recreates_the_policy(cfg: EchoportConf
 
 
 def test_a_secret_the_alias_cannot_log_in_with_is_upserted(cfg: EchoportConfig) -> None:
-    # The alias holds the configured secret but MinIO refuses it (changed by hand).
+    # The alias holds the configured secret but the store refuses it (changed by hand).
     secrets = values(cfg)
     run = deploy(cfg, secrets, {**converged(cfg, secrets), ACCOUNT_LOGIN: []})
 
     assert changed_names(run) == {ACCOUNT_STEPS["user"]}
     [(command, stdin)] = stdin_writes(run)
-    assert command.startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
+    assert rustfs_args(command) == ["add-user", "/etc/default/rustfs"]
     assert stdin == f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"
 
 
@@ -781,29 +777,14 @@ def test_secret_rotation_upserts_the_user_then_the_alias(cfg: EchoportConfig) ->
 
     assert changed_names(run) == {ACCOUNT_STEPS["user"], "Configure mc alias for the cleanup user"}
     commands = run.executed_commands
-    user_add = next(i for i, c in enumerate(commands) if "admin user add local" in c)
+    user_add = next(i for i, c in enumerate(commands) if c.startswith("python3 -I -B -c ") and "add-user" in c)
     alias = next(i for i, c in enumerate(commands) if "alias import minio" in c)
     assert user_add < alias
 
 
-def test_without_root_admin_alias_nothing_changes_on_minio(cfg: EchoportConfig) -> None:
-    secrets = values(cfg)
-    responses = {
-        **converged(cfg, secrets),
-        "/usr/local/bin/mc admin info local": {"success": False},
-        ACCOUNT_PROBE: ["policy=missing user=missing"],
-    }
-    run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
-
-    assert not run.succeeded
-    assert next(op.name for op in run.ops if not op.succeeded) == READ_ONLY[0]
-    assert not any("mc admin policy" in c or "mc admin user" in c for c in run.executed_commands)
-    assert stdin_writes(run) == []
-
-
 def test_an_account_that_fails_verification_fails_the_deploy(cfg: EchoportConfig) -> None:
     secrets = values(cfg)
-    responses = {**converged(cfg, secrets), " verify /usr/local/bin/mc local backup-": {"success": False}}
+    responses = {**converged(cfg, secrets), " verify /etc/default/rustfs backup-": {"success": False}}
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
@@ -834,24 +815,16 @@ def test_route_sends_hsts_without_preload(cfg: EchoportConfig) -> None:
     assert len(hsts_headers(route_text(cfg, values(cfg)))) == 1
 
 
-def test_account_provisioning_goes_through_the_provisioner_interface(tmp_path: Path) -> None:
-    from ops_deploy.services.echoport.deploy import McAdminProvisioner, account_provisioner
-
-    cfg = make_cfg(tmp_path)
-    store = account_provisioner(cfg)
-    assert isinstance(store, McAdminProvisioner)
-    assert ACCOUNT.provisioner == "mc_admin"
-    # The MinIO implementation speaks mc admin through root's admin alias; no credential is an argument.
-    assert store.attach_policy(ACCOUNT) == shlex.join(
-        ["/usr/local/bin/mc", "admin", "policy", "attach", "local", ACCOUNT.policy, "--user", ACCOUNT.user]
-    )
-    assert store.add_user(ACCOUNT).startswith("/usr/local/bin/mc admin user add local >/dev/null 2>&1 || ")
-    # Only stores with an implementation can be named.
-    with pytest.raises(ValueError, match="provisioner"):
-        MinioAccount(provisioner="rustfs")
-
-
 RUSTFS_ACCOUNT = MinioAccount(provisioner="rustfs_admin")
+
+
+def test_rustfs_is_the_only_provisioner() -> None:
+    assert ACCOUNT == RUSTFS_ACCOUNT
+    for gone in ("mc_admin", "rustfs"):
+        with pytest.raises(ValueError, match="provisioner"):
+            MinioAccount(provisioner=gone)
+
+
 RUSTFS_REQUIRE = "Deploy echoport | Require RustFS admin access through /etc/default/rustfs"
 
 
@@ -902,9 +875,7 @@ def test_rustfs_provisioner_speaks_the_native_admin_api_through_the_rustfs_helpe
 def test_rustfs_account_runs_the_same_steps_without_credentials_on_a_command_line(tmp_path: Path) -> None:
     cfg = make_cfg(tmp_path, minio_account=RUSTFS_ACCOUNT)
     secrets = values(cfg)
-    responses = converged(cfg, secrets)
-    del responses[ACCOUNT_PROBE]
-    responses[f" probe /etc/default/rustfs {RUSTFS_ACCOUNT.policy} "] = ["policy=missing user=missing"]
+    responses = {**converged(cfg, secrets), ACCOUNT_PROBE: ["policy=missing user=missing"]}
     run = deploy(cfg, secrets, responses)
 
     assert changed_names(run) == set(ACCOUNT_STEPS.values())
@@ -925,8 +896,7 @@ def test_rustfs_account_without_admin_access_changes_nothing(tmp_path: Path) -> 
     cfg = make_cfg(tmp_path, minio_account=RUSTFS_ACCOUNT)
     secrets = values(cfg)
     require = RustfsAdminProvisioner(PurePosixPath("/etc/default/rustfs")).require_admin()
-    responses = {**converged(cfg, secrets), require: {"success": False}}
-    del responses[ACCOUNT_PROBE]
+    responses = {**converged(cfg, secrets), require: {"success": False}, ACCOUNT_PROBE: ["policy=missing user=missing"]}
     run = run_deploy_fake(deploy_echoport, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
 
     assert not run.succeeded
@@ -934,7 +904,7 @@ def test_rustfs_account_without_admin_access_changes_nothing(tmp_path: Path) -> 
     assert stdin_writes(run) == []
 
 
-# -- one alias per object store (MinIO and RustFS side by side) -----------------
+# -- one alias per object store (two stores side by side) ------------------------
 
 
 RUSTFS_URL = "http://127.0.0.1:9020"
@@ -963,12 +933,11 @@ def test_each_store_gets_its_account_and_alias(tmp_path: Path) -> None:
 
     commands = run.executed_commands
     stdin = dict(stdin_writes(run))
-    # MinIO through root's admin alias, RustFS through its native admin API.
-    assert any(c.startswith("/usr/local/bin/mc admin user add local") for c in commands)
+    # Each store's account through RustFS's native admin API.
     rustfs = [rustfs_args(c)[0] for c in commands if c.startswith("python3 -I -B -c ")]
-    assert rustfs == ["require", "create-policy", "add-user", "attach", "verify"]
+    assert rustfs == ["require", "create-policy", "add-user", "attach", "verify"] * 2
     # The same user and secret on both stores; never on a command line.
-    users = [text for c, text in stdin.items() if "admin user add" in c or "add-user" in c]
+    users = [t for c, t in run.stdin if c.startswith("python3 -I -B -c ") and rustfs_args(c)[0] == "add-user"]
     assert users == [f"{ACCOUNT_USER}\n{SECRET_VALUES['minio_secret_key']}\n"] * 2
     assert all(SECRET_VALUES["minio_secret_key"] not in c for c in commands)
     imports = {

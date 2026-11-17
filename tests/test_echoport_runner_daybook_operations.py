@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from pyinfra.api import DeployError
 
-from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest, render_account_policy
+from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest
 from ops_deploy.services._echoport_runner.daybook_operations import (
     BRIDGE,
     DaybookOperationsBackup,
@@ -134,15 +134,8 @@ def converged(cfg: DaybookOperationsBackup) -> dict[Any, Any]:
     return {
         **fakehost.mc_installed(),
         re.compile(rf"mc ls {access.alias}/backups/{access.target}/ >/dev/null && echo ok"): ["ok"],
-        "def statements(doc)": ["policy=ok user=attached"],
         re.compile(rf"alias list {access.alias} \)"): [alias_digest(access.url, access.account.user, SECRET)],
         re.compile(r"alias list minio \)"): ["none"],
-        **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
-        **fakehost.file(
-            f"/etc/minio/policies/backup-{access.target}.json",
-            render_account_policy(access.account),
-            mode="-rw-r-----",
-        ),
         **fakehost.directory("/usr/local/libexec"),
         **fakehost.directory(cfg.staging, mode="drwx------"),
         **fakehost.directory(cfg.service_dir),
@@ -183,7 +176,6 @@ def test_a_first_run_writes_in_the_roles_order() -> None:
     cfg = config()
     responses = {
         "test -x /usr/local/bin/mc": ["present"],
-        "def statements(doc)": ["policy=missing user=missing"],
         target_code(runner_target(cfg), "check").splitlines()[1]: ["pending"],
     }
     fake = run_deploy_fake(
@@ -193,7 +185,6 @@ def test_a_first_run_writes_in_the_roles_order() -> None:
     assert fake.succeeded, fake.error
     names = [name.split(" | ", 1)[-1] for name in fake.changed_ops]
     order = [
-        "Create or update MinIO user of daybook_operations_api",
         "Configure mc alias backup-daybook_operations_api of root",
         "Install the Daybook operations backup bridge",
         "Write the backup bridge policy",

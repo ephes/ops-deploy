@@ -4,8 +4,8 @@ ops-control's ``playbooks/register-echoport-backup.yml`` runs ops-library's
 ``echoport_backup`` role and then ``common/backup_minio_account.yml`` once per
 target the runner serves. One runner script serves many Echoport targets; it
 picks the ``mc`` alias by the first segment of the object key
-(``MINIO_PREFIX_ALIASES``), so every target has its own scoped MinIO account
-and root ``mc`` alias. :class:`GenericRunnerRegistration` carries the values;
+(``MINIO_PREFIX_ALIASES``), so every target has its own scoped account on
+RustFS and root ``mc`` alias. :class:`GenericRunnerRegistration` carries the values;
 :func:`install_generic_registration` does the tasks in the playbook's order:
 
 1. the role's ``sqlite3`` package (``ansible.builtin.package``, no cache update);
@@ -14,8 +14,8 @@ and root ``mc`` alias. :class:`GenericRunnerRegistration` carries the values;
    kept when the checksum matches, else downloaded and verified before it
    replaces the file;
 3. ``fastdeploy_runner`` with the role's settings (:func:`.install_runner`);
-4. per target, in the playbook's order, the scoped MinIO account and root's
-   alias (:func:`.access.minio_access`).
+4. per target, in the playbook's order, root's alias and the proof of the
+   target's RustFS account (:func:`.access.minio_access`).
 
 The role's own ``minio_alias`` include is skipped by the playbook (it passes
 no credentials), so it is not ported.
