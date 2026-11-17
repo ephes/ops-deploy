@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- native_app routes (Navidrome, Ollama proxy): Traefik deletes the client's
+  `Remote-User` and `True-Client-IP` request headers. Navidrome trusted
+  `Remote-User` from its loopback peer, which is Traefik, so anyone reaching
+  the route could act as any user, including the admin; `True-Client-IP` let a
+  client pick the IP Navidrome logs and rate-limits logins by. The next deploy
+  of each native route rewrites its file in `/etc/traefik/dynamic/`.
+
 - Default Traefik to 3.7.19 (`TraefikDeployConfig.version`); document the
   verified official Linux archive checksums and the 3.7.18/3.7.19 review in
   `docs/traefik.md`. 3.7.18 is skipped (superseded before its rollout). The

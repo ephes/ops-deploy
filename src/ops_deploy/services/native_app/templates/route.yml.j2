@@ -43,6 +43,11 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ route.host }}"
+          # An empty value makes Traefik delete what the client sent. No native
+          # app takes its user from the proxy, and a client must not pick its own
+          # identity (Navidrome's ExtAuth header) or client IP (rate limits).
+          Remote-User: ""
+          True-Client-IP: ""
     {{ route.name }}-gzip:
       compress: {}
     {{ route.name }}-redirect:

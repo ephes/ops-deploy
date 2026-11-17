@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from ops_deploy.core.config import ConfigValidationError
-from ops_deploy.helpers.traefik import TraefikRoute
+from ops_deploy.helpers.traefik import BasicAuth, TraefikRoute
 from ops_deploy.services.native_app import NativeAppConfig
 from ops_deploy.services.native_app.config import TomlData
 from ops_deploy.services.native_app.render import render_route, render_toml, render_unit
@@ -101,6 +101,22 @@ def test_route_shapes_and_explicit_public_reason() -> None:
                 "route": {"host": "fixture.example.invalid", "port": 18002, "access": "public"},
             }
         )
+
+
+@pytest.mark.parametrize("auth", [None, "basic"])
+def test_route_strips_client_identity_headers_on_every_router(auth: str | None) -> None:
+    """A client must not hand the app a proxy-asserted user or its own client IP."""
+
+    basic = BasicAuth(user="admin", password=SecretStr("fixture-password")) if auth else None
+    route = TraefikRoute(name="fixture", host="fixture.example.invalid", app_port=18002, basic_auth=basic)
+    parsed = yaml.safe_load(render_route(route, "$2y$05$fixture" if auth else None))["http"]
+    headers = parsed["middlewares"]["fixture-headers"]["headers"]["customRequestHeaders"]
+    # Traefik deletes a request header whose configured value is empty.
+    assert headers["Remote-User"] == ""
+    assert headers["True-Client-IP"] == ""
+    proxied = [router for router in parsed["routers"].values() if "redirect" not in str(router["middlewares"])]
+    assert proxied
+    assert all("fixture-headers" in router["middlewares"] for router in proxied)
 
 
 def test_empty_auth_user_refuses_before_host(monkeypatch: pytest.MonkeyPatch) -> None:
