@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- daybook_voice_memo_attention_reader: removed. It provisioned the reader
+  identity on MinIO through `mc admin`; MinIO is gone and nothing registers
+  the deploy any more.
+
 - archive: the MinIO bucket and service-account step is removed:
   `MinioBootstrap`, `ArchiveConfig.minio` (`None` by default and in the only
   caller), `files/minio_bootstrap.sh` and `files/minio_probe.sh`, and the
