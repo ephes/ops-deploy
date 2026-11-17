@@ -8,7 +8,6 @@ for a successfully installed collector.
 import base64
 import fcntl
 import grp
-import hashlib
 import json
 import math
 import os
@@ -275,93 +274,6 @@ def finish(v):
     if path.exists():path.unlink()
 
 
-def mc_current(v):
-    path=Path('/usr/local/bin/mc');regular(path,optional=True)
-    if not path.exists():return False
-    if path.stat().st_size>64*1024*1024:raise ValueError('oversized mc executable')
-    return hashlib.sha256(path.read_bytes()).hexdigest()==v['mc_sha256']
-
-
-def install_mc(v):
-    path=Path('/usr/local/bin/mc');regular(path,optional=True)
-    if not mc_current(v):
-        fd, temporary=tempfile.mkstemp(prefix='.monitoring-mc-',dir=path.parent)
-        try:
-            with os.fdopen(fd,'wb') as stream, urlopen(v['mc_url'],timeout=120) as response:
-                digest=hashlib.sha256();size=0
-                while chunk:=response.read(1024*1024):
-                    size+=len(chunk)
-                    if size>64*1024*1024:raise ValueError('oversized mc download')
-                    stream.write(chunk);digest.update(chunk)
-                if digest.hexdigest()!=v['mc_sha256']:raise ValueError('mc checksum mismatch')
-                stream.flush();os.fsync(stream.fileno());os.fchmod(stream.fileno(),0o755);os.fchown(stream.fileno(),0,0)
-            os.replace(temporary,path)
-        finally:
-            if os.path.exists(temporary):os.unlink(temporary)
-    else:
-        info=path.stat()
-        if stat.S_IMODE(info.st_mode)!=0o755:os.chmod(path,0o755)
-
-
-def lag_cache_current(v):
-    from datetime import datetime
-    for job in v['jobs']:
-        name=job.get('name') or job['bucket'].replace('-','_')
-        root=Path(job.get('monitor_state_dir') or '/var/lib/minio-replication-monitor/'+name)
-        path=root/'status.json';regular(path,optional=True)
-        try:
-            if path.stat().st_size>1024*1024:raise ValueError('oversized lag status')
-            value=json.loads(path.read_text())
-            age=time.time()-datetime.fromisoformat(value['checked_at'].replace('Z','+00:00')).timestamp()
-            if not 0<=age<v['freshness_sec']:return False
-            if (value.get('job_name'),value.get('bucket'),value.get('destination_endpoint'))!=(name,job['bucket'],v['destination_endpoint']):return False
-            if value.get('level') not in ('ok','warning','critical'):return False
-            # Recent critical/probe-error status is retained; do not poll until a
-            # favourable outcome or reset the existing parity grace marker.
-        except (FileNotFoundError,ValueError,KeyError,TypeError):return False
-        regular(root/'parity.marker',optional=True)
-        if not (root/'parity.marker').exists():return False
-    return True
-
-
-def lag_pending(v):
-    return (any(not file_same(row) for row in v['files']) or not mc_current(v)
-            or stat.S_IMODE(Path('/usr/local/bin/mc').stat().st_mode)!=0o755
-            or Path('/usr/local/bin/minio-replication-lag-probe.sh').exists() or Path('/usr/local/bin/minio-replication-lag-probe.sh').is_symlink()
-            or debt(v) is not None or not lag_cache_current(v))
-
-
-def lag_apply(v):
-    admit(v['paths'])
-    changed=[row for row in v['files'] if not file_same(row)]
-    previous=debt(v) or dict(refresh=False,restart=False,timer=False,reload=False)
-    asset=not mc_current(v)
-    desired=dict(refresh=previous['refresh'] or bool(changed) or asset or not lag_cache_current(v),
-                 restart=False,timer=previous['timer'] or any(row.get('timer',False) for row in changed),
-                 reload=previous['reload'] or any(row['path'].startswith('/etc/systemd/system/') for row in changed))
-    validate_units(changed)
-    write(dict(path=v['debt'],content=json.dumps(desired)+'\n',mode=0o600))
-    install_mc(v)
-    for row in changed:write(row)
-    legacy=Path('/usr/local/bin/minio-replication-lag-probe.sh')
-    if legacy.is_symlink():legacy.unlink()
-    elif legacy.exists():regular(legacy);legacy.unlink()
-    if desired['reload']:run(['systemctl','daemon-reload'])
-    if desired['refresh']:
-        # The original inline task tolerates a critical/nonzero monitor result;
-        # that result remains in the report and Nyxmon markers. Tool launch or
-        # malformed/missing state is not replaced with fabricated success.
-        result=subprocess.run(['systemctl','start',v['service']],capture_output=True,text=True,timeout=600)
-        if result.returncode:print('Lag probe nonzero result retained under original failure-tolerant policy',file=sys.stderr)
-    state=unit(v['timer'])
-    if state.get('UnitFileState')!='enabled':run(['systemctl','enable',v['timer']])
-    if desired['timer']:run(['systemctl','restart',v['timer']])
-    elif state.get('ActiveState')!='active':run(['systemctl','start',v['timer']])
-    final=unit(v['timer'])
-    if final.get('ActiveState')!='active' or final.get('UnitFileState')!='enabled':raise ValueError('lag timer did not converge')
-    Path(v['debt']).unlink()
-
-
 def http(v):
     credential = base64.b64encode((v['username']+':'+v['password']).encode()).decode()
     request = Request(v['url'], headers={'Authorization':'Basic '+credential})
@@ -385,8 +297,7 @@ def main():
     if sys.argv[1] == 'admit':admit(v['paths']);print('current');return
     if sys.argv[1] == 'http':http(v);return
     if sys.argv[1] == 'check':
-        answer=lag_pending(v) or not (unit(v['timer']).get('ActiveState')=='active' and unit(v['timer']).get('UnitFileState')=='enabled') if v.get('kind')=='lag' else pending(v)
-        print('pending' if answer else 'current');return
+        print('pending' if pending(v) else 'current');return
     if sys.argv[1] == 'finish-check':print('pending' if finish_pending(v) else 'current');return
     if sys.argv[1] not in ('apply','finish'):raise ValueError('unknown endpoint action')
     lock = Path(v['debt']).parent / 'lock'; regular(lock, optional=True)
@@ -394,7 +305,6 @@ def main():
     with lock.open('a') as stream:
         os.chmod(lock, 0o600); fcntl.flock(stream, fcntl.LOCK_EX)
         if sys.argv[1]=='finish':finish(v)
-        elif v.get('kind')=='lag':lag_apply(v)
         else:apply(v)
     print('current')
 

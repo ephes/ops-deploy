@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- fractal_monitoring: the MinIO replication lag monitor is removed:
+  `ReplicationLagConfig`, `FractalMonitoringConfig.replication`, the
+  `minio-replication-lag-check` service and timer, the lag program and the
+  endpoint helper's `lag` mode with its own `mc` download. It was off by
+  default and is off in the only caller; nothing else rendered changes. The
+  RustFS replication monitor (`services.rustfs`) needs no `mc`, so nothing
+  manages `/usr/local/bin/mc` on the storage host any more.
+
 - backup: the MinIO archive pull is removed: `MinioArchiveConfig`,
   `deploy_minio_archive`, the `minio-offsite-replication` service, timer,
   failure unit, script and alert templates, and on the source side

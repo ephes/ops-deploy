@@ -2,7 +2,8 @@
 
 `infra.mail_relay_client`, `infra.smartd` and `infra.zed` expose typed alerting
 roles. `services.fractal_monitoring` combines those roles with the original
-storage exporter, cached storage and backup HTTP endpoints, and MinIO lag job.
+storage exporter and cached storage and backup HTTP endpoints (the MinIO
+replication lag job is removed with MinIO).
 Its separate `deploy_fractal_monitoring_checks` stage validates both cached
 HTTP endpoints and upserts Fractal's two original Nyxmon checks. The private
 caller supplies inventory, thresholds, endpoint credentials and fixed host order.
@@ -73,17 +74,9 @@ Small component-specific restart debt preserves failed rollouts for a retry.
 ## Cached monitoring
 
 `FractalMonitoringConfig` holds `relay`, `smartd`, `zed`, `exporter`, `storage`,
-`backup`, `replication`, declared Tailscale identities and explicit schema rules.
-`StorageExporterConfig`, `StorageEndpointConfig`, `BackupEndpointConfig` and
-`ReplicationLagConfig` retain the original templates/programs and defaults,
-except that `minio-replication-lag-check.timer` adds `OnActiveSec`
-(`timer_on_boot_sec`), an `OnCalendar` backstop (`timer_on_calendar`, default
-`*:0/5`) and `Persistent=true`, so it cannot stall at `NEXT n/a` after a reboot.
-Because `Persistent=true` fires it right after boot, its service waits first:
-`After=`/`Wants=` `systemd-time-wait-sync.service` (first NTP sync), `After=`
-`tailscaled.service`, and an `ExecStartPre=` curl on
-`<destination_endpoint>/minio/health/live` with retries for up to 180 s, so a
-reboot leaves no failed check behind.
+`backup`, declared Tailscale identities and explicit schema rules.
+`StorageExporterConfig`, `StorageEndpointConfig` and `BackupEndpointConfig`
+retain the original templates/programs and defaults.
 Collector paths, endpoints, data-directory permissions, no-login accounts without
 home creation, timer policies and source version/SHA are typed inputs. Existing
 endpoint account group/shell policy is enforced without creating its home.
@@ -117,31 +110,10 @@ or switch policy is introduced.
 Before any endpoint writes, path admission checks every declared file/directory
 and ancestor, unit/debt/lock paths and JSON scratch path. Linked paths, wrong
 file/directory types, shared scratch inodes, or a missing unmanaged external
-exporter refuse as functional path-integrity errors. Only the explicit legacy
-lag shell symlink may be removed. Missing owned directories can be created;
+exporter refuse as functional path-integrity errors. Missing owned directories can be created;
 there is no engine/owner acknowledgement or adoption marker. An independently
 enabled exporter is installed even with the storage endpoint disabled, and its
 original root:root0755 pool-cache directory policy is enforced.
-
-## MinIO source and failure policy
-
-The default mc asset is the official [GitHub release asset](https://github.com/minio/mc/releases/tag/RELEASE.2025-08-13T08-35-41Z)
-for `RELEASE.2025-08-13T08-35-41Z`, SHA256
-`01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891`.
-It replaces an unavailable legacy default download URL, with identical bytes and
-version. Only the original pinned version/digest is accepted; explicit custom source URLs
-remain supported for those same bytes. An existing exact binary
-is not fetched or replaced; downloads stage privately and require the exact
-checksum before replacement. This default executable is Linux AMD64.
-
-The original lag program still receives MinIO credentials through its existing
-host EnvironmentFile and short-lived child environment, never deployment argv
-or logs. Jobs, heartbeat/parity markers, grace periods and timer policy are
-retained. Recent critical/error reports are compatible cache states. A refresh
-keeps the original tolerated nonzero probe policy; it does not turn a monitored
-failure into an artificial healthy result. Missing/stale state can therefore
-require another managed refresh on the next deployment. Periodic timers and the
-explicit legacy force path continue to provide operator reassertion.
 
 ## Nyxmon and qualification scope
 
@@ -160,11 +132,6 @@ Owned native evidence covers real Ubuntu24 ARM Postfix bootstrap/refusal/repeat,
 Python HTTP/auth/realm/cache behavior and real ZFS2.2 file-vdev metadata. SMART
 lifecycle proof uses an explicitly emulated scsi_debug device, with fixture-only
 virtualization-condition and SMART-capability setup; it proves no physical
-NVMe/SATA efficacy. Original failed prototypes are retained. A separate owned
-AMD64 KVM guest ran the exact pinned mc and MinIO with the unmodified lag program:
-healthy first/repeat and status-only heartbeat passed, missing required objects
-returned critical/exit2, optional critical returned exit0, parity breach retained
-the grace marker, and recovery passed. Those probes wrote their declared synthetic
-status/marker files; this is component evidence, not a typed composite no-op.
+NVMe/SATA efficacy. Original failed prototypes are retained.
 Inventory preflight/live qualification remains pending. No migration completion,
 owner/lifecycle acceptance or hardware attestation is claimed by these APIs.

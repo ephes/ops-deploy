@@ -28,11 +28,10 @@ from ops_deploy.services import _metrics_httpd as metrics_httpd
 from .config import (
     BackupEndpointConfig,
     FractalMonitoringConfig,
-    ReplicationLagConfig,
     SchemaRule,
     StorageEndpointConfig,
 )
-from .render import lag_script, render
+from .render import render
 
 CREDENTIAL_FIELD = "nyxmon_storage_metrics_password"
 SCRIPT = (Path(__file__).parent / "files/endpoint_host.py").read_text()
@@ -242,80 +241,6 @@ def deploy_endpoint(
     metrics_httpd.verify(selection)
 
 
-def deploy_replication(cfg: ReplicationLagConfig) -> None:
-    if not cfg.enabled:
-        return
-    roots = [
-        job.get("monitor_state_dir")
-        or "/var/lib/minio-replication-monitor/" + (job.get("name") or job["bucket"].replace("-", "_"))
-        for job in cfg.jobs
-    ]
-    paths = [path_row(root, "directory") for root in roots]
-    for root in roots:
-        paths += [
-            path_row(root + "/" + name) for name in ("status.json", "status.json.tmp", "lag.marker", "parity.marker")
-        ]
-    debt = f"/var/lib/ops-deploy/fractal-monitoring/{cfg.service_name}-rollout.json"
-    paths += [
-        path_row(p)
-        for p in (
-            cfg.script_path,
-            cfg.jobs_config_path,
-            cfg.mc_path,
-            debt,
-            str(PurePosixPath(debt).parent / "lock"),
-            f"/etc/systemd/system/{cfg.service_name}.service",
-            f"/etc/systemd/system/{cfg.timer_name}.timer",
-        )
-    ]
-    paths.append(path_row("/usr/local/bin/minio-replication-lag-probe.sh", "legacy"))
-    admit_paths(paths)
-    for root in roots:
-        files.directory(
-            name="Ensure original replication monitor state directory",
-            path=root,
-            user="root",
-            group="root",
-            mode="0755",
-        )
-    rows = [
-        dict(path=cfg.script_path, content=lag_script(), mode=0o755),
-        dict(
-            path=cfg.jobs_config_path, content=json.dumps(list(cfg.jobs), indent=4, sort_keys=True) + "\n", mode=0o644
-        ),
-        dict(
-            path=f"/etc/systemd/system/{cfg.service_name}.service",
-            content=render(cfg, "minio-replication-lag-check.service"),
-            mode=0o644,
-        ),
-        dict(
-            path=f"/etc/systemd/system/{cfg.timer_name}.timer",
-            content=render(cfg, "minio-replication-lag-check.timer"),
-            mode=0o644,
-            timer=True,
-        ),
-    ]
-    # No endpoint password is consumed in this mode. The original monitor's
-    # MinIO credentials stay inside its existing EnvironmentFile on the host.
-    reconcile_endpoint(
-        name="Reconcile original replication lag job; gated managed refresh",
-        payload=dict(
-            kind="lag",
-            files=rows,
-            paths=paths,
-            service=cfg.service_name + ".service",
-            timer=cfg.timer_name + ".timer",
-            jobs=list(cfg.jobs),
-            destination_endpoint=cfg.destination_endpoint,
-            freshness_sec=cfg.freshness_sec,
-            mc_sha256=cfg.mc_sha256,
-            mc_url=cfg.mc_url,
-            debt=debt,
-        ),
-        credential=SecretStr(""),
-    )
-
-
 @deploy("Fractal cached storage and backup monitoring")
 def deploy_fractal_monitoring(cfg: FractalMonitoringConfig, secrets: SecretValues) -> None:
     credential = password(secrets)
@@ -350,7 +275,6 @@ def deploy_fractal_monitoring(cfg: FractalMonitoringConfig, secrets: SecretValue
             mode=cfg.exporter.mode,
         )
     deploy_endpoint(cfg.storage, [exporter] if cfg.exporter.enabled else [], cfg.storage_schema, credential)
-    deploy_replication(cfg.replication)
     backup_rows = [
         dict(
             path=cfg.backup.exporter_path,

@@ -1,4 +1,4 @@
-"""Typed versions of the original six monitoring roles and inline lag job.
+"""Typed versions of the original six monitoring roles.
 
 Secrets stay out of these immutable configuration objects. Original collector
 resources retain their policy and schema; deployment controls when to refresh.
@@ -9,8 +9,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-from typing import Annotated, Any, Literal
-from urllib.parse import urlsplit
+from typing import Any, Literal
 
 from pydantic import Field, StrictBool, StrictInt, model_validator
 
@@ -273,88 +272,6 @@ class BackupEndpointConfig(EndpointConfig):
         return self
 
 
-class ReplicationLagConfig(RoleConfig):
-    enabled: StrictBool = False
-    jobs: tuple[dict[str, Any], ...] = ()
-    destination_endpoint: str = ""
-    script_path: AbsolutePath = "/usr/local/bin/minio-replication-lag-probe.py"
-    jobs_config_path: AbsolutePath = "/etc/minio-replication-monitor-jobs.json"
-    service_name: str = "minio-replication-lag-check"
-    timer_name: str = "minio-replication-lag-check"
-    timer_interval_sec: StrictInt = 300
-    timer_on_boot_sec: StrictInt = 120
-    timer_randomized_delay_sec: StrictInt = 20
-    timer_on_calendar: Annotated[str, Field(pattern=r"^[A-Za-z0-9*:/,.~-][A-Za-z0-9*:/,.~ -]*$")] = "*:0/5"
-    mc_version: Literal["RELEASE.2025-08-13T08-35-41Z"] = "RELEASE.2025-08-13T08-35-41Z"
-    mc_sha256: Literal["01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"] = (
-        "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
-    )
-    mc_url: str = "https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z"
-    mc_path: Literal["/usr/local/bin/mc"] = "/usr/local/bin/mc"
-    freshness_sec: StrictInt = 600
-
-    @model_validator(mode="after")
-    def _safe(self) -> ReplicationLagConfig:
-        safe_json(self.model_dump(mode="json"))
-        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", self.service_name) or not re.fullmatch(
-            r"[a-z0-9][a-z0-9_-]*", self.timer_name
-        ):
-            raise ValueError("invalid lag service/timer name")
-        if not re.fullmatch(r"[0-9a-f]{64}", self.mc_sha256):
-            raise ValueError("invalid mc source checksum")
-        for url in (self.mc_url, self.destination_endpoint):
-            if not url and not self.enabled:
-                continue
-            parsed = urlsplit(url)
-            if (
-                parsed.scheme not in {"http", "https"}
-                or not parsed.hostname
-                or parsed.username is not None
-                or parsed.password is not None
-                or any(char.isspace() or ord(char) < 32 for char in url)
-            ):
-                raise ValueError("MinIO URLs must be nonsecret absolute HTTP(S) bindings")
-        if (
-            min(self.timer_interval_sec, self.freshness_sec) < 1
-            or min(self.timer_on_boot_sec, self.timer_randomized_delay_sec) < 0
-        ):
-            raise ValueError("invalid lag monitor timings")
-        if self.enabled:
-            if not self.jobs or not self.destination_endpoint:
-                raise ValueError("lag monitor requires jobs and destination endpoint")
-            names = []
-            for row in self.jobs:
-                if not isinstance(row.get("bucket"), str) or not row["bucket"]:
-                    raise ValueError("lag jobs require a bucket")
-                name = row.get("name") or row["bucket"].replace("-", "_")
-                if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name) or ".." in name:
-                    raise ValueError("invalid lag job identity")
-                state = row.get("monitor_state_dir")
-                if state is not None and (
-                    not isinstance(state, str)
-                    or not re.fullmatch(r"/[A-Za-z0-9._/+-]+", state)
-                    or ".." in state.split("/")
-                ):
-                    raise ValueError("invalid lag state directory")
-                names.append(name)
-                warning = float(row.get("warning_hours", 2))
-                critical = float(row.get("critical_hours", 6))
-                if (
-                    warning <= 0
-                    or critical < warning
-                    or float(row.get("parity_critical_hours", 1)) * 3600 < 2 * self.timer_interval_sec
-                ):
-                    raise ValueError("invalid lag/parity grace policy")
-            for row in self.jobs:
-                if row.get("heartbeat", True) is False:
-                    bucket = row.get("heartbeat_status_bucket")
-                    if not bucket or bucket == row["bucket"] or bucket not in {r["bucket"] for r in self.jobs}:
-                        raise ValueError("heartbeat-free job needs another configured heartbeat bucket")
-            if len(names) != len(set(names)):
-                raise ValueError("lag job names must be unique")
-        return self
-
-
 class FractalMonitoringConfig(RoleConfig):
     relay: MailRelayClientConfig
     smartd: SmartdConfig
@@ -362,7 +279,6 @@ class FractalMonitoringConfig(RoleConfig):
     exporter: StorageExporterConfig
     storage: StorageEndpointConfig
     backup: BackupEndpointConfig
-    replication: ReplicationLagConfig = Field(default_factory=ReplicationLagConfig)
     expected_tailscale_ipv4: str
     expected_relay_ipv4: str
     storage_schema: tuple[SchemaRule, ...]

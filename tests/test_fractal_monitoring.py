@@ -318,78 +318,6 @@ def test_nyxmon_missing_database_refuses_without_creating_or_echoing_login(tmp_p
     assert password not in result.stdout + result.stderr
 
 
-def test_recent_lag_error_is_not_polled_until_freshness_expires(tmp_path: Path) -> None:
-    from datetime import UTC, datetime, timedelta
-
-    helper = script("endpoint_host.py")
-    status = tmp_path / "status.json"
-    marker = tmp_path / "parity.marker"
-    job = dict(name="owned", bucket="owned", monitor_state_dir=str(tmp_path))
-    cfg = dict(jobs=[job], destination_endpoint="http://owned.invalid:9001", freshness_sec=600)
-    report = dict(
-        job_name="owned",
-        bucket="owned",
-        destination_endpoint=cfg["destination_endpoint"],
-        level="critical",
-        checked_at=datetime.now(UTC).isoformat(),
-        error="owned unavailable heartbeat",
-    )
-    status.write_text(json.dumps(report))
-    marker.touch()
-    before = (status.stat().st_mtime_ns, marker.stat().st_mtime_ns)
-    assert helper.lag_cache_current(cfg) is True
-    assert before == (status.stat().st_mtime_ns, marker.stat().st_mtime_ns)
-    report["checked_at"] = (datetime.now(UTC) - timedelta(seconds=700)).isoformat()
-    status.write_text(json.dumps(report))
-    assert helper.lag_cache_current(cfg) is False
-
-
-def test_exact_mc_binary_is_not_fetched_or_replaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    helper = script("endpoint_host.py")
-    target = tmp_path / "mc"
-    target.write_bytes(b"owned executable bytes")
-    target.chmod(0o755)
-    before = target.stat()
-    monkeypatch.setattr(helper, "Path", lambda value: target if str(value) == "/usr/local/bin/mc" else Path(value))
-
-    def no_network(*args: Any, **kwargs: Any) -> None:
-        raise AssertionError("current exact binary must never fetch")
-
-    monkeypatch.setattr(helper, "urlopen", no_network)
-    helper.install_mc(
-        dict(mc_sha256=hashlib.sha256(target.read_bytes()).hexdigest(), mc_url="https://unreachable.invalid/mc")
-    )
-    after = target.stat()
-    assert (before.st_ino, before.st_mtime_ns, before.st_ctime_ns) == (
-        after.st_ino,
-        after.st_mtime_ns,
-        after.st_ctime_ns,
-    )
-
-
-def test_wrong_mc_download_checksum_preserves_prior_binary_and_cleans_staging(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from io import BytesIO
-
-    helper = script("endpoint_host.py")
-    target = tmp_path / "mc"
-    target.write_bytes(b"prior owned binary")
-    before = target.stat()
-    monkeypatch.setattr(helper, "Path", lambda value: target if str(value) == "/usr/local/bin/mc" else Path(value))
-    monkeypatch.setattr(helper, "urlopen", lambda *a, **kw: BytesIO(b"wrong download body"))
-    with pytest.raises(ValueError, match="checksum mismatch"):
-        helper.install_mc(dict(mc_sha256="0" * 64, mc_url="https://owned.invalid/mc"))
-    assert target.read_bytes() == b"prior owned binary"
-    after = target.stat()
-    assert (before.st_ino, before.st_mtime_ns, before.st_ctime_ns) == (
-        after.st_ino,
-        after.st_mtime_ns,
-        after.st_ctime_ns,
-    )
-    assert list(tmp_path.glob(".monitoring-mc-*")) == []
-
-
 GOLDEN = Path(__file__).parent / "golden" / "fractal_monitoring"
 MONITORING_TEMPLATES = sorted(
     path.name.removesuffix(".j2")
@@ -404,11 +332,10 @@ def test_host_files_are_golden() -> None:
     """
 
     from ops_deploy.infra.zed.render import render as zed_render
-    from ops_deploy.services.fractal_monitoring.config import ReplicationLagConfig, StorageExporterConfig
+    from ops_deploy.services.fractal_monitoring.config import StorageExporterConfig
 
-    configs: dict[str, StorageExporterConfig | StorageEndpointConfig | BackupEndpointConfig | ReplicationLagConfig] = {
+    configs: dict[str, StorageExporterConfig | StorageEndpointConfig | BackupEndpointConfig] = {
         "backup": BackupEndpointConfig(),
-        "minio": ReplicationLagConfig(),
         "nyxmon": StorageExporterConfig(),
         "storage": StorageEndpointConfig(),
     }
