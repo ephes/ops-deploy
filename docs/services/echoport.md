@@ -81,9 +81,25 @@ MinIO's root account while `secrets/prod/minio-backup-accounts.yml` has no
 `echoport-retention` secret (ops-control requires that secret, so the root
 credentials never leave the controller) and its ops-library version assert.
 
+## The pinned `mc`: `ops_deploy.services._echoport.mc`
+
+`install_mc(path="/usr/local/bin/mc")` installs the pinned `mc`
+(`MC_VERSION` `RELEASE.2025-08-13T08-35-41Z`, linux-amd64, `MC_SHA256`),
+`root:root 0755`. A file that already has the pinned sha256 is kept and only
+its owner and mode are enforced, so a converged host plans no change; anything
+else is downloaded with `curl` into a private temporary directory next to the
+target, checked with `sha256sum -c` and only then moved over it. The Echoport
+deploy and the Echoport runner registrations call it before they configure
+their `mc` aliases. `pinned_binary(path, checksum, url, title)` is the same
+for another single-file release.
+
 ## What the deploy does
 
 1. Checks secrets and renders the env file; fails before any operation.
+   Then the pinned `mc` at `minio_mc_path` (`ops_deploy.services._echoport.mc.install_mc`:
+   kept when its sha256 is the pinned one, else downloaded and verified;
+   `root:root 0755`), which Echoport (`MINIO_MC_PATH`) and the cleanup alias
+   use. While planning, a host without `mc` reads the alias as missing.
 2. With `minio_account`, the playbook's `backup_account` include of
    `minio_deploy`, before anything else: a read-only check that
    `mc admin info local` succeeds (no MinIO change without root's admin

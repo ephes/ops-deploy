@@ -57,6 +57,7 @@ from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._echoport.mc import install_mc
 from ops_deploy.services.rustfs.deploy import iam_client_command
 
 FILES = Path(__file__).parent / "files"
@@ -705,7 +706,8 @@ def _alias_check(cfg: EchoportConfig, store: _Store | None = None) -> str:
         f"out=$( {_mc(cfg, '--json', 'alias', 'list', alias)} ); rc=$?; "
         f'printf \'%s\\n\' "$out" | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)} "$rc"'
     )
-    return when_present([cfg.home], listing, otherwise="none")
+    # Before the first deploy (no home, no mc yet) the alias is missing.
+    return when_present([cfg.home, cfg.minio_mc_path], listing, otherwise="none")
 
 
 class AccountProvisioner(Protocol):
@@ -851,7 +853,7 @@ def _minio_account(cfg: EchoportConfig, secrets: SecretValues, store: _Store) ->
     found = dict(part.partition("=")[::2] for part in (state or "").split())
     stored = (probe(_alias_check(cfg, store), name=f"mc alias of the cleanup user{label}") or "").strip()
     listing = f"{_mc(cfg, 'ls', f'{store.alias}/{account.bucket}')} >/dev/null && echo ok"
-    login = _probe(when_present([cfg.home], listing, otherwise="no")).strip()
+    login = _probe(when_present([cfg.home, cfg.minio_mc_path], listing, otherwise="no")).strip()
     wanted = _alias_digest(_alias_wanted(cfg, secrets, store))
     current = found.get("user") in ("attached", "unattached") and stored == wanted and login == "ok"
 
@@ -1070,6 +1072,8 @@ def deploy_echoport(cfg: EchoportConfig, secrets: SecretValues, rsync: RsyncRunn
     check_secrets(cfg, secrets)
     env_content = render_env(cfg, secrets)
     route = traefik_config(cfg, secrets) if cfg.traefik_enabled else None
+    # Echoport (MINIO_MC_PATH) and its cleanup alias use the pinned client.
+    install_mc(str(cfg.minio_mc_path))
     for store in cfg.stores:
         if store.account is not None:
             _minio_account(cfg, secrets, store)

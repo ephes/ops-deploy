@@ -51,6 +51,7 @@ from ops_deploy.base._common import RoleConfig
 from ops_deploy.helpers.probes import last_line, probe, verify_probe, when_present
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.helpers.users import sudoers_file
+from ops_deploy.services._echoport.mc import install_mc
 from ops_deploy.services._echoport_runner.access import MinioAccess, PlainPath, User, minio_access
 from ops_deploy.services._echoport_runner.target import (
     ECHOPORT_SITE,
@@ -274,6 +275,8 @@ def registered_schedule(cfg: DaybookOperationsBackup) -> str:
 def install_daybook_operations_backup(cfg: DaybookOperationsBackup, *, secret_key: str, token_user: str) -> None:
     """The playbook's MinIO access and the role's ``register_echoport`` (call inside a deploy)."""
 
+    if cfg.access.os_user != "none":
+        install_mc(cfg.access.mc)
     minio_access(cfg.access, access_key=cfg.access.account.user, secret_key=secret_key)
     for path, mode in (("/usr/local/libexec", "0755"), (cfg.staging, "0700"), (cfg.service_dir, "0755")):
         files.directory(name=f"Ensure directory {path}", path=path, user="root", group="root", mode=mode)

@@ -22,6 +22,7 @@ from ops_deploy.services._echoport_runner.access import (
     KnownHost,
     MinioAccess,
     WorkDir,
+    alias_check,
     alias_digest,
     host_keys,
     known_host,
@@ -305,7 +306,7 @@ def alias_probe(alias: str) -> re.Pattern[str]:
     return re.compile(rf"alias list {alias} \)")
 
 
-MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
+MC_PRESENT = fakehost.mc_installed()
 
 
 def access_converged(cfg: MinioAccess, access_key: str, secret: str) -> dict[Any, Any]:
@@ -442,15 +443,12 @@ def test_a_secret_the_server_rejects_is_upserted_again() -> None:
     assert run.mutating_changed_ops == ["Create or update MinIO user of paperless"]
 
 
-def test_a_missing_mc_refuses_before_any_write() -> None:
-    cfg = access()
+def test_without_mc_the_alias_reads_as_missing() -> None:
+    # The registrations install mc first; while planning a host without it has no alias yet.
+    check = alias_check(access(), "backup-paperless")
 
-    def deploy() -> None:
-        minio_access(cfg, access_key=cfg.account.user, secret_key=ACCOUNT_SECRET)
-
-    responses = {**access_converged(cfg, cfg.account.user, ACCOUNT_SECRET), "test -x /usr/local/bin/mc": ["missing"]}
-
-    assert "mc (MinIO client) not found" in refused(run_deploy_fake(deploy, responses=responses))
+    assert check.startswith("if test -e /root && test -e /usr/local/bin/mc; then ")
+    assert check.endswith("else echo none; fi")
 
 
 @pytest.mark.parametrize(

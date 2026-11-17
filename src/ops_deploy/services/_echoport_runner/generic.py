@@ -10,9 +10,9 @@ and root ``mc`` alias. :class:`GenericRunnerRegistration` carries the values;
 
 1. the role's ``sqlite3`` package (``ansible.builtin.package``, no cache update);
 2. the role's pinned ``mc`` (``minio_backup`` ``mc_install``: ``get_url`` with
-   the checksum, ``root:root 0755``), through the MinIO deploy's helper: kept
-   when the checksum matches, else downloaded and verified before it replaces
-   the file;
+   the checksum, ``root:root 0755``), through :func:`ops_deploy.services._echoport.mc.install_mc`:
+   kept when the checksum matches, else downloaded and verified before it
+   replaces the file;
 3. ``fastdeploy_runner`` with the role's settings (:func:`.install_runner`);
 4. per target, in the playbook's order, the scoped MinIO account and root's
    alias (:func:`.access.minio_access`).
@@ -22,9 +22,8 @@ no credentials), so it is not ported.
 
 Beyond the playbook:
 
-- the accesses need ``mc`` while planning (they read the accounts and
-  aliases through it), so a host without ``mc`` is refused before any write;
-  the MinIO deploy installs the same pinned client;
+- a host without ``mc`` reads every alias as missing while planning; the
+  client is installed before the aliases are written;
 - the retired shared alias is looked up and removed once (with the first
   target) instead of once per target; the playbook's later iterations find
   nothing to remove. Every access must retire the same aliases (they are
@@ -33,7 +32,6 @@ Beyond the playbook:
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Mapping
 from typing import Any
 
@@ -42,12 +40,10 @@ from pyinfra.api import DeployError, deploy
 from pyinfra.operations import apt
 
 from ops_deploy.base._common import RoleConfig
-from ops_deploy.helpers.probes import probe
+from ops_deploy.services._echoport.mc import install_mc
 from ops_deploy.services._echoport_runner import RunnerConfig, install_runner
 from ops_deploy.services._echoport_runner.access import MinioAccess, minio_access
 from ops_deploy.services._echoport_runner.registration import Package, _template_source
-from ops_deploy.services.minio.config import MC_DOWNLOAD_URL, MC_SHA256
-from ops_deploy.services.minio.deploy import binary
 
 TEMPLATE = "backup.py.j2"
 PREFIX_ALIASES = "echoport_backup_minio_prefix_aliases"
@@ -103,20 +99,15 @@ class GenericRunnerRegistration(RoleConfig):
 def install_generic_registration(cfg: GenericRunnerRegistration, *, secrets: Mapping[str, str]) -> None:
     """The playbook's tasks (call inside a deploy); ``secrets``: each target's scoped account secret.
 
-    Every refusal (a missing ``mc``, an unsafe directory above the libexec
-    root, a bad secret) happens while planning, before any write.
+    Every refusal (an unsafe directory above the libexec root, a bad secret)
+    happens while planning, before any write.
     """
 
     targets = [access.target for access in cfg.accesses]
     if set(secrets) != set(targets):
         raise DeployError("the generic runner needs exactly the secrets of its targets (values withheld)")
-    mc = cfg.accesses[0].mc
-    if (probe(f"test -x {shlex.quote(mc)} && echo present || echo missing", name=f"mc at {mc}") or "").strip() != (
-        "present"
-    ):
-        raise DeployError(f"mc (MinIO client) not found at {mc}; `just deploy-one minio` installs the pinned client")
     apt.packages(name=f"Install the packages of {cfg.runner.service}", packages=list(cfg.packages), update=False)
-    binary(mc, None, MC_SHA256, MC_DOWNLOAD_URL, "MinIO client")
+    install_mc(cfg.accesses[0].mc)
     install_runner(cfg.runner, cfg.variables)
     for index, access in enumerate(cfg.accesses):
         once = access if index == 0 else access.model_copy(update={"retired_aliases": ()})

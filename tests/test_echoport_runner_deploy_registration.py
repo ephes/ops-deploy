@@ -45,7 +45,7 @@ PUBLIC = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKeyFixturePublicKeyF
 SOURCE_KEY = "fixture-source-access-key"  # pragma: allowlist secret
 SOURCE_SECRET = "fixture-source-secret-key-value"  # pragma: allowlist secret
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
-MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
+MC_PRESENT = fakehost.mc_installed()
 ACCOUNT_PROBE = "def statements(doc)"
 STORED = "select data::text from service where name"
 KNOWN = "/home/deploy/.ssh/known_hosts"
@@ -507,11 +507,16 @@ def test_anything_but_one_scanned_key_refuses_before_any_write(answer: str) -> N
 # -- refusals -----------------------------------------------------------------------
 
 
-def test_a_missing_mc_refuses_before_any_write() -> None:
+def test_a_missing_mc_is_installed_before_the_alias() -> None:
     cfg = registration("marina-staging-backup")
-    responses = {**converged(cfg), "test -x /usr/local/bin/mc": ["missing"]}
+    responses = {k: v for k, v in converged(cfg).items() if k not in MC_PRESENT}
+    responses[re.compile(rf"alias list {cfg.access.alias} \)")] = ["none"]
+    run = run_deploy_fake(deploy(cfg), responses=responses)
 
-    assert "mc (MinIO client) not found" in refused(run_deploy_fake(deploy(cfg), responses=responses))
+    assert run.succeeded, run.error
+    names = [n.split(" | ", 1)[-1] for n in run.changed_ops]
+    assert "Download pinned MinIO client" in names
+    assert names.index("Download pinned MinIO client") < min(i for i, n in enumerate(names) if "mc alias" in n)
 
 
 def test_an_unmounted_work_disk_refuses_before_any_write() -> None:

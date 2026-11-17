@@ -5,7 +5,7 @@ delve-backup, echoport-self-backup, fastdeploy-backup, homeassistant-backup,
 weeknotes-home-backup, paperless-backup) are the same tasks with other values:
 
 1. install the runner's packages (``ansible.builtin.package``, no cache update);
-2. refuse when ``mc`` is missing ("Ensure mc is installed");
+2. the pinned ``mc`` ("Ensure mc is installed", :func:`ops_deploy.services._echoport.mc.install_mc`);
 3. ``common/backup_minio_account.yml`` for the target (:func:`.access.minio_access`);
 4. require a runner template that works on the external disk only (it
    includes ``_work_dir.py.j2``);
@@ -80,6 +80,7 @@ from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers.checks import mark_read_only
 from ops_deploy.helpers.probes import probe
 from ops_deploy.ops import secret_file, secret_stdin
+from ops_deploy.services._echoport.mc import install_mc
 from ops_deploy.services._echoport_runner import RunnerConfig, _plain_path, install_runner
 from ops_deploy.services._echoport_runner import access as _access
 from ops_deploy.services._echoport_runner.access import (
@@ -89,7 +90,6 @@ from ops_deploy.services._echoport_runner.access import (
     WorkDir,
     known_hosts_entries,
     minio_access,
-    require_mc,
 )
 from ops_deploy.services._echoport_runner.nyxmon import NyxmonScript, upsert_nyxmon_script
 from ops_deploy.services._echoport_runner.render import _environment, render_text, runner_templates, text_names
@@ -412,6 +412,9 @@ def install_registration(
         if file.check is not None:
             _plan_credential_check(file, content)
     apt.packages(name=f"Install the packages of {cfg.runner.service}", packages=list(cfg.packages), update=False)
+    if cfg.access.os_user != "none":
+        # The runner's alias and the runner itself use the pinned client.
+        install_mc(cfg.access.mc)
     minio_access(cfg.access, access_key=cfg.access.account.user, secret_key=secret_key)
     for file, content in contents:
         files.directory(
@@ -450,7 +453,8 @@ register_runner = deploy("Echoport backup runner registration")(install_registra
 # A playbook task of a deploy-user runner, in the playbook's own order:
 # "ssh_key": the deploy user's SSH directory and key pair;
 # "known_hosts": the deploy_known_host_ed25519.yml includes, then "Ensure known_hosts ownership";
-# "mc": "Ensure mc is installed"; "packages": ``ansible.builtin.package``;
+# "mc": "Ensure mc is installed" (the pinned client, ``_echoport.mc.install_mc``);
+# "packages": ``ansible.builtin.package``;
 # "access": backup_minio_account.yml; "work_dir": backup_work_dir.yml;
 # "credentials": the media runner's credentials directory and file; "runner": fastdeploy_runner;
 # class B: "pg_restore": the mastodon playbook's pg_restore version check (after the packages);
@@ -855,7 +859,7 @@ def install_deploy_registration(
         elif task == "known_hosts":
             _known_hosts(cfg, keyscan)
         elif task == "mc":
-            require_mc(cfg.access)
+            install_mc(cfg.access.mc)
         elif task == "packages":
             apt.packages(
                 name=f"Install the packages of {cfg.runner.service}", packages=list(cfg.packages), update=False

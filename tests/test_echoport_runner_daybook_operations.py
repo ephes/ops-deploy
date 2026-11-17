@@ -132,7 +132,7 @@ def _file(path: str, content: str, *, mode: str) -> dict[str, Any]:
 def converged(cfg: DaybookOperationsBackup) -> dict[Any, Any]:
     access = cfg.access
     return {
-        "test -x /usr/local/bin/mc": ["present"],
+        **fakehost.mc_installed(),
         re.compile(rf"mc ls {access.alias}/backups/{access.target}/ >/dev/null && echo ok"): ["ok"],
         "def statements(doc)": ["policy=ok user=attached"],
         re.compile(rf"alias list {access.alias} \)"): [alias_digest(access.url, access.account.user, SECRET)],

@@ -77,11 +77,12 @@ the same way, with ansible-core's `quote` (`shlex.quote`) as well.
 The port of `common/backup_minio_account.yml`. ops-control resolves the
 target from `playbooks/vars/backup_minio_accounts.yml` into a `MinioAccess`
 (target, OS user, alias, store URL, whether it is switched, store, retired
-aliases) and passes the access key and secret. When `mc` is needed and
-missing, the run refuses while planning, as the playbooks' "Ensure mc is
-installed" does. The MinIO deploy (`bootstrap_with_mc`) installs the
-pinned `mc`. `register-echoport-backup.yml` installs it too, but its port
-(`generic`) refuses without it, like the other runners.
+aliases) and passes the access key and secret. The registrations install the
+pinned `mc` (`ops_deploy.services._echoport.mc.install_mc`: `RELEASE.2025-08-13T08-35-41Z`,
+linux-amd64, `/usr/local/bin/mc`, `root:root 0755`) before the access: a file
+with the pinned sha256 is kept, anything else is downloaded and verified
+before it replaces the file. While planning, a host without `mc` reads every
+alias as missing.
 
 - a switched target on MinIO gets its scoped account through root's MinIO
   admin alias (`minio_deploy`'s `backup_account`, as the echoport deploy ports
@@ -151,7 +152,7 @@ packages and its template variables, resolved. `register_runner(cfg,
 secret_key=...)` runs the playbook's tasks in its order:
 
 1. the packages (`ansible.builtin.package`: `apt`, no cache update);
-2. "Ensure mc is installed": a missing `mc` refuses while planning;
+2. the pinned `mc` (`_echoport.mc.install_mc`; no change when it has the pinned sha256);
 3. `backup_minio_account.yml` (`access.minio_access`) with the target's
    scoped account (`secret_key`, never in an argument);
 4. `fastdeploy_runner` (`install_runner`) with the rendered template.
@@ -336,7 +337,7 @@ the deploy user: its sudoers file has the `fastdeploy -> deploy` line only.
 |---|---|---|
 | `ssh_key` | `/home/deploy/.ssh` (`deploy 0700`), `id_ed25519` (`0600`, `no_log`) and `id_ed25519.pub` (`0644`) from `deploy_ssh_keys.yml` | `files.directory` and `ops.secret_file` with the secret as it is (`copy` adds nothing) |
 | `known_hosts` | `deploy_known_host_ed25519.yml` per name, then "Ensure known_hosts ownership" (`deploy:deploy 0644`) | `access.known_hosts_entries`, then `files.file` |
-| `mc` | "Ensure mc is installed" | `access.require_mc`, while planning |
+| `mc` | "Ensure mc is installed" | `_echoport.mc.install_mc`: the pinned client, no change when its sha256 matches |
 | `packages` | `ansible.builtin.package` | `apt.packages`, no cache update |
 | `access` | `backup_minio_account.yml` | `access.minio_access`: the scoped account and the deploy user's alias; a media runner (`os_user` `none`) gets the account only, upserted on every run as the role does (no alias proves its secret current) |
 | `work_dir` | `backup_work_dir.yml` | `access.work_dir` |
@@ -564,9 +565,8 @@ deploy) runs, in the playbook's order:
   target with `store: rustfs`, only the proof through its alias) and root's
   alias.
 
-Two differences from the playbook: the accesses read the accounts and
-aliases through `mc` while planning, so a host without `mc` is refused
-before any write (`just deploy-one minio` installs the same pinned client);
+Two differences from the playbook: a host without `mc` reads every alias as
+missing while planning (the pinned client is installed before the aliases);
 and the retired shared alias is looked up and removed once, with the first
 target, not once per target. The role's own `minio_alias` include is not
 ported: the playbook passes it no credentials, so it never runs.

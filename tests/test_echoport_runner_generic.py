@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from pyinfra.api import DeployError
 
+from ops_deploy.services._echoport.mc import MC_SHA256
 from ops_deploy.services._echoport_runner import RunnerConfig, runner_script, service_config, sudoers_rule
 from ops_deploy.services._echoport_runner.access import MinioAccess, alias_digest, render_account_policy
 from ops_deploy.services._echoport_runner.generic import (
@@ -23,7 +24,6 @@ from ops_deploy.services._echoport_runner.generic import (
     install_generic_registration,
     register_generic_runner,
 )
-from ops_deploy.services.minio.config import MC_SHA256
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests.echoport_runner_data import INPUTS, runner_sha256
@@ -52,7 +52,7 @@ LIVE_SUDOERS = (
 )
 STEPS = ("init", "backup", "download", "upload", "verify", "extract", "stop", "restore", "start", "result")
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
-MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
+MC_PRESENT = fakehost.mc_installed()
 ACCOUNT_PROBE = "def statements(doc)"
 STORED = "select data::text from service where name"
 
@@ -116,8 +116,6 @@ def converged(cfg: GenericRunnerRegistration) -> dict[Any, Any]:
         **ANCESTORS,
         **MC_PRESENT,
         **fakehost.deb_installed(*cfg.packages),
-        "sha256sum /usr/local/bin/mc ": [f"{MC_SHA256}  /usr/local/bin/mc"],
-        **fakehost.stat("/usr/local/bin/mc", user="root", mode="-rwxr-xr-x"),
         ACCOUNT_PROBE: ["policy=ok user=attached"],
         re.compile(r"alias list minio \)"): ["none"],
         **fakehost.directory("/etc/minio/policies", mode="drwxr-x---"),
@@ -197,7 +195,6 @@ def test_a_first_run_follows_the_playbooks_order() -> None:
     names = [n.removeprefix("Echoport generic runner registration | ") for n in run.changed_ops]
     order = [
         "Install the packages of echoport-backup",
-        "Download pinned MinIO client",
         "Install the echoport-backup runner script",
         "Write config.json of echoport-backup",
         "Sync FastDeploy services for echoport-backup",
@@ -213,13 +210,14 @@ def test_a_first_run_follows_the_playbooks_order() -> None:
     assert not any(s in run.all_text() for s in secrets(cfg).values())
 
 
-def test_a_missing_mc_refuses_before_any_write() -> None:
+def test_a_missing_mc_is_downloaded_and_verified() -> None:
     cfg = registration()
-    responses = {**converged(cfg), "test -x /usr/local/bin/mc": ["missing"]}
+    responses = {k: v for k, v in converged(cfg).items() if k not in MC_PRESENT}
+    run = run_deploy_fake(deploy(cfg), responses=responses)
 
-    assert "`just deploy-one minio` installs the pinned client" in refused(
-        run_deploy_fake(deploy(cfg), responses=responses)
-    )
+    assert run.succeeded, run.error
+    assert [n.split(" | ", 1)[-1] for n in run.mutating_changed_ops] == ["Download pinned MinIO client"]
+    assert any(MC_SHA256 in command and "sha256sum -c" in command for command in run.executed_commands)
 
 
 def test_the_secrets_must_be_exactly_the_targets() -> None:

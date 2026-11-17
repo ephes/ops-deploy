@@ -48,6 +48,14 @@ def directory(path: str, *, user: str = "root", mode: str = "drwxr-xr-x") -> dic
     return stat(path, user=user, mode=mode)
 
 
+def mc_installed(path: str = "/usr/local/bin/mc") -> dict[str, Any]:
+    """The pinned ``mc`` (``ops_deploy.services._echoport.mc``) at ``path``, root-owned 0755."""
+
+    from ops_deploy.services._echoport.mc import MC_SHA256
+
+    return {f"sha256sum {path} ": [f"{MC_SHA256}  {path}"], **stat(path, mode="-rwxr-xr-x")}
+
+
 def system_account(user: str, home: str, *, uid: int = 999, shell: str = "/bin/bash") -> dict[str, Any]:
     """``Users`` and ``Groups`` facts listing ``user`` with a same-named group."""
 

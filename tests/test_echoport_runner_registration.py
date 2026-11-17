@@ -26,7 +26,7 @@ from tests.echoport_runner_data import INPUTS, runner_sha256
 EXPECTED = runner_sha256()
 SECRET = "fixture-account-secret-0123456789abcdef"  # pragma: allowlist secret
 ANCESTORS = {"LC_ALL=C LANG=C stat -c '%u %g %a %F'": ["0 0 755 directory"] * 3}
-MC_PRESENT = {"test -x /usr/local/bin/mc": ["present"]}
+MC_PRESENT = fakehost.mc_installed()
 ACCOUNT_PROBE = "def statements(doc)"
 ROUTE = "ip -4 route get 8.8.8.8"
 STORED = "select data::text from service where name"
@@ -182,11 +182,13 @@ def test_a_first_run_installs_packages_access_and_runner_in_the_playbooks_order(
     assert SECRET not in run.all_text()
 
 
-def test_a_missing_mc_refuses_before_any_write() -> None:
+def test_a_missing_mc_is_installed_before_the_alias() -> None:
     cfg = registration()
-    message = refused(run_deploy_fake(deploy(cfg), responses={**ANCESTORS, "test -x /usr/local/bin/mc": ["missing"]}))
+    run = run_deploy_fake(deploy(cfg), responses={**ANCESTORS})
 
-    assert "mc (MinIO client) not found at /usr/local/bin/mc" in message
+    assert run.succeeded, run.error
+    names = [n.split(" | ", 1)[-1] for n in run.changed_ops]
+    assert names.index("Download pinned MinIO client") < min(i for i, n in enumerate(names) if "mc alias" in n)
 
 
 def test_an_unsafe_directory_above_the_libexec_root_refuses_before_any_write() -> None:

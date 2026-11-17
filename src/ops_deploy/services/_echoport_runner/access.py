@@ -154,7 +154,8 @@ def alias_check(cfg: MinioAccess, alias: str) -> str:
         f"out=$( {_mc(cfg, '--json', 'alias', 'list', alias)} ); rc=$?; "
         f'printf \'%s\\n\' "$out" | python3 -I -c {shlex.quote(MC_ALIAS_PROBE)} "$rc"'
     )
-    return when_present([cfg.user_home], listing, otherwise="none")
+    # Before the first registration (no home, no mc yet) the alias is missing.
+    return when_present([cfg.user_home, cfg.mc], listing, otherwise="none")
 
 
 def alias_digest(url: str, access_key: str, secret_key: str) -> str:
@@ -185,7 +186,7 @@ def _account(cfg: MinioAccess, secret_key: str) -> None:
         stored = (probe(alias_check(cfg, cfg.alias), name=f"mc alias {cfg.alias} of {cfg.os_user}") or "").strip()
         # The server must accept the secret too (a user re-added by hand or restored keeps another one).
         listing = f"{_mc(cfg, 'ls', f'{cfg.alias}/{account.bucket}/{account.key_prefixes[0]}/')} >/dev/null && echo ok"
-        login = output(when_present([cfg.user_home], listing, otherwise="no")).strip()
+        login = output(when_present([cfg.user_home, cfg.mc], listing, otherwise="no")).strip()
     exists = found.get("user") in ("attached", "unattached")
     current = exists and stored == alias_digest(cfg.url, account.user, secret_key) and login == "ok"
 
@@ -261,16 +262,6 @@ def _alias(cfg: MinioAccess, access_key: str, secret_key: str) -> None:
         )
 
 
-def require_mc(cfg: MinioAccess) -> None:
-    """The playbooks' "Ensure mc is installed": refuse while planning (the MinIO deploy installs the pinned mc)."""
-
-    mc = shlex.quote(cfg.mc)
-    if (probe(f"test -x {mc} && echo present || echo missing", name=f"mc at {cfg.mc}") or "").strip() != "present":
-        raise DeployError(
-            f"mc (MinIO client) not found at {cfg.mc}; `just deploy-one minio` installs the pinned client"
-        )
-
-
 def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
     """``backup_minio_account.yml`` for one target (call inside a deploy, on the store's host).
 
@@ -284,7 +275,6 @@ def minio_access(cfg: MinioAccess, *, access_key: str, secret_key: str) -> None:
         raise DeployError(f"{cfg.target}: a scoped target's access key must be its account user {cfg.account.user}")
     if cfg.os_user == "none" and not (cfg.scoped and cfg.store == "minio"):
         return
-    require_mc(cfg)
     if cfg.scoped and cfg.store == "minio":
         _account(cfg, secret_key)
     if cfg.os_user == "none":
@@ -622,6 +612,5 @@ __all__ = [
     "known_hosts_entries",
     "minio_access",
     "render_account_policy",
-    "require_mc",
     "work_dir",
 ]

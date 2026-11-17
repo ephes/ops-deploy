@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- mc: `ops_deploy.services._echoport.mc` holds the pinned MinIO Client (`MC_VERSION`
+  `RELEASE.2025-08-13T08-35-41Z`, linux-amd64, `MC_SHA256`, `MC_DOWNLOAD_URL`)
+  and `install_mc(path)`: `/usr/local/bin/mc`, `root:root 0755`, kept when its
+  sha256 matches (no change on a converged host), else downloaded and verified
+  with `sha256sum -c` before it replaces the file. The Echoport deploy now
+  installs it (before its account and cleanup alias), and so do the Echoport
+  runner registrations: the generic runner as before, the `mc` task of the
+  deploy-user runners and the root runners and the Daybook operations backup
+  whenever the target has an alias. Until now only the MinIO deploy installed
+  `mc` on macmini, and the registrations refused while planning without it.
+  The alias probes read a missing `mc` as "no alias yet" (`test -e` of the
+  client next to the home directory), so a fresh host converges in one run.
+  `access.require_mc` is removed.
+
 - tests: the real-PostgreSQL PostfixAdmin round trip
   (`tests/test_postfixadmin_backup_restore.py`) first removes this user's
   orphaned 56-byte PostgreSQL shared memory headers (`ipcs -m`: owner and

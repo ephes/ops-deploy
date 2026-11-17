@@ -13,8 +13,10 @@ from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
 from ops_deploy.helpers.probes import FAILED
 from ops_deploy.helpers.traefik import hash_password
+from ops_deploy.services._echoport.mc import MC_SHA256
 from ops_deploy.services.echoport import EchoportConfig, MinioAccount, NyxmonCheck, StoreAlias, deploy_echoport
 from ops_deploy.services.echoport.deploy import (
+    _alias_check,
     _django_hash,
     admin_current,
     check_secrets,
@@ -143,7 +145,11 @@ def converged(cfg: EchoportConfig, secrets: SecretValues, **drift: str) -> dict[
     if cfg.minio_account is not None:
         content[POLICY_FILE] = render_policy(cfg.minio_account)
     content.update(drift)
-    responses: dict[str, Any] = {**fakehost.LINUX, **fakehost.system_account("echoport", HOME)}
+    responses: dict[str, Any] = {
+        **fakehost.LINUX,
+        **fakehost.system_account("echoport", HOME),
+        **fakehost.mc_installed(),
+    }
     for path in (HOME, SITE, f"{SITE}/cache", f"{HOME}/logs", f"{SITE}/src", f"{SITE}/src/backups"):
         responses.update(fakehost.directory(path, user="echoport"))
     for path in ("/etc/systemd/system", "/etc/traefik/dynamic"):
@@ -265,6 +271,23 @@ def test_second_run_changes_nothing_mutating(cfg: EchoportConfig) -> None:
     assert run.uploads == []
     assert stdin_writes(run) == []
     assert not any("rm -rf" in c or "chown" in c for c in run.executed_commands)
+
+
+def test_a_missing_mc_is_installed_before_the_cleanup_alias(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    responses = {k: v for k, v in converged(cfg, secrets).items() if k not in fakehost.mc_installed()}
+    responses[MC_PROBE] = ["none"]
+    run = deploy(cfg, secrets, responses)
+
+    names = [name.split(" | ", 1)[-1] for name in run.mutating_changed_ops]
+    assert names[0] == "Download pinned MinIO client"
+    assert "Configure mc alias for the cleanup user" in names
+    assert any(MC_SHA256 in command and "sha256sum -c" in command for command in run.executed_commands)
+
+
+def test_the_mc_check_needs_the_client(cfg: EchoportConfig) -> None:
+    # While planning, a host without mc (or the service home) has no alias yet.
+    assert _alias_check(cfg).startswith("if test -e /home/echoport && test -e /usr/local/bin/mc; then ")
 
 
 def test_code_change_syncs_deps_migrates_and_restarts(cfg: EchoportConfig) -> None:
