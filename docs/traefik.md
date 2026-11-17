@@ -33,9 +33,42 @@ deploy_traefik(
 deploy_traefik_remove(TraefikRemoveConfig(confirm=True))
 ```
 
-## Traefik 3.7.17 pin (upgrade-traefik-3717)
+## Traefik 3.7.19 pin (work item upgrade-traefik-3718)
 
-The default release is 3.7.17. Linux archives were downloaded on 2026-11-08
+The default release is 3.7.19 (published 2026-11-13; default since
+2026-11-17). The work item is named after 3.7.18, which was superseded before
+its rollout and never became the default. Linux archives were downloaded on
+2026-11-16 and matched the exact filenames in the official
+[checksum manifest](https://github.com/traefik/traefik/releases/download/v3.7.19/traefik_v3.7.19_checksums.txt):
+
+| Archive | SHA-256 |
+| --- | --- |
+| linux_amd64 | `97534a68335a087137d0f2adecefe37c8216ac10114dc7e5b510f2a8a12f89be` |
+| linux_arm64 | `6d796c41b8d3c8c31bb2faf1bfff1b5fcf603676ad9a773b29ffa7efa678881a` |
+
+As for 3.7.17, no signature or attestation asset is advertised; verification is
+HTTPS plus the published checksum.
+
+Reviewed upstream [3.7.18](https://github.com/traefik/traefik/releases/tag/v3.7.18)
+and [3.7.19](https://github.com/traefik/traefik/releases/tag/v3.7.19), plus the
+[migration guide](https://doc.traefik.io/traefik/v3.7/migrate/v3/#v3718). The
+file-provider/Prometheus templates require no configuration edits:
+
+- 3.7.18 fixes GHSA-x5pf-cqh3-2gv8 (zstd state pinned by the Compress
+  middleware), GHSA-rr42-h8r2-f28g (unbounded BasicAuth password length),
+  GHSA-cp28-5662-543f (dot-segments with path parameters), GHSA-p956-6gvv-mxqp
+  (ForwardAuth NTLM) and GHSA-ccgh-9g52-6vwg (ingress-nginx). BasicAuth now
+  rejects passwords over 1024 bytes; `Host` matcher values must be valid
+  hostnames or IP addresses; `.`/`..` segments with path parameters are
+  resolved like plain dot-segments.
+- 3.7.19 only bumps dependencies (quic-go, klauspost/compress,
+  golang.org/x/crypto).
+
+This is a repository pin change; it supplies no live-host rollout evidence.
+
+### Traefik 3.7.17 pin (upgrade-traefik-3717)
+
+The previous default was 3.7.17. Linux archives were downloaded on 2026-11-08
 and matched the exact filenames in the official
 [checksum manifest](https://github.com/traefik/traefik/releases/download/v3.7.17/traefik_v3.7.17_checksums.txt):
 
@@ -665,7 +698,7 @@ That historical smoke does not establish dynamic-route recovery.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `"3.7.17"` | the role's default |
+| `version` | `"3.7.19"` | the repository's default release (ops-library is archived) |
 | `checksum` | required | `sha256:<hex>` of the release archive; the role allows none |
 | `arch` | `None` | `None`: from `uname -m` (`x86_64`, `aarch64`, `armv7l`, `armv6l`) |
 | `letsencrypt_email` | required | the role refuses its `CHANGEME@` placeholder; here a plain address is required |

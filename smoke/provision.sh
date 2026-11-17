@@ -11,17 +11,17 @@ set -euo pipefail
 
 PUBKEY="$1"
 UV_VERSION="0.13.4"
-TRAEFIK_VERSION="3.7.17"  # current repository patch pin
+TRAEFIK_VERSION="3.7.19"  # current repository patch pin
 POSTGRES_VERSION="17"  # what macmini runs
 
 case "$(uname -m)" in
     x86_64)
         ARCH=amd64
-        TRAEFIK_SHA256=a564abd5fc8ee97d838270f188bb94cb3172cc113f4b51aa5e7dd6117eedb393
+        TRAEFIK_SHA256=97534a68335a087137d0f2adecefe37c8216ac10114dc7e5b510f2a8a12f89be
         ;;
     aarch64)
         ARCH=arm64
-        TRAEFIK_SHA256=b06dad2f66ac3481c5695591b7cd3a3eed5e6dbec739889bb01e69cf8e45a0fc
+        TRAEFIK_SHA256=6d796c41b8d3c8c31bb2faf1bfff1b5fcf603676ad9a773b29ffa7efa678881a
         ;;
     *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
 esac

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Default Traefik to 3.7.19 (`TraefikDeployConfig.version`); document the
+  verified official Linux archive checksums and the 3.7.18/3.7.19 review in
+  `docs/traefik.md`. 3.7.18 is skipped (superseded before its rollout). The
+  smoke VM bootstrap installs 3.7.19 and checks its per-architecture digest.
+  ops-library is archived, so no Ansible role default follows; historical
+  fixtures keep their explicit older versions.
+
 - recorder: the unit sets `MemoryMax=` from the new
   `RecorderConfig.systemd_memory_max` (default `1G`; empty renders the unit as
   before), a backstop for the public chunk-upload endpoint, whose buffers
