@@ -148,6 +148,10 @@ class UsbReplicationConfig(BackupConfig):
     force_export: bool = False
     exportfs_lock_dir: AbsolutePath = "/etc/exports.d"
     set_canmount_off_for_readonly_recursive_targets: bool = True
+    # Datasets on the USB pool whose source is gone (a retired service): each
+    # run destroys them recursively on every drive, after the import and
+    # before any sync (:meth:`retired_source`). Empty: the script is unchanged.
+    retired_targets: tuple[DatasetName, ...] = ()
     key_manage: bool = True
     key_path: AbsolutePath = "/root/.zfs-key-vault"
     default_args: tuple[str, ...] = ("--no-rollback",)
@@ -157,6 +161,46 @@ class UsbReplicationConfig(BackupConfig):
     alert_script_path: AbsolutePath = "/usr/local/bin/zfs-usb-alert.sh"
     spindown_enabled: bool = False
     spindown_script_path: AbsolutePath = "/usr/local/bin/zfs-usb-spindown.sh"
+
+    def retired_source(self, target: str) -> str:
+        """The dataset ``target`` was replicated from: its place below a recursive job's source."""
+
+        for job in self.jobs:
+            if job.recursive and target.startswith(job.target + "/"):
+                return job.source + target.removeprefix(job.target)
+        raise ValueError(f"{target} is not below a recursive job's target")
+
+    @model_validator(mode="after")
+    def _retired(self) -> UsbReplicationConfig:
+        """A retired target is a dataset of the USB pool that no job or retention rule still writes.
+
+        It must lie strictly below the pool and below the target of a
+        recursive job (whose source the run checks is gone), and must not be,
+        contain or lie inside any other job target or retention target.
+        """
+
+        if not self.retired_targets:
+            return self
+        if not self.pool or self.pool == "CHANGE_ME":
+            raise ValueError("retired USB targets require the pool")
+        if len(set(self.retired_targets)) != len(self.retired_targets):
+            raise ValueError("retired USB targets must be unique")
+
+        def related(a: str, b: str) -> bool:
+            return a == b or a.startswith(b + "/") or b.startswith(a + "/")
+
+        for target in self.retired_targets:
+            if not target.startswith(self.pool + "/"):
+                raise ValueError(f"retired USB target {target} is not a dataset of the pool {self.pool}")
+            recursive = [job for job in self.jobs if job.recursive and target.startswith(job.target + "/")]
+            if not recursive:
+                raise ValueError(f"retired USB target {target} is not below a recursive job's target")
+            live = [job.target for job in self.jobs if job not in recursive]
+            live += [rule.target for rule in self.snapshot_retention]
+            live += [other for other in self.retired_targets if other != target]
+            if any(related(target, other) for other in live):
+                raise ValueError(f"retired USB target {target} overlaps a job, retention or other retired target")
+        return self
 
     @model_validator(mode="after")
     def _rotation(self) -> UsbReplicationConfig:

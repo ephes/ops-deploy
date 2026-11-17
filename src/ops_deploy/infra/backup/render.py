@@ -29,6 +29,7 @@ def context(cfg: BackupConfig) -> dict[str, object]:
             state_path=cfg.state_path or cfg.state_dir + "/status.json",
             attestation_dir=cfg.attestation_dir or cfg.state_dir + "/attestations",
             anchor_state_path=cfg.anchor_state_path or cfg.state_dir + "/anchors.json",
+            retired=[{"target": t, "source": cfg.retired_source(t)} for t in cfg.retired_targets],
         )
     elif isinstance(cfg, SyncoidConfig):
         prefix = "zfs_syncoid_replication"

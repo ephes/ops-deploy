@@ -662,6 +662,20 @@ mail staging, snapshot pruning, attestation or spindown. Timers retain their
 original `Persistent=true` behavior, so normal scheduling or a missed scheduled
 job can run independently of deployment.
 
+`UsbReplicationConfig.retired_targets` (default empty, which leaves the USB
+script unchanged) names datasets on the rotating drives whose source is gone,
+for example `vault/replica/fast/minio` after a service was retired. Each must
+lie strictly below the pool and below the target of a recursive job, and must
+not be, contain or lie inside another job target, a retention target or
+another retired target; names are plain dataset names (no wildcards or
+whitespace). On every drive, after the import and key load and before any
+mount, retention or sync, the script checks each one: absent is no error; if
+it exists while its source (its place below the recursive job's source, here
+`tank/replica/fast/minio`) still exists, or either state cannot be read, the
+run fails without destroying anything; otherwise it runs `zfs destroy -r` and
+logs before and after. A failed destroy fails that drive's run like any other
+error. Remove the entry once every drive of the rotation has run.
+
 SSH private keys and USB pool keys are separate `SecretStr` deploy arguments.
 On-host private-file equality stays in RAM and produces no credential digest or
 file export; Linux OpenSSH validates private keys through a private anonymous

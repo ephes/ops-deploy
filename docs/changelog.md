@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- backup: `UsbReplicationConfig.retired_targets` (default `()`, which renders
+  the USB script unchanged) lists datasets on the rotating USB pool whose
+  source is gone. After the import and key load and before any mount,
+  retention or sync, each drive's run destroys every listed dataset that
+  exists (`zfs destroy -r`, logged before and after); an absent one is no
+  error, a failed destroy fails the run. The config refuses entries outside
+  `<pool>/`, entries not strictly below a recursive job's target, and entries
+  that are, contain or lie inside another job target, a retention target or
+  another retired entry; the script refuses (and destroys nothing) while the
+  entry's source below the recursive job's source still exists or a dataset
+  state cannot be read. For Fractal: `vault/replica/fast/minio`.
+
 - echoport: the `mc_admin` account provisioner is removed (`McAdminProvisioner`,
   `files/minio_account.py`). `MinioAccount.provisioner` accepts only
   `rustfs_admin`, now its default; `MinioAccount.admin_alias` is removed

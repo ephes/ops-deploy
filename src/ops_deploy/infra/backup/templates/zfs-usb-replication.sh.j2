@@ -105,6 +105,37 @@ pool_imported() {
 
 # True when the imported pool has a vdev on this drive (whole disk or one of
 # its partitions), compared by resolved device node.
+{% if zfs_usb_replication_retired | length > 0 %}
+# dataset_exists NAME: 0 if it exists, 1 if it does not; anything else ends the run.
+dataset_exists() {
+  local out
+  if out=$(zfs list -H -o name "$1" 2>&1); then
+    return 0
+  fi
+  if [[ "${out}" == *"dataset does not exist"* ]]; then
+    return 1
+  fi
+  logger -t "${log_tag}" "Cannot check dataset $1: ${out}"
+  exit 1
+}
+
+# Retired targets: replicas whose source is gone. Each is destroyed (with its
+# children and snapshots) only while its source does not exist.
+destroy_retired_targets() {
+{% for retired in zfs_usb_replication_retired %}
+  if dataset_exists "{{ retired.target }}"; then
+    if dataset_exists "{{ retired.source }}"; then
+      logger -t "${log_tag}" "Retired target {{ retired.target }} still has its source {{ retired.source }}; refusing to destroy it"
+      exit 1
+    fi
+    logger -t "${log_tag}" "Destroying retired target {{ retired.target }} on ${label}"
+    zfs destroy -r "{{ retired.target }}"
+    logger -t "${log_tag}" "Destroyed retired target {{ retired.target }} on ${label}"
+  fi
+{% endfor %}
+}
+
+{% endif %}
 pool_on_device() {
   local device="$1"
   local device_real vdev vdev_real
@@ -217,6 +248,10 @@ replicate_device() {
     logger -t "${log_tag}" "Loading key for pool ${pool}"
     zfs load-key -L "file://${key_path}" "${pool}"
   fi
+{% if zfs_usb_replication_retired | length > 0 %}
+
+  destroy_retired_targets
+{% endif %}
 
   mkdir -p "${exportfs_lock_dir}"
 
