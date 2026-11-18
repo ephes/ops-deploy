@@ -12,6 +12,7 @@ Systemd isolation itself is proven on a VM (see ``docs/traefik.md``).
 from __future__ import annotations
 
 import ast
+import base64
 import datetime
 import fcntl
 import http.server
@@ -449,6 +450,65 @@ def test_a_compatible_candidate_passes_and_the_proof_is_written_once(host: Proof
     assert code == 0
     assert again["report_reference"] == str(host.proofs / f"{NEW}-{today()}-fixture-2.json")
     assert report.read_text() == json.dumps(printed, indent=2) + "\n"
+
+
+def alias_candidate(text: str) -> str:
+    for name in ("web", "web-secure", "traefik"):
+        header = f"  [entryPoints.{name}]\n"
+        text = text.replace(header, header + '    http.aliasHeadersStrategy = "delete"\n')
+    return text
+
+
+def started_configs(host: ProofHost, request: dict[str, Any]) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """``host.main(request)``, and the static config text each pair's unit was given."""
+
+    seen: dict[str, str] = {}
+    real = proof.isolated_start
+
+    def spy(variant: str, binary: Path, workdir: Path, run_id: str, mounts: Any, cwd: Path, spec: Any) -> Any:
+        seen[variant] = Path(spec["config"]).read_text()
+        return real(variant, binary, workdir, run_id, mounts, cwd, spec)
+
+    with patch.object(proof, "isolated_start", spy):
+        code, printed = host.main(request)
+    return code, printed, seen
+
+
+def test_an_alias_candidate_config_is_what_the_candidate_pair_starts(host: ProofHost) -> None:
+    live_text = host.config.read_text()
+    candidate = alias_candidate(live_text).encode()
+    request = host.request()
+    request["policy"]["alias_policy"] = {"web": "delete", "web-secure": "delete", "traefik": "delete"}
+    request["candidate_config_base64"] = base64.b64encode(candidate).decode()
+
+    code, printed, seen = started_configs(host, request)
+
+    assert code == 0
+    assert printed["passed"] is printed["baseline_pair_passed"] is True
+    assert "aliasHeadersStrategy" not in seen["baseline"]
+    assert seen["candidate"].count('http.aliasHeadersStrategy = "delete"') == 3
+    assert tomllib.loads(seen["candidate"])["api"]["insecure"] is True
+    assert printed["candidate_config_sha256"] == sha256(candidate)
+    assert printed["live_config_sha256"] == sha256(live_text.encode())
+    assert host.config.read_text() == live_text
+    with host.patched():
+        live = host.identity(host.policy())
+    block = proof.compatibility(printed, live)
+    assert block["candidate_config_sha256"] == sha256(candidate)
+    assert block["baseline"] == live
+
+
+def test_a_candidate_config_beyond_the_alias_delta_is_refused(host: ProofHost) -> None:
+    changed = alias_candidate(host.config.read_text()).replace("checkNewVersion = true", "checkNewVersion = false")
+    request = host.request()
+    request["policy"]["alias_policy"] = {"web": "delete", "web-secure": "delete", "traefik": "delete"}
+    request["candidate_config_base64"] = base64.b64encode(changed.encode()).decode()
+
+    code, printed = host.main(request)
+
+    assert code == 2
+    assert printed["error"] == "alias candidate changes unrelated configuration"
+    assert host.units == []
 
 
 def test_the_units_get_copies_bound_over_the_live_paths(host: ProofHost) -> None:

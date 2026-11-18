@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Traefik compatibility proof (`traefik_tx/proof.py`): an optional
+  `candidate_config_base64` (the static config of an `alias` transaction)
+  makes the candidate pair start that config instead of the live one; it must
+  differ from the live config by exactly the engine's alias delta, else the
+  proof refuses before any unit starts. The proof then reports
+  `candidate_config_sha256`, which `compatibility()` passes to the engine's
+  alias check. Without it the proof is unchanged. First use: the alias
+  transaction on marina (ops-control work item `gunicorn-scriptname-header`).
+
 - django_site: new `AppSpec.accept_forwarder_headers` (default `true`, the
   launcher unchanged). `false` adds `--forwarder-headers ''` to
   `gunicorn.sh`, so gunicorn drops a client-sent `SCRIPT_NAME` request header

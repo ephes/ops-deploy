@@ -20,6 +20,11 @@ log directories writable (the unit's own copies), so nothing live is read for ro
 written. Inside the unit this same program starts Traefik, reads ``/api/rawdata`` once
 the routers settle and stops it.
 
+With ``candidate_config_base64`` in the request (the static config of an ``alias``
+transaction, which must differ from the live one by exactly the engine's alias delta) the
+candidate pair starts that config instead of the live one; the proof then also reports
+``candidate_config_sha256``, which :func:`compatibility` passes on.
+
 A pair passes when the API answered, the routers settled while Traefik kept running,
 every router is ``enabled`` and the ``@file`` routers are exactly the ones the dynamic
 files define. The proof passes when both pairs pass, they loaded the same routers and
@@ -38,6 +43,7 @@ shows up before a transaction changes anything.
 from __future__ import annotations
 
 import argparse
+import base64
 import concurrent.futures
 import configparser
 import copy
@@ -729,6 +735,13 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
         static_text = Path(policy["config_path"]).read_text()
         static = tomllib.loads(static_text)
         config_text, override = isolated_config(static_text)
+        # An alias candidate (the static config of an ``alias`` transaction): the candidate pair
+        # starts it instead of the live config; only the engine's alias delta is accepted.
+        alias_candidate: bytes | None = None
+        if request.get("candidate_config_base64") is not None:
+            require(routine is None, "a candidate config and routine files are separate proofs")
+            alias_candidate = base64.b64decode(request["candidate_config_base64"], validate=True)
+            engine.validate_alias(static_text.encode(), alias_candidate, policy["alias_policy"])
         url = api_url(static)
         cwd = working_directory()
         dynamic = Path(policy["dynamic_path"])
@@ -771,9 +784,21 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
                 "poll": POLL,
             }
             if routine is None:
+                candidate_spec = spec
+                candidate_report: dict[str, Any] = {}
+                if alias_candidate is not None:
+                    alias_config = workdir / "candidate.toml"
+                    alias_text = alias_candidate.decode()
+                    engine.atomic(alias_config, isolated_config(alias_text)[0].encode())
+                    candidate_spec = {**spec, "config": str(alias_config), "api": api_url(tomllib.loads(alias_text))}
+                    candidate_report = {"candidate_config_sha256": hashlib.sha256(alias_candidate).hexdigest()}
                 results = {
-                    variant: pair(isolated_start(variant, binary, workdir, run_id, mounts, cwd, spec), expected)
-                    for variant, binary in (("baseline", installed), ("candidate", candidate))
+                    "baseline": pair(
+                        isolated_start("baseline", installed, workdir, run_id, mounts, cwd, spec), expected
+                    ),
+                    "candidate": pair(
+                        isolated_start("candidate", candidate, workdir, run_id, mounts, cwd, candidate_spec), expected
+                    ),
                 }
                 routine_report = {}
             else:
@@ -870,6 +895,8 @@ def run_proof(request: dict[str, Any]) -> dict[str, Any]:
             }
             run["report_reference"] = str(target)
             proof = build_proof(policy, release, live, run)
+            if routine is None:
+                proof.update(candidate_report)
             proof.update(routine_report)
             if routine_report:
                 proof["passed"] = bool(proof["passed"] and routine_report["mixed_pairs_passed"])

@@ -556,6 +556,17 @@ router statuses have not changed for 5 seconds, stops it and leaves the answer
 for the outer run. The work directory and units are removed afterwards; work
 left by a killed run is removed (its units stopped) by the next one.
 
+**Alias candidate.** For an `alias` transaction the request may carry
+`candidate_config_base64`, the candidate static config. It must be the live
+config plus exactly the engine's alias delta (`validate_alias` against
+`policy.alias_policy`, refused otherwise before any unit starts). The baseline
+pair starts the live config as before; the candidate pair starts the
+candidate (with the same `api.insecure` override) and the release from the
+archive, which for an alias proof is the installed release again. The proof
+adds `candidate_config_sha256`, and `proof.compatibility()` puts it into the
+engine's block, whose alias branch requires it to be the candidate's hash.
+Routine files and an alias candidate are separate proofs.
+
 **Pass criteria.** A pair passes when the API answered, the routers settled
 while Traefik kept running, every router (HTTP, TCP, UDP, `@internal`
 included) is `enabled`, and the `@file` routers are exactly the ones the
