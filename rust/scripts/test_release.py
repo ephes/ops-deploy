@@ -10,9 +10,12 @@ fakes.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import ssl
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -22,6 +25,25 @@ from unittest import mock
 
 import release
 import release_checks as checks
+
+# emSign ECC Root CA - G3 (public root, a blocked incident root) as an OpenSSL
+# TRUSTED CERTIFICATE block (as tests/test_python_security.py).
+G3_TRUSTED = """-----BEGIN TRUSTED CERTIFICATE-----
+MIICTjCCAdOgAwIBAgIKPPYHqWhwDtqLhDAKBggqhkjOPQQDAzBrMQswCQYDVQQG
+EwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNo
+bm9sb2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0g
+RzMwHhcNMTgwMjE4MTgzMDAwWhcNNDMwMjE4MTgzMDAwWjBrMQswCQYDVQQGEwJJ
+TjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNobm9s
+b2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0gRzMw
+djAQBgcqhkjOPQIBBgUrgQQAIgNiAAQjpQy4LRL1KPOxst3iAhKAnjlfSU2fySU0
+WXTsuwYc58Byr+iuL+FBVIcUqEqy6HyC5ltqtdyzdc6LBtCGI79G1Y4PPwT01xyS
+fvalY8L1X44uT6EYGQIrMgqCZH0Wk9GjQjBAMB0GA1UdDgQWBBR8XQKEE9TMipuB
+zhccLikenEhjQjAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAKBggq
+hkjOPQQDAwNpADBmAjEAvvNhzwIQHWSVB7gYboiFBS+DCBeQyh+KTOgNG3qxrdWB
+CUfvO6wIBHxcmbHtRwfSAjEAnbpV/KlK6O3t5nYBQnvI+GDZjVGLVTv7jHvrZQnD
++JbNR6iC8hZVdyR+EhCVBCyjMAwwCgYIKwYBBQUHAwE=
+-----END TRUSTED CERTIFICATE-----
+"""
 
 SCRIPTS = Path(__file__).resolve().parent
 RUST = SCRIPTS.parent
@@ -250,6 +272,32 @@ class ScriptsTest(unittest.TestCase):
         self.assertIn("rustup default", text)
         self.assertIn("rustc --version && cargo fetch --locked", text)
         self.assertIn("apt-get install -y --no-install-recommends gcc libapt-pkg-dev", text)
+        self.assertEqual(release.RUSTUP_VERSION, "1.29.2")
+        self.assertIn("/rustup/archive/1.29.2/", text)
+        # The trust store check runs in the APT step (a failed check leaves no
+        # cached layer), after the installation and before curl fetches rustup.
+        apt_step = text.split("RUN apt-get update")[1].split("\nRUN ")[0]
+        install = apt_step.index("apt-get install")
+        self.assertLess(install, apt_step.index(". /etc/os-release"))
+        self.assertLess(apt_step.index(". /etc/os-release"), apt_step.index("dpkg --compare-versions"))
+        self.assertLess(apt_step.index("dpkg --compare-versions"), apt_step.index("python3 -I -c"))
+        self.assertLess(text.index("python3 -I -c"), text.index("RUN curl"))
+        self.assertIn('ge "$minimum"', apt_step)
+        for base, minimum in release.CA_CERTIFICATES_MINIMUM.items():
+            self.assertIn(f"'{base}') minimum={minimum} ;;", apt_step)
+        self.assertEqual(
+            release.CA_CERTIFICATES_MINIMUM,
+            {
+                "ubuntu 22.04": "20260816ubuntu0.22.04.1",
+                "ubuntu 24.04": "20260816ubuntu0.24.04.1",
+                "debian 13": "20250419+deb13u1",
+            },
+        )
+        # Any other base is refused, never checked against no minimum.
+        self.assertIn('*) echo "no ca-certificates minimum for $ID $VERSION_ID" >&2; exit 1 ;; esac', apt_step)
+        for root in release.BLOCKED_ROOTS:
+            self.assertIn(root, apt_step)
+        self.assertNotIn("\n", release.TRUST_CHECK)
         self.assertNotIn(
             "/var/lib/apt/lists",
             text.split("# The package lists stay")[1].split("RUN curl")[0].replace("# on the image", ""),
@@ -258,6 +306,35 @@ class ScriptsTest(unittest.TestCase):
             release.dockerfile("debian@sha256:x", ["gcc; rm -rf /"], "linux/amd64")
         with self.assertRaises(release.ReleaseError):
             release.dockerfile("debian@sha256:x", [], "linux/s390x")
+
+    def test_trust_check_refuses_incident_roots_and_empty_bundles(self) -> None:
+        trusted = base64.b64decode("".join(G3_TRUSTED.splitlines()[1:-1]))
+        # The certificate without OpenSSL's trust settings: the first DER
+        # SEQUENCE (long form length, two bytes).
+        self.assertEqual(trusted[:2], b"\x30\x82")
+        der = trusted[: 4 + int.from_bytes(trusted[2:4], "big")]
+        g3 = hashlib.sha256(der).hexdigest()
+        self.assertIn(g3, release.BLOCKED_ROOTS)
+        other = [root for root in release.BLOCKED_ROOTS if root != g3]
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "ca-certificates.crt"
+            script = release.TRUST_CHECK.replace("/etc/ssl/certs/ca-certificates.crt", str(bundle))
+            self.assertNotEqual(script, release.TRUST_CHECK)
+
+            def check(*roots: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, "-I", "-c", script, *roots], capture_output=True, text=True, check=False
+                )
+
+            for name, text in (("CERTIFICATE", ssl.DER_cert_to_PEM_cert(der)), ("TRUSTED", G3_TRUSTED)):
+                with self.subTest(name):
+                    bundle.write_text(text, encoding="ascii")
+                    self.assertEqual(check(*other).returncode, 0)
+                    refused = check(*release.BLOCKED_ROOTS)
+                    self.assertEqual(refused.returncode, 1)
+                    self.assertIn(f"holds an incident root: {g3}", refused.stderr)
+            bundle.write_text("", encoding="ascii")
+            self.assertNotEqual(check(*release.BLOCKED_ROOTS).returncode, 0)
 
     def test_jobs_have_no_network_no_mount_and_limits(self) -> None:
         calls: list[list[str]] = []

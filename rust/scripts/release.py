@@ -68,18 +68,46 @@ AMD64 = "linux/amd64"
 # without an image): ubuntu-22.04, glibc 2.35 (checks.GLIBC_FLOOR).
 RUNNER_IMAGE = "ubuntu:22.04"
 BASE_PACKAGES = ("binutils", "ca-certificates", "curl", "gcc", "git", "libc6-dev", "python3")
-RUSTUP_VERSION = "1.29.1"
+# 1.29.2 fixes CVE-2026-111943 (certificate verification of its downloads).
+RUSTUP_VERSION = "1.29.2"
 # rustup-init per container platform: target triple and sha256.
 RUSTUP = {
     AMD64: (
         "x86_64-unknown-linux-gnu",
-        "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+        "5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4",
     ),  # pragma: allowlist secret
     "linux/arm64": (
         "aarch64-unknown-linux-gnu",
-        "15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433",
+        "a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697",
     ),  # pragma: allowlist secret
 }
+# The OS trust store an image downloads rustup and the toolchain with, keyed by
+# `$ID $VERSION_ID` of /etc/os-release: at least the ca-certificates of
+# USN-8944-1 (Ubuntu) or DSA-6572-1 (Debian), and neither root of the
+# 2026-10-21 incident (SHA-256 of the DER certificate), as the hosted release
+# job's scripts/ci_rustup.py required. Any other base image is refused.
+CA_CERTIFICATES_MINIMUM = {
+    "ubuntu 22.04": "20260816ubuntu0.22.04.1",
+    "ubuntu 24.04": "20260816ubuntu0.24.04.1",
+    "debian 13": "20250419+deb13u1",
+}
+BLOCKED_ROOTS = (
+    "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4",  # pragma: allowlist secret
+    "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",  # pragma: allowlist secret
+)
+# SHA-256 of every CA certificate OpenSSL loads from the bundle, in OpenSSL's
+# own DER: CERTIFICATE and TRUSTED CERTIFICATE blocks alike (as
+# helpers/templates/python_security_check.py.txt). A bundle OpenSSL cannot
+# load raises, so the step fails closed.
+TRUST_CHECK = (  # one line: it goes into a Dockerfile RUN instruction
+    "import hashlib, ssl, sys; "
+    "context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT); "
+    "context.load_verify_locations(cafile='/etc/ssl/certs/ca-certificates.crt'); "
+    "found = {hashlib.sha256(der).hexdigest() for der in context.get_ca_certs(binary_form=True)}; "
+    "blocked = sorted(found & set(sys.argv[1:])); "
+    "sys.exit('the CA bundle is empty or holds an incident root: ' + ' '.join(blocked)) "
+    "if not found or blocked else None"
+)
 IMAGE_REPOSITORY = "ops-deploy-rust-release"
 # Every container gets these limits; amd64 under Rosetta is slower than the
 # runners were, hence the generous time.
@@ -321,8 +349,9 @@ def image_packages(entries: list[dict[str, Any]]) -> dict[str, list[str]]:
 
 
 def dockerfile(base: str, packages: list[str], platform: str) -> str:
-    """The builder image: base pinned by digest, apt packages, pinned and
-    sha256-checked rustup, the source (`git archive` of the build commit), the
+    """The builder image: base pinned by digest, apt packages, the trust store
+    check (CA_CERTIFICATES_MINIMUM, BLOCKED_ROOTS), pinned and sha256-checked
+    rustup, the source (`git archive` of the build commit), the
     pinned toolchain and the locked dependencies. The only phase with network;
     it runs no code of the crates or their dependencies."""
     for package in packages:
@@ -332,6 +361,10 @@ def dockerfile(base: str, packages: list[str], platform: str) -> str:
         raise ReleaseError(f"no rustup-init for platform {platform}")
     triple, rustup_sha256 = RUSTUP[platform]
     url = f"https://static.rust-lang.org/rustup/archive/{RUSTUP_VERSION}/{triple}/rustup-init"
+    ca_cases = " ".join(
+        f"{shlex.quote(release)}) minimum={shlex.quote(minimum)} ;;"
+        for release, minimum in CA_CERTIFICATES_MINIMUM.items()
+    )
     return f"""FROM --platform={platform} {base}
 ENV DEBIAN_FRONTEND=noninteractive \\
     CARGO_HOME=/opt/cargo \\
@@ -339,9 +372,16 @@ ENV DEBIAN_FRONTEND=noninteractive \\
     CARGO_TERM_COLOR=never \\
     PATH=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # The package lists stay: software-live-apt's tests compare against python-apt
-# on the image's APT cache (as the workflow's job did).
+# on the image's APT cache (as the workflow's job did). The trust store check
+# runs in the same step, after the APT installation that brings the CA update
+# and before rustup, the toolchain and the dependencies are downloaded.
 RUN apt-get update \\
-    && apt-get install -y --no-install-recommends {" ".join(packages)}
+    && apt-get install -y --no-install-recommends {" ".join(packages)} \\
+    && . /etc/os-release \\
+    && case "$ID $VERSION_ID" in {ca_cases} \\
+        *) echo "no ca-certificates minimum for $ID $VERSION_ID" >&2; exit 1 ;; esac \\
+    && dpkg --compare-versions "$(dpkg-query -W -f '${{Version}}' ca-certificates)" ge "$minimum" \\
+    && python3 -I -c {shlex.quote(TRUST_CHECK)} {" ".join(BLOCKED_ROOTS)}
 RUN curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/rustup-init {url} \\
     && echo "{rustup_sha256}  /tmp/rustup-init" | sha256sum --check \\
     && chmod 0755 /tmp/rustup-init \\

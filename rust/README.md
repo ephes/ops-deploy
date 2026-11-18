@@ -245,8 +245,15 @@ colima ssh -- sudo sh -c 'printf "%s" ":rosetta:M::\\x7fELF\\x02\\x01\\x01\\x00\
    checked and smoke-tested under amd64.
    Each starts from its base image pinned by the digest pulled at the start
    of the build, installs `binutils ca-certificates curl gcc git libc6-dev
-   python3` and the variant's packages, rustup 1.29.1 (sha256-checked per
-   platform), the
+   python3` and the variant's packages; in the same APT step
+   `ca-certificates` must be at least the USN-8944-1 version
+   (`20260816ubuntu0.22.04.1` on ubuntu 22.04, `20260816ubuntu0.24.04.1` on
+   24.04) or the DSA-6572-1 version (`20250419+deb13u1` on debian 13), and the
+   CA bundle must hold neither root of the 2026-10-21 incident among the CAs
+   OpenSSL loads from it, `TRUSTED CERTIFICATE` blocks included (as the hosted
+   release jobs' `ci_rustup.py` required; any other base image is refused),
+   checked before the rustup, toolchain and dependency downloads. Then rustup
+   1.29.2 (sha256-checked per platform; 1.29.2 fixes CVE-2026-111943), the
    source as `git archive` of the build commit (only `rust/`), the pinned
    toolchain and `cargo fetch --locked`. No code of the crates or their
    dependencies runs.
@@ -351,7 +358,7 @@ ceiling 2.41 and `libapt-pkg.so.7.0`.)
 | --- | --- | --- |
 | `shared` | none | `build` (members, not CI-excluded) and `binaries` (as below) built once on the runner and packed into every variant's archive; both keys required |
 | `name` | none (allowed only for a single variant) | archive suffix, `[a-z0-9][a-z0-9._-]*`, unique |
-| `image` | the runner | container image (Debian/Ubuntu: the job installs `binutils ca-certificates curl gcc git libc6-dev python3`, rustup 1.29.1 sha256-checked, then the pinned toolchain) |
+| `image` | the runner | container image (`ubuntu:22.04`, `ubuntu:24.04` or `debian:13`, the bases with a `ca-certificates` minimum in `release.py`: the job installs `binutils ca-certificates curl gcc git libc6-dev python3`, checks the CA bundle, installs rustup 1.29.2 sha256-checked, then the pinned toolchain) |
 | `packages` | `[]` | extra apt packages; only with `image` |
 | `build` | `[<crate>]`, `[]` when `shared` builds the crate | workspace members to build (must include the crate unless `shared` builds it; never a `shared` member); a CI-excluded member is allowed only with an `image` and is linted and tested inside it |
 | `binaries` | `[{"name": <crate>}]`, `[]` when `shared` builds the crate | archive binaries (mode 0755), each a binary of a `build` member; together with the `shared` binaries they must include `<crate>` |

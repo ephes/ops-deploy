@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Rust releases (`rust/scripts/release.py`): the builder images pin rustup
+  1.29.2 (CVE-2026-111943, as mailgun-relay's, nyxmon's and graphyard's
+  `local_release.py`) and, in the APT step before rustup-init is downloaded,
+  require `ca-certificates` of at least USN-8944-1 (`20260816ubuntu0.22.04.1`,
+  `20260816ubuntu0.24.04.1`) or DSA-6572-1 (`20250419+deb13u1` on debian 13)
+  and a CA bundle without either root of the 2026-10-21 incident (every CA
+  OpenSSL loads from it, `TRUSTED CERTIFICATE` blocks included). Any other
+  base image is refused. The releases published so far (software-live 0.1.3
+  and the eight imported from ops-library) were built before this change.
+  `docs/changelog.md`: removed a second orphaned merge marker line.
+
 - delve: new `storekit_allowed_environments` (`None` by default, not rendered),
   rendered as `DELVE_STOREKIT_ALLOWED_ENVIRONMENTS` into `delve.env`: the App
   Store environments whose transactions may unlock Pro (delved from podcast
@@ -78,7 +89,6 @@
   change; each service's next deploy rewrites its unit and restarts it once.
 - `docs/changelog.md`: removed an orphaned merge marker line.
 
-||||||| parent of 012f2493 (llama_server: build the pinned llama.cpp from source)
 - software-live 0.1.3 (`rust/software-live`, `software-live-apt` follows):
   a newer Traefik patch inside the patch window of ops-control's Traefik
   patch policy is a notice, not a warning. New optional policy keys
