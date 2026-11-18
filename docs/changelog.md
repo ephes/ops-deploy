@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- llama_server: optional `source_build` (`LlamaSourceBuild`: tag, full commit,
+  repository). The detector's pinned llama.cpp build is built from source as the
+  non-root service user and published root-owned under
+  `/opt/llama-server/llama.cpp-<build>`, independent of Homebrew's `llama.cpp`,
+  which `whisper.cpp` upgrades move (on the Studio the wrapper refused the
+  upgraded formula and the job crash-looped since 2026-10-28). Source mode fixes
+  the layout, checks the root-only directory chains (including ACLs), holds one
+  deploy lock for the whole apply, publishes wrapper/key/plist on fresh inodes,
+  and never executes or opens build artifacts as root. `launchctl enable` now
+  runs before `bootstrap` in both modes. Homebrew mode is otherwise unchanged
+  (`docs/services/llama_server.md`, "Source build").
+
 - gunicorn ignores client-set forwarder headers in every role that starts it
   with a fixed command line: archive, daybook_operations_api, homelab,
   opaq_app, paperless, weeknotes_home and work_app pass
@@ -33,6 +45,7 @@
   change; each service's next deploy rewrites its unit and restarts it once.
 - `docs/changelog.md`: removed an orphaned merge marker line.
 
+||||||| parent of 012f2493 (llama_server: build the pinned llama.cpp from source)
 - software-live 0.1.3 (`rust/software-live`, `software-live-apt` follows):
   a newer Traefik patch inside the patch window of ops-control's Traefik
   patch policy is a notice, not a warning. New optional policy keys

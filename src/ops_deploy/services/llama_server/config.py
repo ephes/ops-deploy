@@ -13,6 +13,52 @@ from ops_deploy.base import RoleConfig
 from ops_deploy.base._common import Sha256
 from ops_deploy.core.config import UnixUser
 
+DEFAULT_BINARY = PurePosixPath("/opt/homebrew/bin/llama-server")
+
+# Source mode publishes into this fixed layout only (the role defaults); every
+# managed path, the binary prefix and the host's deploy lock are then distinct
+# and lie below root-only parents the host script verifies.
+SOURCE_LAYOUT = {
+    "install_dir": PurePosixPath("/opt/llama-server"),
+    "config_dir": PurePosixPath("/etc/llama-server"),
+    "log_dir": PurePosixPath("/var/log/llama-server"),
+    "wrapper_path": PurePosixPath("/opt/llama-server/detector-server.sh"),
+    "model_dir": PurePosixPath("/opt/llama-server/models"),
+    "api_key_path": PurePosixPath("/etc/llama-server/api-key"),
+    "stdout_log": PurePosixPath("/var/log/llama-server/llama-server.log"),
+    "stderr_log": PurePosixPath("/var/log/llama-server/llama-server.err.log"),
+}
+
+
+class LlamaSourceBuild(RoleConfig):
+    """A llama.cpp release tag built from source instead of the Homebrew formula.
+
+    The host builds ``tag`` as the service user with its own toolchain, verifies
+    that the tag and HEAD are ``commit`` and that the commit count is the
+    build number, and publishes the binary root-owned under
+    ``<install_dir>/llama.cpp-<build>`` (see ``docs/services/llama_server.md``).
+    """
+
+    repository: str = "https://github.com/ggml-org/llama.cpp.git"
+    tag: Annotated[str, Field(pattern=r"^b[0-9]+$")]
+    commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+
+    @field_validator("repository")
+    @classmethod
+    def _https(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            url.scheme != "https"
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or any(ord(char) < 33 or ord(char) == 127 for char in value)
+        ):
+            raise ValueError("source repository must be an HTTPS URL without credentials")
+        return value
+
 
 class LlamaServerConfig(RoleConfig):
     enabled: bool = True
@@ -22,7 +68,7 @@ class LlamaServerConfig(RoleConfig):
     brew_bin: PurePosixPath | None = None
     brew_user: UnixUser | None = None
     brew_formula: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_@./+-]*$")] = "llama.cpp"
-    binary: PurePosixPath = PurePosixPath("/opt/homebrew/bin/llama-server")
+    binary: PurePosixPath = DEFAULT_BINARY
     build: Annotated[str, Field(pattern=r"^b[0-9]+-[0-9a-f]{7,40}$")] = "b11669-620d2225c"
     wrapper_source: Path | None = None
     install_dir: PurePosixPath = PurePosixPath("/opt/llama-server")
@@ -50,6 +96,7 @@ class LlamaServerConfig(RoleConfig):
     healthcheck_enabled: bool = True
     healthcheck_retries: int = Field(default=30, ge=1)
     healthcheck_delay: int = Field(default=2, ge=0)
+    source_build: LlamaSourceBuild | None = None
 
     @field_validator(
         "home",
@@ -110,6 +157,8 @@ class LlamaServerConfig(RoleConfig):
         for name, value in defaults.items():
             if getattr(self, name) is None:
                 object.__setattr__(self, name, value)
+        if self.source_build is not None:
+            self._source_layout()
         managed_files = [
             self.wrapper_path,
             self.api_key_path,
@@ -124,6 +173,33 @@ class LlamaServerConfig(RoleConfig):
         if set(managed_files) & {self.install_dir, self.model_dir, self.config_dir, self.log_dir}:
             raise ValueError("detector managed files must not replace its directories")
         return self
+
+    def _source_layout(self) -> None:
+        assert self.source_build is not None
+        number, short = self.build[1:].split("-", 1)
+        if self.source_build.tag != "b" + number or not self.source_build.commit.startswith(short):
+            raise ValueError("source build tag/commit must match the pinned build")
+        for name, expected in SOURCE_LAYOUT.items():
+            if getattr(self, name) != expected:
+                raise ValueError(f"source build requires the fixed {name} {expected}")
+        if self.launchd_plist_path != PurePosixPath("/Library/LaunchDaemons") / (self.launchd_label + ".plist"):
+            raise ValueError("source build requires the default launchd plist path")
+        prefix = self.source_prefix
+        assert prefix is not None
+        # Omitted -> derived; an explicit value (also a re-validated dump) must
+        # already be the source path.
+        if "binary" in self.model_fields_set and self.binary != prefix / "bin/llama-server":
+            raise ValueError("source build publishes its own binary; do not set binary")
+        object.__setattr__(self, "binary", prefix / "bin/llama-server")
+        if self.user is not None and self.user == "root":
+            raise ValueError("source build runs as the non-root service user")
+
+    @property
+    def source_prefix(self) -> PurePosixPath | None:
+        """Where source mode publishes the build (``None`` in Homebrew mode)."""
+        if self.source_build is None:
+            return None
+        return self.install_dir / ("llama.cpp-" + self.build)
 
     @property
     def required_secret_keys(self) -> tuple[str, ...]:
