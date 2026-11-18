@@ -1,0 +1,1 @@
+runuser	-u postgres	--	createdb	django_chat_restore_1388

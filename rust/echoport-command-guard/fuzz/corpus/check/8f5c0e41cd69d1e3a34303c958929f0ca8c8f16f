@@ -1,0 +1,1 @@
+runuser -u postgres -- pg_restore --no-owner --leges on-error -d.nat < /vdr

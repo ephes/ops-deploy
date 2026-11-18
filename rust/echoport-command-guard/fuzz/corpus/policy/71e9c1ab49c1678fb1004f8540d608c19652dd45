@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepage", "pytt", "django-ct"], "restore_databases": {"homepage": "homipagt"}, "teg": [5, 2]}}

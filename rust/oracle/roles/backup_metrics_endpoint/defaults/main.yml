@@ -1,0 +1,123 @@
+---
+# backup_metrics_endpoint - Default Variables
+#
+# Exposes Fractal backup metrics as an authenticated HTTP
+# endpoint. A systemd timer runs the exporter periodically and writes JSON to a
+# file; an HTTP server reads that file and adds staleness metadata.
+#
+# This design avoids needing root/SSH access from Nyxmon - only HTTP over
+# Tailscale with basic auth is required.
+
+backup_metrics_endpoint_enabled: false
+
+# Service/user (same as metrics_endpoint pattern)
+backup_metrics_endpoint_user: metrics
+backup_metrics_endpoint_group: "{{ backup_metrics_endpoint_user }}"
+backup_metrics_endpoint_service_name: backup-metrics-endpoint
+
+# HTTP server implementation (rust/metrics-httpd/PLAN.md 7.1): python runs
+# backup_metrics_endpoint_server_path; rust runs the pinned metrics-httpd release
+# (fleet variables metrics_httpd_rust_version / metrics_httpd_rust_sha256)
+# through the drop-in /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+backup_metrics_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+
+# Network / auth
+backup_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+backup_metrics_endpoint_port: 9103
+backup_metrics_endpoint_path: "/.well-known/backup"
+backup_metrics_endpoint_auth_user: "CHANGE_ME"
+backup_metrics_endpoint_auth_password: "CHANGE_ME"
+
+# Packages (system Python + htpasswd)
+backup_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
+# Paths
+backup_metrics_endpoint_data_dir: "/var/lib/backup-metrics"
+backup_metrics_endpoint_json_path: "{{ backup_metrics_endpoint_data_dir }}/backup.json"
+backup_metrics_endpoint_server_path: "/usr/local/bin/backup_metrics_httpd.py"
+backup_metrics_endpoint_exporter_path: "/usr/local/bin/backup_metrics_exporter.py"
+backup_metrics_endpoint_htpasswd_dir: "/etc/backup-metrics-endpoint"
+backup_metrics_endpoint_htpasswd_path: "{{ backup_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+# Timer configuration
+backup_metrics_endpoint_timer_interval: 300  # seconds between metrics collection
+backup_metrics_endpoint_timer_name: backup-metrics-collector
+# Historical name; used as the initial delay after timer activation.
+backup_metrics_endpoint_timer_on_boot_sec: 30
+backup_metrics_endpoint_timer_accuracy_sec: 10
+backup_metrics_endpoint_timer_randomized_delay_sec: 15
+
+# Script timeout (for HTTP 504 on stale data)
+backup_metrics_endpoint_script_timeout: 10
+
+# Command timeouts used by the exporter
+backup_metrics_endpoint_systemctl_timeout: 10
+backup_metrics_endpoint_zfs_timeout: 45
+backup_metrics_endpoint_zfs_retries: 1
+backup_metrics_endpoint_zfs_retry_delay: 2
+
+# Quiet-hours behavior for local snapshot probes.
+# When enabled, the exporter can reuse cached local snapshot metadata from the
+# previous JSON file instead of issuing fresh `zfs list` calls.
+backup_metrics_endpoint_quiet_hours_enabled: false
+backup_metrics_endpoint_quiet_hours_start: "06:00"
+backup_metrics_endpoint_quiet_hours_end: "22:00"
+backup_metrics_endpoint_quiet_hours_skip_local_snapshot_probes: true
+backup_metrics_endpoint_cache_json_path: "{{ backup_metrics_endpoint_json_path }}"
+
+# Backup jobs to inspect via systemd
+backup_metrics_endpoint_units:
+  - id: sanoid
+    timer: sanoid-ops-library.timer
+    service: sanoid-ops-library.service
+    required: true
+  - id: syncoid_local
+    timer: zfs-syncoid-replication.timer
+    service: zfs-syncoid-replication.service
+    required: true
+  - id: syncoid_usb
+    timer: zfs-usb-replication.timer
+    service: zfs-usb-replication.service
+    required: false
+
+# Replica datasets that should receive fresh syncoid snapshots.
+# These are typically targets of fractal_syncoid_jobs.
+backup_metrics_endpoint_local_datasets:
+  - tank/replica/fast/general
+  - tank/replica/fast/timemachine
+
+# USB backup configuration
+backup_metrics_endpoint_usb_enabled: false
+backup_metrics_endpoint_usb_pool: vault
+backup_metrics_endpoint_usb_device: ""
+# Rotating offsite drives; any present drive counts as device_present. When
+# empty, backup_metrics_endpoint_usb_device is used.
+backup_metrics_endpoint_usb_devices: []
+backup_metrics_endpoint_usb_replication_status_path: "/var/lib/zfs-usb-replication/status.json"
+backup_metrics_endpoint_usb_capacity_warning_ratio: 0.90
+backup_metrics_endpoint_usb_capacity_critical_ratio: 0.95
+# Set >0 to require a successful USB replication within this many hours.
+backup_metrics_endpoint_usb_protection_max_age_hours: 0
+backup_metrics_endpoint_usb_health_module_path: "/usr/local/bin/backup_metrics_usb_health.py"
+
+# USB datasets that should receive fresh snapshots when USB pool is imported.
+backup_metrics_endpoint_usb_datasets:
+  - vault/replica/fast/general
+  - vault/replica/fast/timemachine
+  - vault/photos
+  - vault/videos
+  - vault/backups
+
+# Optional file-backup freshness checks (for archive workflows not represented by ZFS snapshots)
+# Each entry supports:
+# - id (string, required)
+# - path (string, required)
+# - glob (string, optional, default "*.tar.*")
+# - max_age_hours (number, optional, default 48)
+# - required (bool, optional, default true)
+# - enabled (bool, optional, default true)
+backup_metrics_endpoint_file_backups: []

@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import http.server
+import socketserver
+import subprocess
+import sys
+from typing import Optional, Tuple
+
+
+class MetricsHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "metrics-httpd/0.1"
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self) -> None:  # noqa: N802
+        cfg = self.server.cfg  # type: ignore[attr-defined]
+        if self.path != cfg["path"]:
+            self.send_error(404, "Not found")
+            return
+
+        auth_header = self.headers.get("Authorization")
+        ok, message = self._check_auth(auth_header, cfg)
+        if not ok:
+            self.send_response(401, "Unauthorized")
+            self.send_header("WWW-Authenticate", 'Basic realm="metrics"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        try:
+            completed = subprocess.run(
+                [cfg["script"]],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=cfg["script_timeout"],
+            )
+        except subprocess.TimeoutExpired:
+            self.send_error(504, "Metrics script timeout")
+            return
+
+        if completed.returncode != 0:
+            msg = completed.stderr.strip() or "Metrics script failed"
+            self.send_error(502, msg)
+            return
+
+        payload = completed.stdout.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), fmt % args))
+
+    def _check_auth(self, header: Optional[str], cfg: dict) -> Tuple[bool, str]:
+        if not header or not header.startswith("Basic "):
+            return False, "missing"
+        try:
+            decoded = base64.b64decode(header.split()[1]).decode("utf-8")
+            user, password = decoded.split(":", 1)
+        except Exception:
+            return False, "malformed"
+
+        encoded = password.encode("utf-8")
+        if len(encoded) > 255 or "\x00" in password:
+            return False, "malformed"
+        if b"\r" in encoded or b"\n" in encoded:
+            # Keep bcrypt's historical 72-byte suffix equivalence without
+            # allowing stdin truncation for APR/SHA or another hash scheme.
+            if any(char in encoded[:72] for char in (10, 13)) or not self._bcrypt_records_only(user, cfg):
+                return False, "malformed"
+
+        result = subprocess.run(
+            ["htpasswd", "-vi", cfg["htpasswd_file"], user],
+            input=password,
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0, result.stderr
+
+
+
+    def _bcrypt_records_only(self, user: str, cfg: dict) -> bool:
+        # htpasswd still performs all verification. This only admits the
+        # legacy bcrypt-only suffix case before its stdin line handling.
+        hashes = []
+        try:
+            with open(cfg["htpasswd_file"], "rb") as records:
+                for line in records:
+                    line = line.lstrip()
+                    if not line or line.startswith(b"#"):
+                        continue
+                    name, separator, value = line.partition(b":")
+                    if separator and name == user.encode("utf-8"):
+                        hashes.append(value.split(b"\r", 1)[0].split(b"\n", 1)[0])
+        except OSError:
+            return False
+        return bool(hashes) and all(value.startswith((b"$2a$", b"$2y$")) for value in hashes)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Minimal authenticated metrics endpoint")
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address")
+    parser.add_argument("--port", type=int, default=9100, help="Listen port")
+    parser.add_argument("--path", default="/.well-known/health", help="Health path")
+    parser.add_argument("--script", default="{{ metrics_endpoint_script_path }}", help="Metrics script path")
+    parser.add_argument("--htpasswd-file", default="{{ metrics_endpoint_htpasswd_path }}", help="htpasswd file")
+    parser.add_argument("--script-timeout", type=int, default={{ metrics_endpoint_script_timeout }}, help="Script timeout seconds")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    handler = MetricsHandler
+    handler.server_version = "metrics-httpd/0.1"
+
+    class ConfiguredTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    httpd = ConfiguredTCPServer((args.bind, args.port), handler)
+    httpd.cfg = {  # type: ignore[attr-defined]
+        "path": args.path,
+        "script": args.script,
+        "htpasswd_file": args.htpasswd_file,
+        "script_timeout": args.script_timeout,
+    }
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,4447 @@
+{
+ "unit_lists": [
+  {
+   "id": "empty-variable",
+   "input": "",
+   "units": [],
+   "rejected": []
+  },
+  {
+   "id": "one-unit",
+   "input_decoded": "[{\"id\": \"vector\", \"unit\": \"vector.service\"}]",
+   "units": [
+    {
+     "id": "vector",
+     "unit": "vector.service"
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "empty-list",
+   "input_decoded": "[]",
+   "units": [],
+   "rejected": []
+  },
+  {
+   "id": "every-reason",
+   "input_decoded": "[{\"id\": \"vector\", \"unit\": \"vector.service\"}, \"vector.service\", 5, null, [], {\"id\": \"x\"}, {\"id\": \"x\", \"unit\": \"\"}, {\"id\": \"x\", \"unit\": true}, {\"id\": \"x\", \"unit\": 1}, {\"id\": \"x\", \"unit\": [\"a\"]}, {\"unit\": \"a.service\"}, {\"unit\": \"a.service\", \"id\": \"\"}, {\"unit\": \"a.service\", \"id\": 7}, {\"unit\": \"a.service\", \"id\": null}, {\"unit\": \"a.service\", \"id\": \"a.service\"}, {\"unit\": \"a.service\", \"id\": \".\"}, {\"unit\": \"other.service\", \"id\": \"vector\"}, {\"unit\": \"-.mount\", \"id\": \"root\", \"extra\": [1, 2]}, {\"unit\": \"with space.service\", \"id\": \"with space\"}, {\"unit\": \"\\u00fcn\\u00ef.service\", \"id\": \"\\u00fcn\\u00ef\"}, {\"unit\": \"dup.service\", \"id\": \"root\"}]",
+   "units": [
+    {
+     "id": "vector",
+     "unit": "vector.service"
+    },
+    {
+     "id": "root",
+     "unit": "-.mount"
+    },
+    {
+     "id": "with space",
+     "unit": "with space.service"
+    },
+    {
+     "id": "\u00fcn\u00ef",
+     "unit": "\u00fcn\u00ef.service"
+    }
+   ],
+   "rejected": [
+    {
+     "reason": "not_an_object"
+    },
+    {
+     "reason": "not_an_object"
+    },
+    {
+     "reason": "not_an_object"
+    },
+    {
+     "reason": "not_an_object"
+    },
+    {
+     "reason": "missing_unit"
+    },
+    {
+     "reason": "missing_unit"
+    },
+    {
+     "reason": "missing_unit"
+    },
+    {
+     "reason": "missing_unit"
+    },
+    {
+     "reason": "missing_unit"
+    },
+    {
+     "unit": "a.service",
+     "reason": "missing_id"
+    },
+    {
+     "unit": "a.service",
+     "reason": "missing_id"
+    },
+    {
+     "unit": "a.service",
+     "reason": "missing_id"
+    },
+    {
+     "unit": "a.service",
+     "reason": "missing_id"
+    },
+    {
+     "unit": "a.service",
+     "id": "a.service",
+     "reason": "id_contains_dot"
+    },
+    {
+     "unit": "a.service",
+     "id": ".",
+     "reason": "id_contains_dot"
+    },
+    {
+     "unit": "other.service",
+     "id": "vector",
+     "reason": "duplicate_id"
+    },
+    {
+     "unit": "dup.service",
+     "id": "root",
+     "reason": "duplicate_id"
+    }
+   ]
+  },
+  {
+   "id": "duplicate-keys",
+   "input_decoded": "[{\"id\": \"a\", \"id\": \"b\", \"unit\": \"u\", \"unit\": \"v\"}]",
+   "units": [
+    {
+     "id": "b",
+     "unit": "v"
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "object",
+   "input_decoded": "{\"id\": \"vector\", \"unit\": \"vector.service\"}",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "not_a_list"
+    }
+   ]
+  },
+  {
+   "id": "string",
+   "input_decoded": "\"vector.service\"",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "not_a_list"
+    }
+   ]
+  },
+  {
+   "id": "null",
+   "input_decoded": "null",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "not_a_list"
+    }
+   ]
+  },
+  {
+   "id": "number",
+   "input_decoded": "1",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "not_a_list"
+    }
+   ]
+  },
+  {
+   "id": "invalid-json",
+   "input_decoded": "[{\"id\": \"vector\"",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_json",
+     "detail": "Expecting ',' delimiter: line 1 column 17 (char 16)"
+    }
+   ]
+  },
+  {
+   "id": "trailing-data",
+   "input_decoded": "[] []",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_json",
+     "detail": "Extra data: line 1 column 4 (char 3)"
+    }
+   ]
+  },
+  {
+   "id": "bom",
+   "input_decoded": "\ufeff[]",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_json",
+     "detail": "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+    }
+   ]
+  },
+  {
+   "id": "blank-json",
+   "input_decoded": "  ",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_json",
+     "detail": "Expecting value: line 1 column 3 (char 2)"
+    }
+   ]
+  },
+  {
+   "id": "not-utf8",
+   "input_decoded_hex": "5b22ff225d",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte"
+    }
+   ]
+  },
+  {
+   "id": "non-ascii-input",
+   "input": "W10=\u00e9",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "string argument should contain only ASCII characters"
+    }
+   ]
+  },
+  {
+   "id": "leading-space",
+   "input": " W10=",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Only base64 data is allowed"
+    }
+   ]
+  },
+  {
+   "id": "trailing-newline",
+   "input": "W10=\n",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Only base64 data is allowed"
+    }
+   ]
+  },
+  {
+   "id": "missing-padding",
+   "input": "W10",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Incorrect padding"
+    }
+   ]
+  },
+  {
+   "id": "excess-padding",
+   "input": "WzFd=",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Excess padding not allowed"
+    }
+   ]
+  },
+  {
+   "id": "trailing-bits",
+   "input": "W11=",
+   "units": [],
+   "rejected": []
+  },
+  {
+   "id": "urlsafe-alphabet",
+   "input": "Ij8_PiI=",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Only base64 data is allowed"
+    }
+   ]
+  },
+  {
+   "id": "not-base64",
+   "input": "not base64!",
+   "units": [],
+   "rejected": [
+    {
+     "reason": "invalid_base64",
+     "detail": "Only base64 data is allowed"
+    }
+   ]
+  },
+  {
+   "id": "nan-element",
+   "input_decoded": "[NaN, {\"id\": \"a\", \"unit\": \"u\"}]",
+   "python": "([{'id': 'a', 'unit': 'u'}], [{'reason': 'not_an_object'}])",
+   "d": "D-4",
+   "rust_rejected": "invalid_json"
+  },
+  {
+   "id": "lone-surrogate",
+   "input_decoded": "[{\"id\": \"\\ud800\", \"unit\": \"u\"}]",
+   "python": "([{'id': '\\ud800', 'unit': 'u'}], [])",
+   "d": "D-4",
+   "rust_rejected": "invalid_json"
+  },
+  {
+   "id": "deeper-than-128",
+   "input_decoded": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+   "python": "([], [{'reason': 'not_an_object'}])",
+   "d": "D-4",
+   "rust_rejected": "invalid_json"
+  },
+  {
+   "id": "int-too-long",
+   "input_decoded": "[11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111]",
+   "python_error": "ValueError",
+   "d": "D-2",
+   "rust_rejected": "invalid_json"
+  }
+ ],
+ "base64": [
+  {
+   "input": "",
+   "decoded_hex": ""
+  },
+  {
+   "input": "QQ==",
+   "decoded_hex": "41"
+  },
+  {
+   "input": "QR==",
+   "decoded_hex": "41"
+  },
+  {
+   "input": "QUJD",
+   "decoded_hex": "414243"
+  },
+  {
+   "input": "QUJD=",
+   "decoded_hex": null
+  },
+  {
+   "input": "QUJDRA==",
+   "decoded_hex": "41424344"
+  },
+  {
+   "input": "QUJDRA",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "=",
+   "decoded_hex": null
+  },
+  {
+   "input": "QQ==QQ==",
+   "decoded_hex": null
+  },
+  {
+   "input": "Agw",
+   "decoded_hex": null
+  },
+  {
+   "input": "w=QwAA_==-",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "w_\n\nw+=",
+   "decoded_hex": null
+  },
+  {
+   "input": "w_/",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+//QAQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "++\u00e9 ",
+   "decoded_hex": null
+  },
+  {
+   "input": " w+Q+g-=/",
+   "decoded_hex": null
+  },
+  {
+   "input": "/\n\u00e9Q=\u00e9\u00e9\n\n ",
+   "decoded_hex": null
+  },
+  {
+   "input": " //= +\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "Aw=",
+   "decoded_hex": null
+  },
+  {
+   "input": "/+w\u00e9A- -\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "w",
+   "decoded_hex": null
+  },
+  {
+   "input": "_",
+   "decoded_hex": null
+  },
+  {
+   "input": "-\ng",
+   "decoded_hex": null
+  },
+  {
+   "input": "+\u00e9w+",
+   "decoded_hex": null
+  },
+  {
+   "input": " w_  Q\u00e9-/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "==\n=\n/",
+   "decoded_hex": null
+  },
+  {
+   "input": "=/",
+   "decoded_hex": null
+  },
+  {
+   "input": "_---A",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q-",
+   "decoded_hex": null
+  },
+  {
+   "input": "-_/_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "+A ",
+   "decoded_hex": null
+  },
+  {
+   "input": "gwQ-ww",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9-_\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "g - =",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nw\u00e9A-+",
+   "decoded_hex": null
+  },
+  {
+   "input": " /-",
+   "decoded_hex": null
+  },
+  {
+   "input": "gw-Aw/\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "Qg=_-\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "g",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9 ",
+   "decoded_hex": null
+  },
+  {
+   "input": "=QA/g-",
+   "decoded_hex": null
+  },
+  {
+   "input": "gwg _",
+   "decoded_hex": null
+  },
+  {
+   "input": "/A+",
+   "decoded_hex": null
+  },
+  {
+   "input": "- g_g",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "g=g",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q=\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n+QAQ\n/g",
+   "decoded_hex": null
+  },
+  {
+   "input": " +",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q/",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nw-gw/+",
+   "decoded_hex": null
+  },
+  {
+   "input": "__",
+   "decoded_hex": null
+  },
+  {
+   "input": "g_=Q-\nQg",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9 ",
+   "decoded_hex": null
+  },
+  {
+   "input": "_w",
+   "decoded_hex": null
+  },
+  {
+   "input": "Agg=g=/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nwA\u00e9w-",
+   "decoded_hex": null
+  },
+  {
+   "input": " g\u00e9A+A",
+   "decoded_hex": null
+  },
+  {
+   "input": "g_-+/-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n_ =\u00e9\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "__\n\u00e9\nQwA_",
+   "decoded_hex": null
+  },
+  {
+   "input": "AgA",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\u00e9=g",
+   "decoded_hex": null
+  },
+  {
+   "input": "Ag//",
+   "decoded_hex": "020fff"
+  },
+  {
+   "input": " /",
+   "decoded_hex": null
+  },
+  {
+   "input": "A_AQA+A\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "=/",
+   "decoded_hex": null
+  },
+  {
+   "input": "+",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "-=g/_",
+   "decoded_hex": null
+  },
+  {
+   "input": "-\nw =-\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "+_w\u00e9\n- ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "-++wg-/+",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\u00e9www\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "-=",
+   "decoded_hex": null
+  },
+  {
+   "input": "wQg_AQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "=",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\nw\u00e9A\ng/Q-",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9A w",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n-=\u00e9A=",
+   "decoded_hex": null
+  },
+  {
+   "input": "QQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-+\u00e9-=_\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\ngQ+",
+   "decoded_hex": null
+  },
+  {
+   "input": "/-w",
+   "decoded_hex": null
+  },
+  {
+   "input": "=_=A\u00e9_+__w",
+   "decoded_hex": null
+  },
+  {
+   "input": "=wg\u00e9Q+-A/",
+   "decoded_hex": null
+  },
+  {
+   "input": "=w- \n\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "w",
+   "decoded_hex": null
+  },
+  {
+   "input": "++",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "-w -\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": " =Q\u00e9=",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ \n=/\n=_w",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nQ/",
+   "decoded_hex": null
+  },
+  {
+   "input": "gA",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "-",
+   "decoded_hex": null
+  },
+  {
+   "input": "+A-+\u00e9w/wQ_",
+   "decoded_hex": null
+  },
+  {
+   "input": "w_ g=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n\ng",
+   "decoded_hex": null
+  },
+  {
+   "input": "g/\nwQgQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "A_g\n=Qg",
+   "decoded_hex": null
+  },
+  {
+   "input": "w _w//g",
+   "decoded_hex": null
+  },
+  {
+   "input": "_Q/Q=\n\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "/-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "AgA\u00e9+A\u00e9=",
+   "decoded_hex": null
+  },
+  {
+   "input": " _gwgAww",
+   "decoded_hex": null
+  },
+  {
+   "input": "=w- /",
+   "decoded_hex": null
+  },
+  {
+   "input": "A\u00e9/",
+   "decoded_hex": null
+  },
+  {
+   "input": " Q-\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9Q\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q=-A ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n=_-",
+   "decoded_hex": null
+  },
+  {
+   "input": "Ag+\u00e9-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "--w\n =A/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "wgA",
+   "decoded_hex": null
+  },
+  {
+   "input": "AA\n=+_= \n",
+   "decoded_hex": null
+  },
+  {
+   "input": "gQ+Q",
+   "decoded_hex": "810f90"
+  },
+  {
+   "input": "w-\u00e9= g  - ",
+   "decoded_hex": null
+  },
+  {
+   "input": "w=\n+",
+   "decoded_hex": null
+  },
+  {
+   "input": "=gA -=/=",
+   "decoded_hex": null
+  },
+  {
+   "input": "//-w A=\n=_",
+   "decoded_hex": null
+  },
+  {
+   "input": "=_gQA",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n - +w",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9-",
+   "decoded_hex": null
+  },
+  {
+   "input": "g=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9-_ A",
+   "decoded_hex": null
+  },
+  {
+   "input": "=Q+--wg",
+   "decoded_hex": null
+  },
+  {
+   "input": "/-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "_  A+gQQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "ww\u00e9wA-w",
+   "decoded_hex": null
+  },
+  {
+   "input": "g--",
+   "decoded_hex": null
+  },
+  {
+   "input": "ww///=",
+   "decoded_hex": null
+  },
+  {
+   "input": "+=/wA +Q-",
+   "decoded_hex": null
+  },
+  {
+   "input": "Qg\n\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "g ",
+   "decoded_hex": null
+  },
+  {
+   "input": "-/-w _A+",
+   "decoded_hex": null
+  },
+  {
+   "input": "+wQ-",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\nA\n/=+",
+   "decoded_hex": null
+  },
+  {
+   "input": "  Q+AQ_",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-Ag/w_\u00e9__",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q\u00e9+--\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "g-==",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nwA=",
+   "decoded_hex": null
+  },
+  {
+   "input": "w\u00e9\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ -=_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\ng_QwA- ",
+   "decoded_hex": null
+  },
+  {
+   "input": "/w-/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "-\u00e9AQ+\u00e9w/ +",
+   "decoded_hex": null
+  },
+  {
+   "input": "gA",
+   "decoded_hex": null
+  },
+  {
+   "input": "+g+/\u00e9=",
+   "decoded_hex": null
+  },
+  {
+   "input": "=_ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\n\n- \u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "g\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n+Q \n=/wg_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "-A",
+   "decoded_hex": null
+  },
+  {
+   "input": "=+_+g ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g= _+",
+   "decoded_hex": null
+  },
+  {
+   "input": "+A=A+g/=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nw",
+   "decoded_hex": null
+  },
+  {
+   "input": " /\n wA+/A",
+   "decoded_hex": null
+  },
+  {
+   "input": "_gggQ+gwQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g_\u00e9A__/QA",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": " - wg\nA",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "+",
+   "decoded_hex": null
+  },
+  {
+   "input": "+\n",
+   "decoded_hex": null
+  },
+  {
+   "input": " A\u00e9 w_ -_\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n\u00e9=AQg A",
+   "decoded_hex": null
+  },
+  {
+   "input": " ",
+   "decoded_hex": null
+  },
+  {
+   "input": "A=Q_-w-",
+   "decoded_hex": null
+  },
+  {
+   "input": "==gw",
+   "decoded_hex": null
+  },
+  {
+   "input": "/Q\u00e9Agw/Q_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n Qw+=w",
+   "decoded_hex": null
+  },
+  {
+   "input": "w-Q=AQ-\n\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "/+ _=+=",
+   "decoded_hex": null
+  },
+  {
+   "input": "A--\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "+Aw",
+   "decoded_hex": null
+  },
+  {
+   "input": "w+ww=/+",
+   "decoded_hex": null
+  },
+  {
+   "input": "/\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "=Ag/=Q\n=",
+   "decoded_hex": null
+  },
+  {
+   "input": "-/=",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q+/A_",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n\ng-",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "-+-+gA_/\ng",
+   "decoded_hex": null
+  },
+  {
+   "input": "w- =-_",
+   "decoded_hex": null
+  },
+  {
+   "input": " Q_",
+   "decoded_hex": null
+  },
+  {
+   "input": "-+gAwQQAgg",
+   "decoded_hex": null
+  },
+  {
+   "input": "-Q\n\n+_/A\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "_A",
+   "decoded_hex": null
+  },
+  {
+   "input": "-Q\n-_\n/\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "/wgg_g\n +",
+   "decoded_hex": null
+  },
+  {
+   "input": "_g\u00e9\n=\nA",
+   "decoded_hex": null
+  },
+  {
+   "input": "ww",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9=/",
+   "decoded_hex": null
+  },
+  {
+   "input": "A\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "g_wA-\u00e9-",
+   "decoded_hex": null
+  },
+  {
+   "input": "w-+A-wA",
+   "decoded_hex": null
+  },
+  {
+   "input": "g/g__/=\n\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n+g\nQQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9ww/=Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\u00e9-\u00e9 g/Q/g",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n=+/w",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n\u00e9==g--/",
+   "decoded_hex": null
+  },
+  {
+   "input": "w= \n\u00e9-_Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "-_A\u00e9\nQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q\n_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\ng_Ag/\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "=Qw\u00e9\n- wg",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "g=A+wQ+\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\n/g\n\n_g==",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\u00e9A",
+   "decoded_hex": null
+  },
+  {
+   "input": " g/Q A\n/",
+   "decoded_hex": null
+  },
+  {
+   "input": "AQ\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "=AQ= ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Qg+\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "+",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n\u00e9Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "g /_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n== Q\u00e9 ",
+   "decoded_hex": null
+  },
+  {
+   "input": "+/g =",
+   "decoded_hex": null
+  },
+  {
+   "input": "-",
+   "decoded_hex": null
+  },
+  {
+   "input": "--A\u00e9Ag-+_+",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+",
+   "decoded_hex": null
+  },
+  {
+   "input": " \u00e9A\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n_-w",
+   "decoded_hex": null
+  },
+  {
+   "input": " /",
+   "decoded_hex": null
+  },
+  {
+   "input": " _=-w/___",
+   "decoded_hex": null
+  },
+  {
+   "input": "Aw\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "/Q-\u00e9 _A",
+   "decoded_hex": null
+  },
+  {
+   "input": "AQ_A\n +\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "/ggQg",
+   "decoded_hex": null
+  },
+  {
+   "input": "+g-ww",
+   "decoded_hex": null
+  },
+  {
+   "input": "A\u00e9AQ\n=_--w",
+   "decoded_hex": null
+  },
+  {
+   "input": "/g\u00e9g",
+   "decoded_hex": null
+  },
+  {
+   "input": "+wggw",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nQ/__ w",
+   "decoded_hex": null
+  },
+  {
+   "input": "==/",
+   "decoded_hex": null
+  },
+  {
+   "input": "w=Q g",
+   "decoded_hex": null
+  },
+  {
+   "input": " w=+\u00e9w\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "=_\u00e9+QQg=",
+   "decoded_hex": null
+  },
+  {
+   "input": "w++Q_=Qg+-",
+   "decoded_hex": null
+  },
+  {
+   "input": "-wg \u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "-",
+   "decoded_hex": null
+  },
+  {
+   "input": "w+g Q++\u00e9Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "QAwg-",
+   "decoded_hex": null
+  },
+  {
+   "input": "=w\u00e9=",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "w+Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "-\n\n+\u00e9+_w_Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "/+\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "_\u00e9\u00e9-+",
+   "decoded_hex": null
+  },
+  {
+   "input": "w\u00e9//=/",
+   "decoded_hex": null
+  },
+  {
+   "input": "wAQ_ w",
+   "decoded_hex": null
+  },
+  {
+   "input": "_+-",
+   "decoded_hex": null
+  },
+  {
+   "input": "/\u00e9/\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "-",
+   "decoded_hex": null
+  },
+  {
+   "input": "/+g",
+   "decoded_hex": null
+  },
+  {
+   "input": "+\nA//",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-_=",
+   "decoded_hex": null
+  },
+  {
+   "input": "+\u00e9w/Q- g -",
+   "decoded_hex": null
+  },
+  {
+   "input": "w",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9_w/_++Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "gg_-A/\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+=__=QA+ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q_g+\n/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "w+gQw   ==",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "w+w/\nQ=",
+   "decoded_hex": null
+  },
+  {
+   "input": "-g/",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n+A/-_w",
+   "decoded_hex": null
+  },
+  {
+   "input": "-/-/_ QQg",
+   "decoded_hex": null
+  },
+  {
+   "input": "wA-",
+   "decoded_hex": null
+  },
+  {
+   "input": "A",
+   "decoded_hex": null
+  },
+  {
+   "input": "=\u00e9A wg=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "_+w\u00e9\u00e9w\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ g\nAw/-",
+   "decoded_hex": null
+  },
+  {
+   "input": "-w+\u00e9/\n=\ng",
+   "decoded_hex": null
+  },
+  {
+   "input": " =_",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9+g_w\nQ\u00e9\n",
+   "decoded_hex": null
+  },
+  {
+   "input": " =_",
+   "decoded_hex": null
+  },
+  {
+   "input": "/g/\nQ--",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "_wAwA",
+   "decoded_hex": null
+  },
+  {
+   "input": "w__+\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n=",
+   "decoded_hex": null
+  },
+  {
+   "input": "_w+",
+   "decoded_hex": null
+  },
+  {
+   "input": "_+\n/+A__",
+   "decoded_hex": null
+  },
+  {
+   "input": "g-g /g=-Q/",
+   "decoded_hex": null
+  },
+  {
+   "input": "/A-_\u00e9g+ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "_/Aw\ngQg",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9-\u00e9 ",
+   "decoded_hex": null
+  },
+  {
+   "input": "A\ngQ+\n",
+   "decoded_hex": null
+  },
+  {
+   "input": " AAg -_=",
+   "decoded_hex": null
+  },
+  {
+   "input": "=/Q_w_=",
+   "decoded_hex": null
+  },
+  {
+   "input": "_Q_g=\nQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q\ng ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9+",
+   "decoded_hex": null
+  },
+  {
+   "input": "__\u00e9/AQ\u00e9/_=",
+   "decoded_hex": null
+  },
+  {
+   "input": "++Qg_",
+   "decoded_hex": null
+  },
+  {
+   "input": "QQ\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "/-\n+-A_\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "/w",
+   "decoded_hex": null
+  },
+  {
+   "input": "-+=Q",
+   "decoded_hex": null
+  },
+  {
+   "input": " ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9 \u00e9= /",
+   "decoded_hex": null
+  },
+  {
+   "input": "ww\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "/_+Qw+/+",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n__/A/==  ",
+   "decoded_hex": null
+  },
+  {
+   "input": "+ /w\u00e9+QAQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g/wQ_=Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "++/Qw g/_\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nQww\nw/\u00e9+",
+   "decoded_hex": null
+  },
+  {
+   "input": "g- =A_wQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q A=\u00e9QA _\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "-Q\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "_ +/\n-g",
+   "decoded_hex": null
+  },
+  {
+   "input": " QA A  \nw=",
+   "decoded_hex": null
+  },
+  {
+   "input": " ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q\n_Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "+w_AQ +A-Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "AAQw_g",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9\u00e9A Qgg-g ",
+   "decoded_hex": null
+  },
+  {
+   "input": "=w+A=\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "A_A",
+   "decoded_hex": null
+  },
+  {
+   "input": "-A =-",
+   "decoded_hex": null
+  },
+  {
+   "input": "/",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-/=",
+   "decoded_hex": null
+  },
+  {
+   "input": "g_\nQQ\nAg=\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "Qg=\n++=",
+   "decoded_hex": null
+  },
+  {
+   "input": "g",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q/_",
+   "decoded_hex": null
+  },
+  {
+   "input": "g\n_w\n-",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-/-\nQ+\n/",
+   "decoded_hex": null
+  },
+  {
+   "input": " /+Qg\ng /",
+   "decoded_hex": null
+  },
+  {
+   "input": "-",
+   "decoded_hex": null
+  },
+  {
+   "input": "w=_\u00e9w",
+   "decoded_hex": null
+  },
+  {
+   "input": "w",
+   "decoded_hex": null
+  },
+  {
+   "input": "Qw ",
+   "decoded_hex": null
+  },
+  {
+   "input": "= ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+\nQ/-g+g",
+   "decoded_hex": null
+  },
+  {
+   "input": "g",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9g_",
+   "decoded_hex": null
+  },
+  {
+   "input": "- +",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+w/g\n_-\n ",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9g=-  //__",
+   "decoded_hex": null
+  },
+  {
+   "input": "+=AA",
+   "decoded_hex": null
+  },
+  {
+   "input": "wwA",
+   "decoded_hex": null
+  },
+  {
+   "input": "_-Aw--QA",
+   "decoded_hex": null
+  },
+  {
+   "input": "-/_g w\n\n\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "_Aw+",
+   "decoded_hex": null
+  },
+  {
+   "input": "-Q+g",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "\nA/\n -\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "w_A",
+   "decoded_hex": null
+  },
+  {
+   "input": "-/\u00e9 \nA--=A",
+   "decoded_hex": null
+  },
+  {
+   "input": "A+A\n+\u00e9w_w",
+   "decoded_hex": null
+  },
+  {
+   "input": "gg\u00e9/-A/gA",
+   "decoded_hex": null
+  },
+  {
+   "input": "/g++",
+   "decoded_hex": "fe0fbe"
+  },
+  {
+   "input": "\n Q/Aw+w=Q",
+   "decoded_hex": null
+  },
+  {
+   "input": "+",
+   "decoded_hex": null
+  },
+  {
+   "input": "A+==_=A_",
+   "decoded_hex": null
+  },
+  {
+   "input": " g",
+   "decoded_hex": null
+  },
+  {
+   "input": "//",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9\u00e9w\n-ww",
+   "decoded_hex": null
+  },
+  {
+   "input": "ww+\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "__g w",
+   "decoded_hex": null
+  },
+  {
+   "input": "gQw=/ ",
+   "decoded_hex": null
+  },
+  {
+   "input": "-A=A=",
+   "decoded_hex": null
+  },
+  {
+   "input": "-  ",
+   "decoded_hex": null
+  },
+  {
+   "input": "g",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q/\n/-//",
+   "decoded_hex": null
+  },
+  {
+   "input": "AQA\u00e9AQQQ",
+   "decoded_hex": null
+  },
+  {
+   "input": "Q\n\u00e9=",
+   "decoded_hex": null
+  },
+  {
+   "input": "\u00e9\nA",
+   "decoded_hex": null
+  },
+  {
+   "input": "g+g\n=w",
+   "decoded_hex": null
+  },
+  {
+   "input": "/+_Q+Q\n",
+   "decoded_hex": null
+  },
+  {
+   "input": "=/ -_\n+=\u00e9",
+   "decoded_hex": null
+  },
+  {
+   "input": "A+ _=// ",
+   "decoded_hex": null
+  }
+ ],
+ "counts": [
+  {
+   "id": "vector",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "42.0"
+  },
+  {
+   "id": "zero",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "negative-zero",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"-0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "-0.0"
+  },
+  {
+   "id": "fraction",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"12.5\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "12.5"
+  },
+  {
+   "id": "spaces",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \" 42\\n\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "42.0"
+  },
+  {
+   "id": "underscore",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1_000\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "1000.0"
+  },
+  {
+   "id": "double-underscore",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1__000\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "leading-underscore",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"_1\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "exponent",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1e3\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "1000.0"
+  },
+  {
+   "id": "exponent-upper-signed",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1E+03\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "1000.0"
+  },
+  {
+   "id": "leading-dot",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \".5\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.5"
+  },
+  {
+   "id": "trailing-dot",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"5.\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "5.0"
+  },
+  {
+   "id": "nan",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"nan\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "nan"
+  },
+  {
+   "id": "nan-signed",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"-NaN\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "nan"
+  },
+  {
+   "id": "inf",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"+inf\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "inf"
+  },
+  {
+   "id": "infinity",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"-Infinity\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "-inf"
+  },
+  {
+   "id": "overflow-string",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1e500\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "inf"
+  },
+  {
+   "id": "underflow-string",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1e-400\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "hex",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"0x10\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "comma",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1,000\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "empty-string",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "blank-string",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"   \"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "inf-underscore",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"in_f\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "separator-space",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"\\u001c7\\u001f\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "nbsp",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"\\u00a07\\u00a0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "7.0"
+  },
+  {
+   "id": "arabic-indic-digits",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"\\u0661\\u0662\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "12.0",
+   "d": "D-13",
+   "rust": "0.0"
+  },
+  {
+   "id": "int-number",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, 7]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "7.0"
+  },
+  {
+   "id": "int-negative-zero",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, -0]}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "int-above-2-53",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, 9007199254740993]}]}}",
+   "python": "9007199254740992.0"
+  },
+  {
+   "id": "float-number",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, 3.25]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "3.25"
+  },
+  {
+   "id": "true",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, true]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "1.0"
+  },
+  {
+   "id": "false",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, false]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "null-value",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, null]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "list-value",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, [1]]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "object-value",
+   "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, {\"a\": 1}]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "value-string",
+   "body": "{\"data\": {\"result\": [{\"value\": \"12\"}]}}",
+   "python": "2.0"
+  },
+  {
+   "id": "value-short-string",
+   "body": "{\"data\": {\"result\": [{\"value\": \"1\"}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "value-one-element",
+   "body": "{\"data\": {\"result\": [{\"value\": [1]}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "value-object",
+   "body": "{\"data\": {\"result\": [{\"value\": {\"1\": \"5\"}}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "value-number",
+   "body": "{\"data\": {\"result\": [{\"value\": 5}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "value-missing",
+   "body": "{\"data\": {\"result\": [{\"metric\": {}}]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "element-list",
+   "body": "{\"data\": {\"result\": [[1, \"5\"]]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "element-string",
+   "body": "{\"data\": {\"result\": [\"abc\"]}}",
+   "python": "0.0"
+  },
+  {
+   "id": "two-results",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, \"3\"]}, {\"value\": [1, \"4\"]}]}}",
+   "python": "3.0"
+  },
+  {
+   "id": "result-empty",
+   "body": "{\"data\": {\"result\": []}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-string",
+   "body": "{\"data\": {\"result\": \"abc\"}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-object",
+   "body": "{\"data\": {\"result\": {\"0\": {\"value\": [1, \"5\"]}}}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-number",
+   "body": "{\"data\": {\"result\": 5}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-true",
+   "body": "{\"data\": {\"result\": true}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-false",
+   "body": "{\"data\": {\"result\": false}}",
+   "python": "0.0"
+  },
+  {
+   "id": "result-null",
+   "body": "{\"data\": {\"result\": null}}",
+   "python": "0.0"
+  },
+  {
+   "id": "no-result",
+   "body": "{\"data\": {}}",
+   "python": "0.0"
+  },
+  {
+   "id": "no-data",
+   "body": "{\"status\": \"success\"}",
+   "python": "0.0"
+  },
+  {
+   "id": "data-null",
+   "body": "{\"data\": null}",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "data-list",
+   "body": "{\"data\": []}",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "data-string",
+   "body": "{\"data\": \"x\"}",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "body-list",
+   "body": "[]",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "body-string",
+   "body": "\"x\"",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "body-number",
+   "body": "5",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "body-null",
+   "body": "null",
+   "python_error": "AttributeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "invalid-json",
+   "body": "not json",
+   "python_error": "JSONDecodeError",
+   "python_caught": true
+  },
+  {
+   "id": "empty-body",
+   "body": "",
+   "python_error": "JSONDecodeError",
+   "python_caught": true
+  },
+  {
+   "id": "bom",
+   "body": "\ufeff{}",
+   "python_error": "JSONDecodeError",
+   "python_caught": true
+  },
+  {
+   "id": "not-utf8",
+   "body_hex": "ff",
+   "python_error": "UnicodeDecodeError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "huge-int",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000]}]}}",
+   "python_error": "OverflowError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "int-too-long",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, 11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111]}]}}",
+   "python_error": "ValueError",
+   "python_caught": false,
+   "d": "D-2"
+  },
+  {
+   "id": "nan-token",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, NaN]}]}}",
+   "python": "nan",
+   "d": "D-4",
+   "rust": "error"
+  },
+  {
+   "id": "overflow-token",
+   "body": "{\"data\": {\"result\": [{\"value\": [1, 1e400]}]}}",
+   "python": "inf",
+   "d": "D-4",
+   "rust": "error"
+  }
+ ],
+ "http": {
+  "generated_at_epoch": 1792576800.75,
+  "cases": [
+   {
+    "id": "ok",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ok-units",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"vector\", \"unit\": \"vector.service\"}, {\"id\": \"failed\", \"unit\": \"failed.service\"}, {\"id\": \"missing\", \"unit\": \"missing.service\"}, {\"id\": \"root\", \"unit\": \"-.mount\"}, {\"id\": \"spaced\", \"unit\": \"with space.service\"}, {\"id\": \"partial\", \"unit\": \"partial.service\"}, {\"id\": \"dup\", \"unit\": \"dup.service\"}, {\"id\": \"empty\", \"unit\": \"empty.service\"}, {\"id\": \"crlf\", \"unit\": \"crlf.service\"}, {\"id\": \"separators\", \"unit\": \"separators.service\"}, {\"id\": \"unicode\", \"unit\": \"unicode.service\"}, {\"id\": \"Zebra\", \"unit\": \"vector.service\"}, {\"id\": \"\\u00fcn\\u00ef\", \"unit\": \"vector.service\"}]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"Zebra\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}, \"crlf\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"crlf.service\"}, \"dup\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"done\", \"sub_state\": \"running\", \"unit\": \"dup.service\"}, \"empty\": {\"active_state\": null, \"error\": null, \"exists\": false, \"load_state\": \"\", \"result\": null, \"sub_state\": null, \"unit\": \"empty.service\"}, \"failed\": {\"active_state\": \"failed\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"exit-code\", \"sub_state\": \"failed\", \"unit\": \"failed.service\"}, \"missing\": {\"active_state\": \"inactive\", \"error\": null, \"exists\": false, \"load_state\": \"not-found\", \"result\": \"success\", \"sub_state\": \"dead\", \"unit\": \"missing.service\"}, \"partial\": {\"active_state\": \"a=b\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": null, \"sub_state\": null, \"unit\": \"partial.service\"}, \"root\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"mounted\", \"unit\": \"-.mount\"}, \"separators\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"separators.service\"}, \"spaced\": {\"active_state\": \"inactive\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"dead\", \"unit\": \"with space.service\"}, \"unicode\": {\"active_state\": \"aktiv\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"l\\u00e4uft \\u2713\", \"unit\": \"unicode.service\"}, \"vector\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}, \"\\u00fcn\\u00ef\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "warning",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"17\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 17.0, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"warning\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "critical-no-entries",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"0\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "empty-result",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": []}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": []}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "no-data",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\"}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "result-string",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"data\": {\"result\": \"abc\"}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"warning\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "value-string-index",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"data\": {\"result\": [{\"value\": \"12\"}]}}"
+     },
+     "critical": {
+      "body": "{\"data\": {\"result\": [{\"value\": \"34\"}]}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 4.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 2.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "nan-values",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"NaN\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"nan\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": NaN, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": NaN, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "infinite-values",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"-inf\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"+Infinity\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": Infinity, \"critical_window_seconds\": 3600, \"warning_fresh\": false, \"warning_window_entries\": -Infinity, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"warning\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "number-values",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, 3.5]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"data\": {\"result\": [{\"value\": [1, 9007199254740993]}]}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 9007199254740992.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 3.5, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "string-spellings",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \" 1_000 \"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1e3\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1000.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 1000.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-not-ready",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "Ingester not ready: waiting for 15s after being ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"Ingester not ready: waiting for 15s after being ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-uppercase",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": " READY \r\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"READY\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-503",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "status": 503,
+      "reason": "Service Unavailable",
+      "body": "Ingester not ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"HTTP Error 503: Service Unavailable\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-503-custom-reason",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "status": 503,
+      "reason": "Loki Starting",
+      "body": "starting\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"HTTP Error 503: Loki Starting\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-204",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "status": 204,
+      "reason": "No Content",
+      "body": ""
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"\", \"ready_status\": 204}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-chunked",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n",
+      "chunked": true
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-redirect",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "status": 302,
+      "reason": "Found",
+      "headers": [
+       [
+        "Location",
+        "/ready-target"
+       ]
+      ],
+      "body": ""
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "ready_target": {
+      "body": "ready"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "redirect followed",
+    "python_body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "d": "D-13",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"HTTP Error 302: Found\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-301-without-location",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "status": 301,
+      "reason": "Moved Permanently",
+      "body": ""
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"HTTP Error 301: Moved Permanently\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-timeout",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready",
+      "delay": 1.5
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "loki.ready_body": "timed out"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"<text: D-3>\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "loki.ready_body"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-closes",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "close": true
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "http.client.RemoteDisconnected",
+    "d": "D-2",
+    "python_texts": {
+     "loki.ready_body": "Remote end closed connection without response"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"<text: D-3>\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "loki.ready_body"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "ready-not-utf8",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body_hex": "72656164ff"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "UnicodeDecodeError",
+    "d": "D-2",
+    "python_texts": {
+     "loki.ready_body": "'utf-8' codec can't decode byte 0xff in position 4: invalid start byte"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"<text: D-3>\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "loki.ready_body"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "loki-down",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{closed}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "loki.ready_body": "<urlopen error [Errno N] Connection refused>",
+     "ingest.error": "<urlopen error [Errno N] Connection refused>"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": false, \"ready_body\": \"<text: D-3>\", \"ready_status\": null}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "loki.ready_body",
+     "ingest.error"
+    ],
+    "requests": []
+   },
+   {
+    "id": "query-500",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "status": 500,
+      "reason": "Internal Server Error",
+      "body": "boom\n"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"HTTP Error 500: Internal Server Error\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ]
+    ]
+   },
+   {
+    "id": "critical-query-400",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "status": 400,
+      "reason": "Bad Request",
+      "body": "parse error\n"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"HTTP Error 400: Bad Request\", \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-invalid-json",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "not json"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "ingest.error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-list-body",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "[]"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "AttributeError",
+    "d": "D-2",
+    "python_texts": {
+     "ingest.error": "'list' object has no attribute 'get'"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-data-null",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"data\": null}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "AttributeError",
+    "d": "D-2",
+    "python_texts": {
+     "ingest.error": "'NoneType' object has no attribute 'get'"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-huge-int",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"data\": {\"result\": [{\"value\": [1, 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000]}]}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "OverflowError",
+    "d": "D-2",
+    "python_texts": {
+     "ingest.error": "int too large to convert to float"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-chunked",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"99\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+      "chunked": true
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 99.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "query-timeout",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+      "delay": 1.5
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "ingest.error": "timed out"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": false, \"warning_window_entries\": 0.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ]
+    ]
+   },
+   {
+    "id": "critical-timeout",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "0.3",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}",
+      "delay": 1.5
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "ingest.error": "timed out"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": false, \"critical_window_entries\": 0.0, \"critical_window_seconds\": 3600, \"error\": \"<text: D-3>\", \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"critical\", \"units\": {}}",
+    "texts": [
+     "ingest.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "selector-and-windows",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{job=~\"a|b\", text=\"\u00fc*~ +&%=/?#\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "60",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "-120",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": -120, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 60}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{job=~\\\"a|b\\\", text=\\\"\\u00fc*~ +&%=/?#\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({job=~\"a|b\", text=\"\u00fc*~ +&%=/?#\"}[60s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({job=~\"a|b\", text=\"\u00fc*~ +&%=/?#\"}[-120s]))"
+     ]
+    ]
+   },
+   {
+    "id": "loki-url-trailing-slashes",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}//",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "custom-path",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/health",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/health",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-rejected",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"vector\", \"unit\": \"vector.service\"}, {\"id\": \"vector\", \"unit\": \"failed.service\"}, {\"id\": \"a.b\", \"unit\": \"missing.service\"}, {\"unit\": \"missing.service\"}, {\"id\": \"x\"}, \"vector.service\"]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"vector\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}}, \"units_rejected\": [{\"id\": \"vector\", \"reason\": \"duplicate_id\", \"unit\": \"failed.service\"}, {\"id\": \"a.b\", \"reason\": \"id_contains_dot\", \"unit\": \"missing.service\"}, {\"reason\": \"missing_id\", \"unit\": \"missing.service\"}, {\"reason\": \"missing_unit\"}, {\"reason\": \"not_an_object\"}]}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-invalid-base64",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5",
+     "LOGYARD_HEALTH_UNITS_B64": "not base64!"
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "units_rejected.0.detail": "Only base64 data is allowed"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}, \"units_rejected\": [{\"detail\": \"<text: D-3>\", \"reason\": \"invalid_base64\"}]}",
+    "texts": [
+     "units_rejected.0.detail"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-invalid-json",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5",
+     "LOGYARD_HEALTH_UNITS_B64": "W3s="
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "units_rejected.0.detail": "Expecting property name enclosed in double quotes: line 1 column 3 (char 2)"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}, \"units_rejected\": [{\"detail\": \"<text: D-3>\", \"reason\": \"invalid_json\"}]}",
+    "texts": [
+     "units_rejected.0.detail"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-not-a-list",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5",
+     "LOGYARD_HEALTH_UNITS_B64": "eyJhIjogMX0="
+    },
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {}, \"units_rejected\": [{\"reason\": \"not_a_list\"}]}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-systemctl-failures",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"stderr\", \"unit\": \"fail-stderr.service\"}, {\"id\": \"stdout\", \"unit\": \"fail-stdout.service\"}, {\"id\": \"both\", \"unit\": \"fail-both.service\"}, {\"id\": \"blank_stderr\", \"unit\": \"fail-blank-stderr.service\"}, {\"id\": \"silent\", \"unit\": \"fail-silent.service\"}, {\"id\": \"killed\", \"unit\": \"killed.service\"}, {\"id\": \"unknown\", \"unit\": \"unknown.service\"}]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"blank_stderr\": {\"active_state\": null, \"error\": \"out text\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"fail-blank-stderr.service\"}, \"both\": {\"active_state\": null, \"error\": \"err\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"fail-both.service\"}, \"killed\": {\"active_state\": null, \"error\": \"systemctl show failed (-9)\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"killed.service\"}, \"silent\": {\"active_state\": null, \"error\": \"systemctl show failed (4)\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"fail-silent.service\"}, \"stderr\": {\"active_state\": null, \"error\": \"Failed to get properties: Access denied\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"fail-stderr.service\"}, \"stdout\": {\"active_state\": null, \"error\": \"partial output\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"fail-stdout.service\"}, \"unknown\": {\"active_state\": null, \"error\": \"fake systemctl: unknown unit unknown.service\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"unknown.service\"}}}",
+    "texts": [],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-systemctl-timeout",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "0.3"
+    },
+    "units_json": "[{\"id\": \"slow\", \"unit\": \"slow.service\"}, {\"id\": \"vector\", \"unit\": \"vector.service\"}]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "units.slow.error": "Command '['systemctl', 'show', '-p', 'LoadState', '-p', 'ActiveState', '-p', 'SubState', '-p', 'Result', '--', 'slow.service']' timed out after 0.3 seconds"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"slow\": {\"active_state\": null, \"error\": \"<text: D-3>\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"slow.service\"}, \"vector\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}}}",
+    "texts": [
+     "units.slow.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-systemctl-missing",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"vector\", \"unit\": \"vector.service\"}, {\"id\": \"failed\", \"unit\": \"failed.service\"}]",
+    "systemctl": "missing",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python_texts": {
+     "units.failed.error": "[Errno N] No such file or directory: 'systemctl'",
+     "units.vector.error": "[Errno N] No such file or directory: 'systemctl'"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"failed\": {\"active_state\": null, \"error\": \"<text: D-3>\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"failed.service\"}, \"vector\": {\"active_state\": null, \"error\": \"<text: D-3>\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"vector.service\"}}}",
+    "texts": [
+     "units.failed.error",
+     "units.vector.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-output-not-utf8",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"latin1\", \"unit\": \"latin1.service\"}, {\"id\": \"vector\", \"unit\": \"vector.service\"}]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "UnicodeDecodeError",
+    "d": "D-2",
+    "python_texts": {
+     "units.latin1.error": "'utf-8' codec can't decode byte 0xff in position 26: invalid start byte"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"latin1\": {\"active_state\": null, \"error\": \"<text: D-3>\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"latin1.service\"}, \"vector\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}}}",
+    "texts": [
+     "units.latin1.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   },
+   {
+    "id": "units-nul-in-name",
+    "env": {
+     "LOGYARD_HEALTH_BIND": "127.0.0.1",
+     "LOGYARD_HEALTH_PORT": "0",
+     "LOGYARD_HEALTH_PATH": "/.well-known/logyard",
+     "LOGYARD_LOKI_URL": "{loki}",
+     "LOGYARD_HEALTH_SELECTOR": "{host=\"macmini\",source_type=\"journald\"}",
+     "LOGYARD_WARNING_WINDOW_SECONDS": "900",
+     "LOGYARD_CRITICAL_WINDOW_SECONDS": "3600",
+     "LOGYARD_REQUEST_TIMEOUT_SECONDS": "10",
+     "LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS": "5"
+    },
+    "units_json": "[{\"id\": \"nul\", \"unit\": \"a\\u0000b.service\"}, {\"id\": \"vector\", \"unit\": \"vector.service\"}]",
+    "systemctl": "fake",
+    "loki": {
+     "ready": {
+      "body": "ready\n"
+     },
+     "warning": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"42\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     },
+     "critical": {
+      "body": "{\"status\": \"success\", \"data\": {\"resultType\": \"vector\", \"result\": [{\"metric\": {}, \"value\": [1792576800.123, \"1234\"]}], \"stats\": {\"summary\": {\"execTime\": 0.001}}}}"
+     }
+    },
+    "path": "/.well-known/logyard",
+    "python": "crash",
+    "python_error": "ValueError",
+    "d": "D-2",
+    "python_texts": {
+     "units.nul.error": "embedded null byte"
+    },
+    "status": 200,
+    "content_type": "application/json",
+    "body": "{\"generated_at\": \"2026-10-21T10:00:00+00:00\", \"ingest\": {\"critical_fresh\": true, \"critical_window_entries\": 1234.0, \"critical_window_seconds\": 3600, \"warning_fresh\": true, \"warning_window_entries\": 42.0, \"warning_window_seconds\": 900}, \"loki\": {\"ready\": true, \"ready_body\": \"ready\", \"ready_status\": 200}, \"selector\": \"{host=\\\"macmini\\\",source_type=\\\"journald\\\"}\", \"status\": \"ok\", \"units\": {\"nul\": {\"active_state\": null, \"error\": \"<text: D-3>\", \"exists\": null, \"load_state\": null, \"result\": null, \"sub_state\": null, \"unit\": \"a\\u0000b.service\"}, \"vector\": {\"active_state\": \"active\", \"error\": null, \"exists\": true, \"load_state\": \"loaded\", \"result\": \"success\", \"sub_state\": \"running\", \"unit\": \"vector.service\"}}}",
+    "texts": [
+     "units.nul.error"
+    ],
+    "requests": [
+     [
+      "/ready",
+      null
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[900s]))"
+     ],
+     [
+      "/loki/api/v1/query",
+      "sum(count_over_time({host=\"macmini\",source_type=\"journald\"}[3600s]))"
+     ]
+    ]
+   }
+  ]
+ }
+}

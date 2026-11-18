@@ -1,0 +1,1 @@
+runuser -u postgres -- psql -X -v At _

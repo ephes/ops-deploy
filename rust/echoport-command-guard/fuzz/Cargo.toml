@@ -1,0 +1,48 @@
+# cargo-fuzz targets of echoport-command-guard (PLAN.md 7.4). Not a member of
+# the rust/ workspace (its own `[workspace]` below): they need a nightly
+# toolchain and libFuzzer, CI uses the pinned stable one. How to run them is
+# in ../README.md ("Fuzzing"); `run-fuzz.sh` runs them in a container.
+[package]
+name = "echoport-command-guard-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+echoport-command-guard = { path = ".." }
+libfuzzer-sys = "0.4.13"
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "prefilter_tokens"
+path = "fuzz_targets/prefilter_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "check"
+path = "fuzz_targets/check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "policy"
+path = "fuzz_targets/policy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "py_repr"
+path = "fuzz_targets/py_repr.rs"
+test = false
+doc = false
+bench = false

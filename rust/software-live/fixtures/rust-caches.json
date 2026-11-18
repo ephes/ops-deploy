@@ -1,0 +1,41 @@
+{
+  "note": "written by the Rust code (upstream::tests::rust_written_caches_are_committed); SOFTWARE_LIVE_BLESS=1 cargo test -p software-live rust_written rewrites it",
+  "caches": [
+    {
+      "id": "release",
+      "function": "upstream",
+      "product": null,
+      "cache": "upstream.json",
+      "file": "upstream.json",
+      "now": 1760000000.25,
+      "text": "{\"checked_at_epoch\":1760000000.25,\"version\":\"3.7.12\"}\n"
+    },
+    {
+      "id": "release_integral_now",
+      "function": "upstream",
+      "product": null,
+      "cache": "integral.json",
+      "file": "integral.json",
+      "now": 1760000000.0,
+      "text": "{\"checked_at_epoch\":1760000000.0,\"version\":\"3.8.0\"}\n"
+    },
+    {
+      "id": "lifecycle_postgresql",
+      "function": "lifecycle_upstream",
+      "product": "postgresql",
+      "cache": "upstream.json",
+      "file": "upstream-postgresql.json",
+      "now": 1760000000.125,
+      "text": "{\"checked_at_epoch\":1760000000.125,\"cycles\":[{\"cycle\":\"17\",\"eol\":\"2029-11-08\",\"extra\":{\"f\":1e+16,\"n\":18446744073709551617,\"neg\":-0,\"s\":\"\\u00e9\\ud83d\\ude00\\u0001\\\"\\\\/\",\"small\":2.5e-07},\"latest\":\"17.11\",\"lts\":false,\"releaseDate\":\"2024-09-26\",\"support\":true},{\"cycle\":\"16\",\"eol\":true,\"support\":null}],\"product\":\"postgresql\"}\n"
+    },
+    {
+      "id": "lifecycle_ubuntu_without_suffix",
+      "function": "lifecycle_upstream",
+      "product": "ubuntu",
+      "cache": "cache",
+      "file": "cache-ubuntu",
+      "now": 1000000000.0,
+      "text": "{\"checked_at_epoch\":1000000000.0,\"cycles\":[{\"cycle\":\"24.04\",\"eol\":\"2029-05-31\",\"lts\":true,\"support\":\"2029-05-31\"}],\"product\":\"ubuntu\"}\n"
+    }
+  ]
+}

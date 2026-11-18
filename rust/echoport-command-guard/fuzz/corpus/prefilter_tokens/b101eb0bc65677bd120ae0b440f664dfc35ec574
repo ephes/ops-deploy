@@ -1,0 +1,1 @@
+umask 077 && tar -C /hoe/pyst/site -czf -- p

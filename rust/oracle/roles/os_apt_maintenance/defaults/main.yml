@@ -1,0 +1,88 @@
+---
+# os_apt_maintenance - host-local apt update timer with durable state.
+
+os_apt_maintenance_enabled: true
+
+# Host/state identity.
+os_apt_maintenance_host_id: "{{ inventory_hostname }}"
+os_apt_maintenance_state_dir: /var/lib/os-apt-maintenance
+os_apt_maintenance_state_file: "{{ os_apt_maintenance_state_dir }}/state.json"
+os_apt_maintenance_lock_file: /run/os-apt-maintenance.lock
+os_apt_maintenance_script_path: /usr/local/sbin/os-apt-maintenance
+
+# Apt actions. Automatic reboot is intentionally disabled by default.
+os_apt_maintenance_update_cache: true
+os_apt_maintenance_dist_upgrade: true
+os_apt_maintenance_autoremove: true
+os_apt_maintenance_autoclean: true
+os_apt_maintenance_auto_reboot: false
+os_apt_maintenance_apt_get_path: /usr/bin/apt-get
+os_apt_maintenance_systemctl_path: /usr/bin/systemctl
+os_apt_maintenance_command_timeout: 7200
+os_apt_maintenance_freshness_max_age_seconds: 1209600  # 14 days
+
+# Timer cadence. Persistent=true lets hosts catch up after downtime.
+os_apt_maintenance_service_name: os-apt-maintenance
+os_apt_maintenance_timer_on_calendar: "*-*-* 04:00:00"
+os_apt_maintenance_timer_randomized_delay_sec: 2h
+os_apt_maintenance_timer_accuracy_sec: 1h
+os_apt_maintenance_timer_persistent: true
+os_apt_maintenance_timer_enabled: true
+os_apt_maintenance_timer_state: started
+os_apt_maintenance_run_on_deploy: false
+os_apt_maintenance_run_on_first_deploy: false
+
+# Daily index-only refresh.
+#
+# The maintenance timer above installs upgrades and therefore runs on a slow,
+# jittered cadence (weekly in ops-control). Monitoring is stricter: the
+# software_live apt check warns when the newest security InRelease is older
+# than 48 hours, because "0 pending security updates" computed from week-old
+# indexes is not evidence of anything. A weekly upgrade timer alone can never
+# hold a 48-hour budget, so index freshness gets its own lightweight timer.
+#
+# This runs `apt-get update` and nothing else: no dist-upgrade, no autoremove,
+# no autoclean, no reboot. It shares the maintenance lock file, so it can never
+# run concurrently with a real upgrade.
+os_apt_maintenance_refresh_enabled: true
+os_apt_maintenance_refresh_service_name: os-apt-maintenance-refresh
+os_apt_maintenance_refresh_timer_on_calendar: "*-*-* 06:00:00"
+os_apt_maintenance_refresh_timer_randomized_delay_sec: 1h
+os_apt_maintenance_refresh_timer_accuracy_sec: 10m
+os_apt_maintenance_refresh_timer_persistent: true
+os_apt_maintenance_refresh_timer_enabled: true
+os_apt_maintenance_refresh_timer_state: started
+os_apt_maintenance_refresh_command_timeout: 900
+
+# Optional authenticated HTTP endpoint for Nyxmon/json-metrics checks.
+os_apt_maintenance_endpoint_enabled: false
+os_apt_maintenance_endpoint_user: metrics
+os_apt_maintenance_endpoint_group: "{{ os_apt_maintenance_endpoint_user }}"
+os_apt_maintenance_endpoint_service_name: os-apt-maintenance-endpoint
+# HTTP server implementation of the endpoint (rust/metrics-httpd/PLAN.md 7.1):
+# python runs os_apt_maintenance_endpoint_server_path; rust runs the pinned
+# metrics-httpd release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf (internal
+# helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+os_apt_maintenance_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+os_apt_maintenance_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+os_apt_maintenance_endpoint_port: 9106
+os_apt_maintenance_endpoint_path: "/.well-known/os-apt-maintenance"
+os_apt_maintenance_endpoint_auth_user: CHANGE_ME
+os_apt_maintenance_endpoint_auth_password: CHANGE_ME
+os_apt_maintenance_endpoint_server_path: /usr/local/bin/os_apt_maintenance_httpd.py
+os_apt_maintenance_endpoint_htpasswd_dir: /etc/os-apt-maintenance-endpoint
+os_apt_maintenance_endpoint_htpasswd_path: "{{ os_apt_maintenance_endpoint_htpasswd_dir }}/htpasswd"
+os_apt_maintenance_endpoint_timeout: 10
+os_apt_maintenance_endpoint_state_max_age_seconds: 1296000  # 15 days
+os_apt_maintenance_endpoint_ip_allow:
+  - 100.64.0.0/10
+
+os_apt_maintenance_packages:
+  - python3
+
+os_apt_maintenance_endpoint_packages:
+  - python3
+  - apache2-utils

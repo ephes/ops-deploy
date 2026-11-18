@@ -1,0 +1,42 @@
+{
+  "variants": [
+    {
+      "name": "ubuntu24.04",
+      "image": "ubuntu:24.04",
+      "packages": ["libapt-pkg-dev", "g++"],
+      "build": ["software-live", "software-live-apt"],
+      "binaries": [
+        {"name": "software-live"},
+        {
+          "name": "software-live-apt",
+          "glibc_max": "2.39",
+          "extra_needed": ["libapt-pkg.so.6.0", "libstdc++.so.6"],
+          "extra_smoke": [["--help"]]
+        }
+      ],
+      "files": [
+        {"source": "rust/LICENSE", "name": "LICENSE"},
+        {"source": "rust/software-live-apt/LICENSE", "name": "LICENSE.GPL-3.0"}
+      ]
+    },
+    {
+      "name": "debian13",
+      "image": "debian:13",
+      "packages": ["libapt-pkg-dev", "g++"],
+      "build": ["software-live", "software-live-apt"],
+      "binaries": [
+        {"name": "software-live"},
+        {
+          "name": "software-live-apt",
+          "glibc_max": "2.41",
+          "extra_needed": ["libapt-pkg.so.7.0", "libstdc++.so.6"],
+          "extra_smoke": [["--help"]]
+        }
+      ],
+      "files": [
+        {"source": "rust/LICENSE", "name": "LICENSE"},
+        {"source": "rust/software-live-apt/LICENSE", "name": "LICENSE.GPL-3.0"}
+      ]
+    }
+  ]
+}

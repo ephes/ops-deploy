@@ -1,0 +1,48 @@
+---
+ops_library_documentation_category: deployment
+static_site_service_name: static-site
+static_site_user: "{{ static_site_service_name }}"
+static_site_group: "{{ static_site_user }}"
+
+static_site_source_path: ""
+static_site_path: "/srv/static-sites/{{ static_site_service_name }}"
+static_site_required_files:
+  - index.html
+  - report.md
+  - snapshot.json
+static_site_restrict_to_required_files: false
+static_site_rsync_delete: true
+# Private publication: content readable only by root and the service group
+# (directories 0750, files 0640) instead of world-readable 0755/0644.
+static_site_private: false
+
+# HTTP server implementation (rust/metrics-httpd/PLAN.md 7.1): python runs
+# static_site_server_path; rust runs the pinned metrics-httpd release (fleet
+# variables metrics_httpd_rust_version / metrics_httpd_rust_sha256) through the
+# drop-in /etc/systemd/system/<unit>.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+static_site_impl: "{{ metrics_httpd_impl | default('python') }}"
+
+static_site_python_path: /usr/bin/python3
+static_site_server_path: "/usr/local/libexec/{{ static_site_service_name }}-httpd.py"
+static_site_bind_host: 127.0.0.1
+static_site_port: 10061
+static_site_healthcheck_contains: ""
+
+static_site_systemd_unit_name: "{{ static_site_service_name }}"
+static_site_systemd_unit_path: "/etc/systemd/system/{{ static_site_systemd_unit_name }}.service"
+
+static_site_traefik_enabled: true
+static_site_host: static.example.com
+static_site_traefik_entrypoints:
+  - web-secure
+static_site_traefik_http_entrypoint: web
+static_site_traefik_cert_resolver: ""
+# When non-empty, an ipAllowList with exactly these CIDR ranges guards both the
+# HTTPS and the HTTP-redirect router; other sources get 403 before any redirect.
+static_site_traefik_allowed_networks: []
+static_site_traefik_config_path: "/etc/traefik/dynamic/{{ static_site_service_name }}.yml"
+static_site_verify_public: false
+static_site_public_healthcheck_retries: 20
+static_site_public_healthcheck_delay: 3

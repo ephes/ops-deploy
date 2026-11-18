@@ -1,0 +1,45 @@
+{
+  "postgres": {
+    "dump_databases": [
+      "homepage",
+      "python-podcast",
+      "django-chat"
+    ],
+    "restore_databases": {
+      "homepage": "homepage",
+      "python-podcast": "python-podcast"
+    },
+    "temp_file_prefixes": [
+      "homepage",
+      "pp"
+    ],
+    "scratch_restore_prefixes": [
+      "django_chat_restore"
+    ]
+  },
+  "temp_dirs": [
+    "/var/tmp/django-chat-db-restore.XXXXXXXX"
+  ],
+  "units": [
+    "homepage",
+    "homepage.service",
+    "homepage-db-worker",
+    "python-podcast",
+    "python-podcast.service",
+    "python-podcast-db-worker",
+    "marina.service",
+    "villakunterbunt-next.service",
+    "villakunterbunt-django.service"
+  ],
+  "private_media_paths": [],
+  "path_roots": [
+    {
+      "path": "/home/marina/site",
+      "owner": "marina:marina"
+    },
+    {
+      "path": "/home/villakunterbunt/data",
+      "owner": "villakunterbunt:villakunterbunt"
+    }
+  ]
+}

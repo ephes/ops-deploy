@@ -1,0 +1,2 @@
+# The fuzz corpus is libFuzzer input, not text to review or merge.
+corpus/** -diff -merge

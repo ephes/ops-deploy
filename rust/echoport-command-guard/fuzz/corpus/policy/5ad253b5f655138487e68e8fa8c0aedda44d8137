@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepage", "python-podcast", "djangot"], "restore_databases": {"homepage": "homepage", "python-podcast": "ddddddd"}, "ts": ["django_hat_restore"]}, "teths": [], "path_roots": [{"path": "/home/marina/site", "owner": "arina:rina"}, {"path": "/holaet/data", "owner": "virbunt:rbunt"}], "extra": {"ag": [0, 2]}}

@@ -1,0 +1,13 @@
+{
+  "pnits": [
+ ],
+  "sqlite_snapshots": [
+    { "database": "/var/lib/gotosocial/sqlite.db",
+      "owner": "gotosocial:gsol",
+      "temp_dir": "/var/tmp/gotosocialehcport.XXXXXX"
+    }
+  ],
+  "rea_urls": [
+    "http:.0.1:10070/readyz"
+  ]
+}

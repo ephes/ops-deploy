@@ -1,0 +1,1153 @@
+[
+ {
+  "id": "base",
+  "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "not_mapping_list",
+  "text": "[]"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "not_mapping_str",
+  "text": "\"x\""
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "not_mapping_int",
+  "text": "1"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "not_mapping_null",
+  "text": "null"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "empty_mapping",
+  "text": "{}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "host_missing",
+  "text": "{\"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "host_empty",
+  "text": "{\"host\": \"\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "host_int",
+  "text": "{\"host\": 1, \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "host_null",
+  "text": "{\"host\": null, \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "host_list",
+  "text": "{\"host\": [\"a\"], \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "host_non_ascii",
+  "policy_sha256": "284a0a698700f96e0a9e2066291e31cf349e1be371d55a7bee55d1087b6f1845",
+  "text": "{\"host\": \"h\\u00f4st-\\u65e5\\u672c\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "host_space",
+  "policy_sha256": "0973f3bcf32dc4e6eef952696391318b00ec52e2e458e7e7a721623f325fe824",
+  "text": "{\"host\": \" \", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'traefik'"
+  },
+  "id": "traefik_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": []}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": \"x\"}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": 1}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": null}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_bool",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": true}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'expected'"
+  },
+  "id": "traefik_expected_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_expected_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": \"true\", \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_expected_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": 1, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_expected_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": null, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "traefik_expected_false",
+  "policy_sha256": "d8356da91b905c10b7b9cf365b57c8c2fdfbb5c1b443c0676a7f19903558f476",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'unit'"
+  },
+  "id": "traefik_unit_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_unit_other",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_unit_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": [\"traefik.service\"], \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_unit_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": null, \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'binary_path'"
+  },
+  "id": "traefik_binary_path_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported binary path"
+  },
+  "id": "traefik_binary_path_sh",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/bin/sh\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported binary path"
+  },
+  "id": "traefik_binary_path_tmp",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/tmp/proxy\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_binary_path_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": [], \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_binary_path_dict",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": {}, \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported binary path"
+  },
+  "id": "traefik_binary_path_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": 1, \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported binary path"
+  },
+  "id": "traefik_binary_path_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": null, \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "traefik_binary_path_usr_bin",
+  "policy_sha256": "2eda7c377b40eff0a1d601a8e7ee6b65569ed69a3d9d2bc61c1e252b68cea02e",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported binary path"
+  },
+  "id": "traefik_binary_path_bool",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": true, \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "traefik_desired_version_missing",
+  "policy_sha256": "7ba4a284906c10dd7abcded6ab1257885bdb18cb7563fd559b664e811ed858cd",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\"}}"
+ },
+ {
+  "id": "traefik_desired_version_null",
+  "policy_sha256": "567edc4021824d58ef370f898b7009d8d27ff8566f6175acb681364dc38a3541",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": null}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported version"
+  },
+  "id": "traefik_desired_version_short",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7\"}}"
+ },
+ {
+  "id": "traefik_desired_version_v",
+  "policy_sha256": "1548022b0039031e96fc268269808d731c618334eef9c07a9a8e54d564f4f274",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"v3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_desired_version_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": 3}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_desired_version_false",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": false}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_desired_version_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": []}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported version"
+  },
+  "id": "traefik_desired_version_rc",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9-rc1\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "traefik_desired_version_dict",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": {}}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "traefik_float_expected",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": 1.0, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'os'"
+  },
+  "id": "os_missing",
+  "text": "{\"host\": \"example\", \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "os_list",
+  "text": "{\"host\": \"example\", \"os\": [], \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "os_str",
+  "text": "{\"host\": \"example\", \"os\": \"x\", \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "os_null",
+  "text": "{\"host\": \"example\", \"os\": null, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported operating system policy"
+  },
+  "id": "os_expected_id_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported operating system policy"
+  },
+  "id": "os_expected_id_centos",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"centos\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "os_expected_id_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": [\"ubuntu\"], \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "os_expected_id_dict",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": {}, \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported operating system policy"
+  },
+  "id": "os_expected_id_upper",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"Ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "operating system lifecycle product mismatch"
+  },
+  "id": "os_expected_id_debian",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"debian\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported operating system policy"
+  },
+  "id": "os_expected_id_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": null, \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "operating system lifecycle product mismatch"
+  },
+  "id": "os_product_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "operating system lifecycle product mismatch"
+  },
+  "id": "os_product_debian",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"debian\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "operating system lifecycle product mismatch"
+  },
+  "id": "os_product_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": null}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_three_parts",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04.1\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": null, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_true",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": true, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_empty",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": [24], \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_newline",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\\n\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_negative",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": -1, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_int",
+  "policy_sha256": "2da31c6b9bf8f8bb1a6048d331f6cfb374138ef92022e0571724ac7cff4f104b",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 24, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_thirteen",
+  "policy_sha256": "f66b396add0b66019f208a2b5889ee55aa85c181d7c85fc059d645448ce254e0",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"13\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_dict",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": {}, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_float",
+  "policy_sha256": "34604de7c0d6543f4fa13b553ffebc429fc8f95109d745e9faec281900e213ff",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 24.04, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_float_trailing_zero",
+  "policy_sha256": "b499b3f7871b048c68b28767f93e91c9022407726b7bf59ca234a46a0d5e6856",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 24.10, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_exponent",
+  "policy_sha256": "d67ca43eedbabf74e5be8a3891314d330bd1405c5542d0d4188649022ed3778e",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 1E2, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_raw_big_float",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 1e16, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_big_int",
+  "policy_sha256": "d32ae5bb527c4b652e4a049b57514475a9e2a7530eae87c99a310da1c3d7da04",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 18446744073709551617, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_minus_zero",
+  "policy_sha256": "30d00d3a67864e06eed54083c521aafbdda79c21d4940a7086c7c2bd4b5e04c5",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": -0, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_desired_cycle_raw_float_zero_fraction",
+  "policy_sha256": "e7a848902f24215a19062fe0b83326066fa418a88419ffdc5e585c514eab794e",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 24.0, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired operating system cycle"
+  },
+  "id": "os_desired_cycle_raw_infinite",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 1e400, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "os_debian_policy",
+  "policy_sha256": "a822b3a2a3fd56335e53ceeaad76f3a5327d1f2ddeaabdaa31b41604319d332e",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"debian\", \"desired_cycle\": \"13\", \"product\": \"debian\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "KeyError",
+   "message": "'postgresql'"
+  },
+  "id": "postgresql_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "postgresql_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": [], \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "postgresql_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": \"x\", \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "AttributeError",
+   "message": null
+  },
+  "id": "postgresql_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": null, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": "invalid PostgreSQL expected state"
+  },
+  "id": "postgresql_expected_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": "invalid PostgreSQL expected state"
+  },
+  "id": "postgresql_expected_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": \"yes\", \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": "invalid PostgreSQL expected state"
+  },
+  "id": "postgresql_expected_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": null, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": "invalid PostgreSQL expected state"
+  },
+  "id": "postgresql_expected_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": 1, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "postgresql_desired_major_int",
+  "policy_sha256": "740f313a8e062e0b57e2f61f45bcaf89a2a9da70f2677316e35d9bfaf5628ada",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": 17, \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_minor",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17.1\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": null, \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_empty",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": [\"17\"], \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL cluster"
+  },
+  "id": "postgresql_cluster_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "postgresql_cluster_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": null, \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "postgresql_cluster_int",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": 1, \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL cluster"
+  },
+  "id": "postgresql_cluster_digit_first",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"9main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL cluster"
+  },
+  "id": "postgresql_cluster_space",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"ma in\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "postgresql_cluster_underscore_dash",
+  "policy_sha256": "7cfc40c99aee2286437629f77f3d0758d8548fdc27455fa8eedefe3bd36e971e",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"_x-1\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL cluster"
+  },
+  "id": "postgresql_cluster_newline",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\\n\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL cluster"
+  },
+  "id": "postgresql_cluster_non_ascii",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"m\\u00e4in\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": null
+  },
+  "id": "postgresql_cluster_list",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": [\"main\"], \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_missing",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\"}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_true",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": true}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_zero",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 0}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "postgresql_port_max",
+  "policy_sha256": "977ae7384f5e4c518859f5a460a22181df1da7a4f2945c22c2226dc0dc6b21cc",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 65535}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_over",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 65536}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "postgresql_port_one",
+  "policy_sha256": "854d83bbf46a95e19b723339c431167ecf26c282eb356986bdf672accea6b555",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 1}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": \"5432\"}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_huge",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 99999999999999999999999}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_negative",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": -1}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": null}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_raw_float",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": 17.0, \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid desired PostgreSQL major"
+  },
+  "id": "postgresql_desired_major_raw_exponent",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": 1e1, \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_raw_float",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432.0}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_raw_exponent",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5.432e3}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_raw_minus_zero",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": -0}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "postgresql_not_expected_ignores_the_rest",
+  "policy_sha256": "ace2469120666b198de83d564ca86ea5b0e6ea87c28ba2b32868f6a3058c293d",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": false, \"desired_major\": null, \"cluster\": 7, \"port\": \"x\"}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_null",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": null}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_below",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3599}"
+ },
+ {
+  "id": "apt_max_age_seconds_min",
+  "policy_sha256": "274a9a3bd0be8660cd67ba69a05868270ec9d47b3fd776c7e151f6d5e20eab1b",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}"
+ },
+ {
+  "id": "apt_max_age_seconds_max",
+  "policy_sha256": "d5d2f84ae1ad5cdfba4fcb757eaaab9dc28c6309b31c9b456c06ff26500f6605",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 1209600}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_above",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 1209601}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_float",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 172800.0}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_true",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": true}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_str",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": \"3600\"}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_exponent",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 1e4}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_huge",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 10000000000000000000000000000000000000000}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid APT age budget"
+  },
+  "id": "apt_max_age_seconds_minus_zero",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": -0}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "host is required"
+  },
+  "id": "order_host_before_traefik",
+  "text": "{\"host\": \"\"}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid Traefik policy"
+  },
+  "id": "order_traefik_before_os",
+  "text": "{\"host\": \"example\", \"os\": null, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": \"x\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "unsupported operating system policy"
+  },
+  "id": "order_os_before_postgresql",
+  "text": "{\"host\": \"example\", \"os\": {}, \"postgresql\": null, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "TypeError",
+   "message": "invalid PostgreSQL expected state"
+  },
+  "id": "order_postgresql_before_age",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": null, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 1}"
+ },
+ {
+  "id": "hash_extra_strings",
+  "policy_sha256": "4c0014acf8c49756790f139910fecb7832a3b9f300bd2084d1dc31bbae43ee7a",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": \"\\u00e9\\u65e5\\u672c\\ud83d\\ude00\\u2028\\u0000\\u001f\\u007f\\\"\\\\/\"}"
+ },
+ {
+  "id": "hash_extra_raw_non_ascii",
+  "policy_sha256": "3c092291a63a3102bd6e1456110a80e57e1dd6e072dc9245b4c2e73853d92625",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": \"\u00e9\ud83d\ude00\"}"
+ },
+ {
+  "id": "hash_extra_ints",
+  "policy_sha256": "11ca44a373686c2f94b5d0159eb835a1b850ac4272d7afb2b48f6fd49d84cb81",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [18446744073709551617, -18446744073709551617, -0, 0, 123456789012345678]}"
+ },
+ {
+  "id": "hash_extra_floats",
+  "policy_sha256": "d7ef9eeee4331a3215fec48563312aa49d68399d725bff282534ba9e204f7f5a",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [1E2, 1.0, 1e16, 1e-05, 0.1, -0.0, 5e-324, 1.7976931348623157e308, 2.5e-07]}"
+ },
+ {
+  "id": "hash_extra_infinite",
+  "policy_sha256": "7ebee2290d2a96a6ed072e8c7a841ae65f4fe3e2b96d0dc2dc45ab3aa5cffa79",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [1e400, -1e400, 1e-400]}"
+ },
+ {
+  "id": "hash_extra_scalars",
+  "policy_sha256": "04c7f622def57c2ef76e04c2c08c70914a502285a99c0c4b4905574777c6e236",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [true, false, null]}"
+ },
+ {
+  "id": "hash_extra_nested",
+  "policy_sha256": "3fe850e735692d450d489762f59c58dafeacdb2ea0001f38d0cb497d259aab15",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": {\"z\": {\"y\": [{\"b\": 1, \"a\": 2}]}, \"a\": {}}}"
+ },
+ {
+  "id": "hash_extra_non_ascii_keys",
+  "policy_sha256": "0cc1eaddeca3c844584eb443bce566ff4dd706fb2b5c8c0963772219ac09aaf1",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": {\"\\u00e9\": 1, \"e\": 2, \"\\ud83d\\ude00\": 3, \"E\": 4}}"
+ },
+ {
+  "id": "hash_extra_duplicate_keys",
+  "policy_sha256": "f71e8f61ed6d8a613655dcfb87a8ec2fa1d7e15a193bcc1c56eb6e23a42a300c",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": {\"a\": 1, \"a\": 2}}"
+ },
+ {
+  "id": "hash_extra_deep_120",
+  "policy_sha256": "6e066c0da6d5651011e8567aa2f9795806a7c85642ee9fbe027b389aa9642b84",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}"
+ },
+ {
+  "id": "hash_extra_serde_number_token",
+  "policy_sha256": "1a9770ca8e3b74ceaa2b1668b007000a143fe741a5b7671e469552d2c65cf945",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": {\"$serde_json::private::Number\": \"7\", \"n\": {\"$serde_json::private::Number\": 7}}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": "invalid PostgreSQL port"
+  },
+  "id": "postgresql_port_serde_number_token",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": {\"$serde_json::private::Number\": \"5432\"}}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "error": {
+   "class": "ValueError",
+   "message": null
+  },
+  "id": "traefik_desired_version_4301_digits",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111.0.0\"}}"
+ },
+ {
+  "id": "traefik_desired_version_4300_digits",
+  "policy_sha256": "5654104e14bf3f9f5a30b88bae55823ed3b19e1785e2ae33ca210976cfce5796",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111.0.0\"}}"
+ },
+ {
+  "id": "hash_key_order",
+  "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+  "text": "{\"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"host\": \"example\"}"
+ },
+ {
+  "id": "hash_pretty_printed",
+  "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+  "text": "{\n    \"host\": \"example\",\n    \"os\": {\n        \"expected_id\": \"ubuntu\",\n        \"desired_cycle\": \"24.04\",\n        \"product\": \"ubuntu\"\n    },\n    \"postgresql\": {\n        \"expected\": true,\n        \"desired_major\": \"17\",\n        \"cluster\": \"main\",\n        \"port\": 5432\n    },\n    \"traefik\": {\n        \"expected\": true,\n        \"unit\": \"traefik.service\",\n        \"binary_path\": \"/usr/local/bin/traefik\",\n        \"desired_version\": \"3.7.9\"\n    }\n}"
+ },
+ {
+  "id": "hash_desired_cycle_float",
+  "policy_sha256": "34604de7c0d6543f4fa13b553ffebc429fc8f95109d745e9faec281900e213ff",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": 24.04, \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "hash_apt_age",
+  "policy_sha256": "274a9a3bd0be8660cd67ba69a05868270ec9d47b3fd776c7e151f6d5e20eab1b",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}"
+ },
+ {
+  "id": "hash_non_ascii_host",
+  "policy_sha256": "04825414d202d6ac5aca0a229e7fbad221f1c6b30482ae628acbad44152b6137",
+  "text": "{\"host\": \"h\\u00f4st\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "p3_nan_extra",
+  "p3": "non-standard-json",
+  "policy_sha256": "f3b720cc9afdbd0b15f8e455c957171a5eb8633678ef7856d3fb8996703bfe57",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": NaN}"
+ },
+ {
+  "id": "p3_infinity_extra",
+  "p3": "non-standard-json",
+  "policy_sha256": "8039010b63707cd80b106a01e1e49da1371618843efd06681a5abc8e60f084d4",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [Infinity, -Infinity]}"
+ },
+ {
+  "id": "p3_lone_surrogate_host",
+  "p3": "non-standard-json",
+  "policy_sha256": "710b93357c6962912817cef20eef06733f8f554f541b724a627ae06ec68b0e3b",
+  "text": "{\"host\": \"h\\ud800\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "p3_nesting_129",
+  "p3": "nesting",
+  "policy_sha256": "4cf4a364b4186d42be46bda0b03a6498417a513605ac74f4ef47ee3699c70a01",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"extra\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}"
+ },
+ {
+  "id": "p3_unicode_digits_cycle",
+  "p3": "unicode-digits",
+  "policy_sha256": "9b7e77ec292d4934f575b35032c2d22d0700ba3498355d40cda948cd800efc93",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"\\u0662\\u0664.\\u0660\\u0664\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "p3_unicode_digits_major",
+  "p3": "unicode-digits",
+  "policy_sha256": "225179c572c71ca33452f7794df866988d89cfa7cdcac56f89048667eb708693",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"\\uff11\\uff17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}"
+ },
+ {
+  "id": "p3_unicode_digits_version",
+  "p3": "unicode-digits",
+  "policy_sha256": "c3ff23662d637956abe683c772d6099c0e660b068f45097184fdd3bddd7c4443",
+  "text": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.\\u0669\"}}"
+ }
+]

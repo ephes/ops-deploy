@@ -1,0 +1,20 @@
+{
+  "postgres": {
+    "dump_databases": [
+ 
+      "pythat" ]
+  },
+  "units": [
+    "gotocial"
+  ],
+  "private_media_paths": [
+    "/h/me/pst/site/private_media"
+  ],
+  "paoots": [
+    {
+        }
+  ],
+  "read_files": [
+    "/etc/gotosocial/scpconfz"
+  ]
+}

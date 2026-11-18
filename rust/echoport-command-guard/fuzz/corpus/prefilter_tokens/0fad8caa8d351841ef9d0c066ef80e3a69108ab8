@@ -1,0 +1,1 @@
+umask 077 && cat > /var/tmp/python-podcast-db-restore.Ab12Cdt.dump

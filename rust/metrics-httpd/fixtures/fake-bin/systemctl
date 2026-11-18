@@ -1,0 +1,33 @@
+#!/bin/sh
+# Test-only stand-in for `systemctl show` (rust/metrics-httpd/PLAN.md 8.2):
+# fixtures/generate.py puts this directory first on PATH for the rendered
+# logyard_health_httpd.py, and tests/logyard_health.rs runs it as the
+# systemctl program. The unit name selects a canned answer.
+if [ "$#" -ne 11 ] || [ "$1" != show ] || [ "$2" != -p ] || [ "$3" != LoadState ] \
+    || [ "$4" != -p ] || [ "$5" != ActiveState ] || [ "$6" != -p ] \
+    || [ "$7" != SubState ] || [ "$8" != -p ] || [ "$9" != Result ] || [ "${10}" != -- ]; then
+    echo "fake systemctl: unexpected arguments: $*" >&2
+    exit 99
+fi
+case "${11}" in
+    vector.service) printf 'LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\n' ;;
+    failed.service) printf 'LoadState=loaded\nActiveState=failed\nSubState=failed\nResult=exit-code\n' ;;
+    missing.service) printf 'LoadState=not-found\nActiveState=inactive\nSubState=dead\nResult=success\n' ;;
+    -.mount) printf 'LoadState=loaded\nActiveState=active\nSubState=mounted\nResult=success\n' ;;
+    "with space.service") printf 'LoadState=loaded\nActiveState=inactive\nSubState=dead\nResult=success\n' ;;
+    partial.service) printf 'LoadState=loaded\nno equals sign here\nActiveState=a=b\n' ;;
+    dup.service) printf 'LoadState=masked\nLoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nResult=done' ;;
+    empty.service) ;;
+    crlf.service) printf 'LoadState=loaded\r\nActiveState=active\rSubState=running\r\nResult=success\r\n' ;;
+    separators.service) printf 'LoadState=loaded\013ActiveState=active\014SubState=running\034Result=success\n' ;;
+    unicode.service) printf 'LoadState=loaded\nActiveState=aktiv\nSubState=l\303\244uft \342\234\223\nResult=success\n' ;;
+    fail-stderr.service) printf 'Failed to get properties: Access denied\n' >&2; exit 1 ;;
+    fail-stdout.service) printf '  partial output  \n'; exit 3 ;;
+    fail-both.service) printf 'out\n'; printf 'err\n' >&2; exit 1 ;;
+    fail-blank-stderr.service) printf 'out text\n'; printf '  \n' >&2; exit 1 ;;
+    fail-silent.service) exit 4 ;;
+    killed.service) kill -9 $$ ;;
+    slow.service) exec sleep 5 ;;
+    latin1.service) printf 'LoadState=loaded\nSubState=\377\n' ;;
+    *) echo "fake systemctl: unknown unit ${11}" >&2; exit 98 ;;
+esac

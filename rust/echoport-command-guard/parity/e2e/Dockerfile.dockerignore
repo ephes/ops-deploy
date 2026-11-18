@@ -1,0 +1,6 @@
+# Build context of parity/e2e/Dockerfile is rust/: the sources and the lock
+# file, never a build directory or the fuzz corpus.
+**/target
+**/.git
+**/__pycache__
+echoport-command-guard/fuzz

@@ -1,0 +1,157 @@
+---
+# DNS Deploy Role - Default Variables
+# Unbound-only DNS with split-horizon views and ad blocking
+
+# Clean install options
+dns_clean_install: false  # Set to true to remove existing DNS configs
+dns_backup_existing: true  # Set to false to skip backing up existing configs
+
+# DNS Configuration
+dns_local_domain: "home.example.com"
+dns_local_domain_punycode: "home.example.com"  # Same if no special chars
+dns_local_ip: "{{ ansible_default_ipv4.address }}"
+
+# DNS Mode Configuration
+# - 'simple': Single IP for all clients (basic setup with Unbound only on port 53)
+# - 'advanced': Split-DNS with different IPs per network (Unbound with split-horizon views)
+# - 'unbound_only': DEPRECATED - Legacy alias that maps to 'advanced' mode
+dns_mode: "simple"
+
+# Unbound configuration
+dns_unbound_port: 53  # Port for Unbound DNS server (53 for simple mode, custom for advanced)
+dns_unbound_config_dir: /etc/unbound/unbound.conf.d
+dns_unbound_blocklist_dir: /var/lib/unbound
+dns_unbound_serve_expired: false            # Serve stale cache entries during upstream outages
+dns_unbound_serve_expired_ttl: 86400        # Maximum age of stale entries to serve (seconds)
+dns_unbound_serve_expired_reply_ttl: 30     # TTL sent to clients for stale replies (seconds)
+dns_unbound_serve_expired_ttl_reset: false  # Reset stale TTL after failed refresh attempts
+dns_unbound_serve_expired_client_timeout: 0 # Optional RFC 8767 stale-answer delay in milliseconds
+dns_unbound_prefetch: false                 # Refresh hot cache entries before they expire
+dns_unbound_prefetch_key: false             # Prefetch DNSKEY records to reduce DNSSEC lookup latency
+dns_unbound_num_queries_per_thread: 0       # Override Unbound recursion queue depth (0 keeps package default)
+dns_unbound_disable_distro_resolvconf_integration: true  # Keep Ubuntu's resolvconf hooks from conflicting
+
+# Split-DNS Configuration
+dns_split_lan_network: "192.168.0.0/16"        # Default LAN network range
+dns_split_tailscale_network: "100.64.0.0/10"   # Default Tailscale network range
+dns_split_lan_ipv6_networks: []                # Optional LAN IPv6 ranges (e.g., ["fdxx:...::/64"])
+dns_split_tailscale_ipv6_networks: []          # Optional Tailscale IPv6 ranges (e.g., ["fdxx:...::/48"])
+dns_split_lan_ip: "{{ ansible_default_ipv4.address }}"
+dns_split_tailscale_ip: ""  # MUST be set if using split-DNS
+dns_split_tailscale_ipv6: ""  # Optional IPv6 address
+
+# Service overrides for split-DNS
+# Each service can have different IPs for LAN vs Tailscale clients
+dns_split_services: []
+#  - name: "router"
+#    lan_ip: "192.168.1.1"
+#    tailscale_ip: "192.168.1.1"
+#  - name: "nas"
+#    lan_ip: "192.168.1.10"
+#    tailscale_ip: "192.168.1.10"
+
+# Blocklist Configuration
+dns_blocklists_enabled: true
+dns_blocklists:
+  - "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+  - "https://someonewhocares.org/hosts/zero/hosts"
+  - "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+
+# Allowlist - domains that should never be blocked
+dns_allowlist:
+  - "github.com"
+  - "githubusercontent.com"
+  - "*.github.io"
+
+# Firewall configuration (optional)
+dns_firewall_enable: false  # Set to true to configure UFW rules
+
+# Local resolver configuration
+dns_update_resolv_conf: true  # Update /etc/resolv.conf to use local DNS
+dns_resolver_nameservers:
+  - "127.0.0.1"               # Unbound listens locally
+  - "{{ dns_split_lan_ip }}"  # Host LAN IP as fallback
+dns_resolver_search_domains: []  # Optional search domains (e.g., ["home.example.com"])
+dns_resolver_options:
+  - "edns0"
+  - "trust-ad"
+
+# DDNS Configuration
+dns_ddns_enabled: false                          # Opt-in feature
+dns_ddns_provider: "gandi"                       # Backend: "gandi" or "rfc2136"
+# Write several providers in one run (e.g. ["gandi", "rfc2136"] while a zone's
+# delegation moves). Empty = [dns_ddns_provider]. The first one names the run.
+dns_ddns_providers: []
+dns_ddns_domain: "CHANGEME"                      # Zone (e.g., "example.com"; IDN allowed)
+dns_ddns_subdomain: "home"                       # Subdomain to update
+dns_ddns_update_wildcard: true                   # Also update *.subdomain
+dns_ddns_ttl: 300                                # DNS TTL in seconds
+dns_ddns_interval: "5min"                        # Update interval
+dns_ddns_on_calendar: "*:0/5"                    # OnCalendar= backstop so the timer cannot stall at NEXT n/a after a reboot
+dns_ddns_log_dir: "/var/log/ddns"                # Log directory
+dns_ddns_config_dir: "/etc/ddns"                 # Config directory (config.json, credentials.env)
+dns_ddns_script_path: "/usr/local/bin/ddns-update"  # Updater (Python, stdlib only)
+dns_ddns_legacy_script_path: "/usr/local/bin/ddns-update.sh"  # Removed on deploy
+dns_ddns_state_dir: "/var/lib/ddns"             # Dedicated state dir (basename must contain "ddns")
+dns_ddns_status_path: "{{ dns_ddns_state_dir }}/status.json"  # Status JSON written by every run
+dns_ddns_ipv4_enabled: true                      # Update IPv4 (A records)
+dns_ddns_ipv6_enabled: true                      # Update IPv6 (AAAA records)
+dns_ddns_ipv4_source_url: "https://ipv4.icanhazip.com"
+dns_ddns_ipv6_source_url: "https://ipv6.icanhazip.com"
+dns_ddns_verify_nameservers: []                  # Empty = the zone's NS records
+# Names pinned to fixed addresses instead of the WAN address, relative to the zone
+# like the subdomain: [{name: "s3.home", a: ["100.64.0.1"], aaaa: []}]. Each entry
+# lists the complete A and AAAA sets; an empty set means that type must not exist.
+dns_ddns_static_records: []
+dns_ddns_log_max_size_mb: 10                     # Log rotation size
+
+# Gandi LiveDNS backend
+dns_ddns_api_token: "CHANGEME"                   # Gandi PAT or legacy API key (from secrets)
+dns_ddns_gandi_auth_scheme: "bearer"             # "bearer" (PAT) or "apikey" (legacy API key)
+dns_ddns_gandi_api_base: "https://api.gandi.net/v5/livedns"
+
+# RFC 2136 backend (nsupdate + TSIG against the zone's primary)
+dns_ddns_rfc2136_server: "CHANGEME"             # Primary's address (or name)
+dns_ddns_rfc2136_port: 53
+dns_ddns_rfc2136_key_name: "CHANGEME"           # TSIG key name
+dns_ddns_rfc2136_key_algorithm: "hmac-sha256"
+dns_ddns_rfc2136_key_secret: "CHANGEME"         # base64 TSIG secret (from secrets)
+dns_ddns_rfc2136_update_zone: ""                # Zone to UPDATE; empty = found via SOA
+
+# Optional authenticated status endpoint (for a Nyxmon json-metrics check)
+dns_ddns_status_endpoint_enabled: false
+dns_ddns_status_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+dns_ddns_status_endpoint_port: 9112
+dns_ddns_status_endpoint_path: "/.well-known/ddns"
+dns_ddns_status_endpoint_auth_user: "CHANGE_ME"
+dns_ddns_status_endpoint_auth_password: "CHANGE_ME"
+dns_ddns_status_endpoint_server_path: "/usr/local/bin/ddns_status_httpd.py"
+dns_ddns_status_endpoint_htpasswd_dir: "/etc/ddns-status-endpoint"
+dns_ddns_status_endpoint_htpasswd_path: "{{ dns_ddns_status_endpoint_htpasswd_dir }}/htpasswd"
+# HTTP server implementation of the status endpoint
+# (rust/metrics-httpd/PLAN.md 7.1): python runs
+# dns_ddns_status_endpoint_server_path; rust runs the pinned metrics-httpd
+# release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/ddns-status-endpoint.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+dns_ddns_status_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+
+# Forward Zones Configuration
+# Forward specific domains to designated upstream DNS servers
+# Useful for local domains (e.g., fritz.box) that need resolution by a local router
+dns_forward_zones: []
+#  - name: "fritz.box"                    # Domain to forward
+#    forward_addrs:                       # List of upstream DNS servers
+#      - "192.168.178.1"
+#    forward_first: false                 # Try forward first, then resolve locally on failure
+
+# Local DNS records
+# Authoritative records served directly by Unbound before forwarded zones.
+# Useful for critical infrastructure names inside forwarded zones when upstream
+# DHCP/router registration is missing or unstable.
+dns_local_records: []
+#  - name: "macmini.fritz.box"
+#    type: "A"
+#    value: "192.168.178.94"

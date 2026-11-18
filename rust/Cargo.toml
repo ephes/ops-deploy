@@ -1,0 +1,41 @@
+# Cargo virtual workspace for the Rust binaries of ops-library
+# (PLAN-foundation.md section 1). One crate per binary: directory name =
+# package name = binary name = release tag prefix. Each crate has its own
+# `version` so the binaries release independently. A stream appends its crate
+# to `members` in its own first slice; the list is explicit because cargo
+# rejects a glob member that matches a plan-only directory.
+[workspace]
+resolver = "3"
+members = ["echoport-command-guard", "metrics-httpd", "software-live", "software-live-apt"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/ephes/ops-library"
+publish = false
+
+# Members left out of the default CI job and `just rust-check` because they
+# need system build dependencies the runner image does not have
+# (PLAN-foundation.md section 3); `scripts/ci_excludes.py` turns this list into
+# `--exclude <crate>` arguments. The crate's stream adds its own job for it.
+[workspace.metadata.ci]
+# software-live-apt links the distribution's libapt-pkg (C++, rust-apt); it is
+# built, linted and tested in the `software-live-apt` job of rust.yml inside
+# ubuntu:24.04 and debian:13 (software-live PLAN.md 7.4).
+exclude = ["software-live-apt"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+
+# As mailgun-relay (measured there: opt-level "s" gives a smaller binary and
+# a leaner idle RSS than opt-level 3).
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "unwind"

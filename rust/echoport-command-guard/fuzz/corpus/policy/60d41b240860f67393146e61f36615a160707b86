@@ -1,0 +1,12 @@
+{
+  "postgres": {
+"dump_databases":[
+    "0homege",
+"pp"
+    ]
+  },
+  "units": [
+    "gotoal"
+  ],"private_media_paths": [
+    "/home10070/adyz"]
+}

@@ -1,0 +1,1 @@
+hsudo -u postgres pg_restore --exit-on-error --dbname=pp --no-owner --role=pp vor93

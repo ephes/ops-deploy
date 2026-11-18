@@ -1,0 +1,1 @@
+zsudo -u postgres createdb --owner=p p

@@ -1,0 +1,1 @@
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=0  -u por - -c 'tn(ame = '

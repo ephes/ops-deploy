@@ -1,0 +1,2 @@
+{"postgres": {"dump_databases": ["homepage", "python-podcast-", "django-chat"], "temp_file_prefixes": ["homepage",
+ "pp"], "scratch_restore_prefixes": ["dat_e"]}, "temp_dirs": ["/var/tmp/db-restore.XXXXXXXX"], "units": ["homepage", "ho", "ythoacdst-db-worker"], "path_roots": [{"path": "/home/marina/site", "owner": "marina:ot"}], "extra": {"anygi": [5, 2]}}

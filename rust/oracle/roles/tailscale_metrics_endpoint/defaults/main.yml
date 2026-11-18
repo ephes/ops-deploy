@@ -1,0 +1,64 @@
+---
+# tailscale_metrics_endpoint - Default Variables
+#
+# Exposes cached Tailscale login/key-expiry status as an authenticated
+# JSON endpoint for Nyxmon json-metrics checks.
+
+tailscale_metrics_endpoint_enabled: false
+
+tailscale_metrics_endpoint_user: metrics
+tailscale_metrics_endpoint_group: "{{ tailscale_metrics_endpoint_user }}"
+tailscale_metrics_endpoint_service_name: tailscale-metrics-endpoint
+
+# HTTP server implementation (rust/metrics-httpd/PLAN.md 7.1): python runs
+# tailscale_metrics_endpoint_server_path; rust runs the pinned metrics-httpd release
+# (fleet variables metrics_httpd_rust_version / metrics_httpd_rust_sha256)
+# through the drop-in /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf
+# (internal helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+tailscale_metrics_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+
+tailscale_metrics_endpoint_bind: "{{ tailscale_ip | default('127.0.0.1') }}"
+tailscale_metrics_endpoint_port: 9107
+tailscale_metrics_endpoint_path: "/.well-known/tailscale"
+tailscale_metrics_endpoint_ip_address_allow:
+  - localhost
+  - 100.64.0.0/10
+tailscale_metrics_endpoint_auth_user: "CHANGE_ME"
+tailscale_metrics_endpoint_auth_password: "CHANGE_ME"
+
+tailscale_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+
+tailscale_metrics_endpoint_data_dir: "/var/lib/tailscale-metrics"
+tailscale_metrics_endpoint_json_path: "{{ tailscale_metrics_endpoint_data_dir }}/tailscale.json"
+tailscale_metrics_endpoint_exporter_path: "/usr/local/bin/tailscale-metrics-exporter"
+tailscale_metrics_endpoint_server_path: "/usr/local/bin/tailscale_metrics_httpd.py"
+tailscale_metrics_endpoint_htpasswd_dir: "/etc/tailscale-metrics-endpoint"
+tailscale_metrics_endpoint_htpasswd_path: "{{ tailscale_metrics_endpoint_htpasswd_dir }}/htpasswd"
+
+tailscale_metrics_endpoint_tailscale_bin: "/usr/bin/tailscale"
+tailscale_metrics_endpoint_ip_bin: "/usr/sbin/ip"
+tailscale_metrics_endpoint_bpftool_bin: "/usr/sbin/bpftool"
+tailscale_metrics_endpoint_require_effective_ip_filter: false
+tailscale_metrics_endpoint_default_route_interface: ""
+tailscale_metrics_endpoint_require_default_ipv4_route: false
+tailscale_metrics_endpoint_require_self_online: false
+tailscale_metrics_endpoint_mdstat_path: /proc/mdstat
+tailscale_metrics_endpoint_require_mdraid_healthy: false
+tailscale_metrics_endpoint_required_mdraid_arrays: []
+tailscale_metrics_endpoint_warning_days: 3
+tailscale_metrics_endpoint_critical_days: 1
+
+tailscale_metrics_endpoint_timer_interval: 300
+tailscale_metrics_endpoint_timer_name: tailscale-metrics-collector
+tailscale_metrics_endpoint_timer_on_boot_sec: 45
+# Wall-clock backstop for the collector timer. Monotonic-only triggers
+# (OnBootSec=/OnUnitActiveSec=) can leave the timer parked as
+# `active (elapsed)` with no next elapse, which freezes the payload while the
+# endpoint keeps serving it. Keep this at or below the freshness budget the
+# Nyxmon staleness rule enforces.
+tailscale_metrics_endpoint_timer_on_calendar: "*:0/5"
+tailscale_metrics_endpoint_timer_accuracy_sec: 10
+tailscale_metrics_endpoint_timer_randomized_delay_sec: 30

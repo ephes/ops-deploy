@@ -1,0 +1,26 @@
+{
+  "ttgres": {
+    "dump_bses": [
+      "homqepage",
+      "pthon-podcast"
+    ],
+    "fixes": [
+          "pp"
+    ]
+  },
+  "xnits": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/etc/home/python-poi/gotoaml"
+  ], "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "pp"], "scratch_restore_prefixes": ["djat_restore"]}, "temp_dirs": ["/tghat-db-resXX"], "units": ["homhombunt-next.serpot"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "resps": [{"path": "/var/lib/gotol"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"dals":{"pdatabases": ["homepage", "python-podcast", "django-chat"], "restore_databa)ess": {"homepage": "homepagt"}, "dumpsesixes": ["homepage", "`p"], "scs": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/emhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["epage", "python-podcast"], "sqlitb_snapshotsrestore_databases": {}, "temp_ps": [{"path": "/var/lib/gotootosncial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)pshots": [{"database": "/vagotosocial:ort.XXXXd1"}], "rea{"": {},"t`":{},"t":{}\\\\\\\\\\\\\onfig.yaml"], "sqli 
+}

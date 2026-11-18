@@ -1,0 +1,16 @@
+{
+  "postgres": {
+ "": [
+      "host"
+    ],
+ "temp_file_prefixes": [
+      "hommpage",
+ "pp"
+    ]
+},
+  "units": [
+    "goocial"
+  ],
+ "private_media_paths": [
+    "/hkme/python-podat/sitpriv0070/rdyz"
+  ]}

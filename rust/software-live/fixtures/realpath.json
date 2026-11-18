@@ -1,0 +1,136 @@
+{
+ "cases": [
+  {
+   "path": "{root}/link_abs/file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/a/rel/file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/a/up/file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/loop1/x/../y",
+   "result": "{root}/loop1/y"
+  },
+  {
+   "path": "{root}/self/z",
+   "result": "{root}/self/z"
+  },
+  {
+   "path": "{root}/dangling/q",
+   "result": "{root}/missing/x/q"
+  },
+  {
+   "path": "{root}/chain/file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/missing/../a",
+   "result": "{root}/a"
+  },
+  {
+   "path": "{root}/a/./b/../b/file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/a/b/file/..",
+   "result": "{root}/a/b"
+  },
+  {
+   "path": "{root}//a//b",
+   "result": "{root}/a/b"
+  },
+  {
+   "path": "{root}/a/b/dotdot/rel",
+   "result": "{root}/a/b"
+  },
+  {
+   "path": "{root}/link_abs/../b",
+   "result": "{root}/a/b"
+  },
+  {
+   "path": "{root}/chain/../x",
+   "result": "{root}/a/x"
+  },
+  {
+   "path": "{root}/loop1",
+   "result": "{root}/loop1"
+  },
+  {
+   "path": "{root}/a/rel/",
+   "result": "{root}/a/b"
+  },
+  {
+   "path": "{root}/nonexistent/link_abs",
+   "result": "{root}/nonexistent/link_abs"
+  },
+  {
+   "path": "{root}/a/b/to_file",
+   "result": "{root}/a/b/file"
+  },
+  {
+   "path": "{root}/a/b/to_file/x",
+   "result": "{root}/a/b/file/x"
+  },
+  {
+   "path": "{root}/a/b/dotdot/b/dotdot/up/file",
+   "result": "{root}/a/b/file"
+  }
+ ],
+ "tree": [
+  {
+   "path": "{root}/a"
+  },
+  {
+   "path": "{root}/a/b"
+  },
+  {
+   "file": true,
+   "path": "{root}/a/b/file"
+  },
+  {
+   "link": "{root}/a/b",
+   "path": "{root}/link_abs"
+  },
+  {
+   "link": "b",
+   "path": "{root}/a/rel"
+  },
+  {
+   "link": "../a/b",
+   "path": "{root}/a/up"
+  },
+  {
+   "link": "{root}/loop2",
+   "path": "{root}/loop1"
+  },
+  {
+   "link": "{root}/loop1",
+   "path": "{root}/loop2"
+  },
+  {
+   "link": "self",
+   "path": "{root}/self"
+  },
+  {
+   "link": "{root}/missing/x",
+   "path": "{root}/dangling"
+  },
+  {
+   "link": "link_abs",
+   "path": "{root}/chain"
+  },
+  {
+   "link": "../../a",
+   "path": "{root}/a/b/dotdot"
+  },
+  {
+   "link": "file",
+   "path": "{root}/a/b/to_file"
+  }
+ ]
+}

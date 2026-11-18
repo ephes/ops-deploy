@@ -1,0 +1,1 @@
+runuser -u postgres -- pg_restore --no-owner --no-privileges --exit-on-error --dbname=django_chat_rserteo_1 < /tpoot_

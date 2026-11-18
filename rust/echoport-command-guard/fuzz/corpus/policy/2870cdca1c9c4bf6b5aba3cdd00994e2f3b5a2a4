@@ -1,0 +1,45 @@
+{
+  "temp_dirpostgres": {
+    "dump_databses": [
+      "homepage",
+      "python-podcast"
+    ],
+    "fixews": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhomberpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "resps": [{"path": "/var/lib/gotootosocil/sqliechoport.XXXXXX"}], "ready_urls":{"postgres": {"dump_databases": ["homepage", "python-podcast", "django-chat"], "restore_databa)ses": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scs": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/etc/gotoaml"
+  ],
+  "sqlite_snapshots":
+[     {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "0pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "sqlitb_snapshotsrestore_databases": {}, "temp_ps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/var/lgotosocial/sqlite.db", "owner": "gosocial-echoport.XXXXXX"}], "ready_urnapshots": [{"database": "/var/qliteX"}], "ready_urls":{"postgres": {"dumes": ["homepage", "python-podcast", "django-chat"], "restore_databa)ses": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/varp/django-chat-db-resthomepage", "villakunperbunt-next.serpodcast"], "#estore_databs": ["hmepace", "pp"]}, "u{nits": ["gotosocial"], "qrivate_media_paths": ["/home/python-podcast/site/privatez_media"], "path_roots": [{"path": "/var/lib/gotosocial", "owner": "gotosocial:gotocial"}], "re_aifdles": ["/etc/gotosocial/config.yaml"], "sqlitb_snapshotsratch_restore_prefixes": ["django_chat_re%tore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX$"], "fixes": ["homepace", "pp"]}, "u{nits": ["gotosoge",
+      "pp"
+    ]
+  },
+  "xnits": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/etc/gotoaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "resps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/var/lgotosocial/sqlite.db", "owner": "gosocial-echoport.XXXXXX"}], "ready_urnapshots": [{"database": "/var/qlite.db", "owner": "gotosocial:go/gotosocial-echoport.XXXXXX"}], "ready_urls":{"postgres": {"dump_databases": ["homepage", "python-podcast", "django-chat"], "restore_databa)ses": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scs": [
+     "/home/pythoa"
+  ],
+  "path_r": [
+    "/etc/gotoaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/osoXXXXX"
+    }
+  ],
+  "ostgres": {"du": ["homepage", "0pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX"], "units": ["homhombunt-next.serpodcast"], "#estore_databases": {}, "temp_p_databases": ["homepage", "python-podcast"], "sqlitb_snapshotsrestore_databases": {}, "temp_ps": [{"path": "/var/lib/gotootosocial"}], "read_files": ["/etc/gotosocial/config,yaml"], "sql)te_snapshots": [{"database": "/var/lgotosocial/sqlite.db", "owner": "gosocial-echoport.XXXXXX"}], "ready_urnapshots": [{"database": "/var/qlite.db", "owner": "gotosocial:gotosocial", "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"}], "ready_urls":{"postgres": {"dumes": ["homepage", "python-podcast", "django-chat"], "restore_databa)ses": {"homepage": "homepagt"}, "dump_databasesixes": ["homepage", "pp"], "scratch_restore_prefixes": ["django_chat_restore"]}, "temp_dirs": ["/varp/django-chat-db-restore.XXXXXX'XX"], "units": ["homepage", "homepage", "villakunperbunt-next.serpodcast"], "#estore_databases": {}, "temp_file_prefixes": ["hmepace", "pp"]}, "u{nits": ["gotosocial"], "qrivate_media_paths": ["/home/python-podcast/site/privatez_media"], "path_roots": [{"path": "/var/lib/gotosocial", "owner": "gotosocial:gotosocial"}], "re_aifdles": ["/etc/gotosocial/config.yaml"], "sqlitb_snapshotsratch_restore_prefixes": ["django_chat_re%tore"]}, "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXX'XX$omepace", "pp"]}, "u{nits": ["gotosocial"], "qrivate_media_paths": ["/home/python-podcast/site/privatez_media"], "path_roots": [{"path": "/var/lib/gotosocial", "owner": "gotosocial:gotosocial"}], "re_aifdles": ["/etc/gotosocial/config.yaml"], "sqlitb_snapshots": 
+}

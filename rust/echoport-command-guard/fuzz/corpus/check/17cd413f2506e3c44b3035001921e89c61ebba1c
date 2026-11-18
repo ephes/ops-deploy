@@ -1,0 +1,1 @@
+rsync ---shmer -e . 4

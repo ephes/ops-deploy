@@ -1,0 +1,38 @@
+{
+  "postgres": {
+    "dump_databases": [
+      "homepage",
+      "python-podcast"
+    ],
+    "restore_databases": {},
+    "temp_file_prefixes": [
+      "homepage",
+      "pp"
+    ]
+  },
+  "units": [
+    "gotosocial"
+  ],
+  "private_media_paths": [
+    "/home/python-podcast/site/private_media"
+  ],
+  "path_roots": [
+    {
+      "path": "/var/lib/gotosocial",
+      "owner": "gotosocial:gotosocial"
+    }
+  ],
+  "read_files": [
+    "/etc/gotosocial/config.yaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/var/lib/gotosocial/sqlite.db",
+      "owner": "gotosocial:gotosocial",
+      "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX"
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:10070/readyz"
+  ]
+}

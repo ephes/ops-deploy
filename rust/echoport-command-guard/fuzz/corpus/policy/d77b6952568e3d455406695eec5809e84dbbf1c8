@@ -1,0 +1,1 @@
+{"postgres": {"dump_databases": ["homepage", "pytho-poho", "pp"], "scratch_restore_prefixes": ["atreor"]}, "temp_dirs": [""], "_paths": [], "path_roots": [{"path": "/home/marina/site", "owner": "arina:marina"}, {"path": "/home/ata", "owner": "vint:vilteunt"}]}

@@ -1,0 +1,387 @@
+---
+# Identity
+openclaw_service_name: openclaw
+openclaw_container_name: openclaw-gateway
+
+# User (system user, auto UID — bind mounts chowned to container uid 1000)
+openclaw_user: openclaw
+openclaw_group: openclaw
+openclaw_home: "/home/{{ openclaw_user }}"
+openclaw_site_dir: "{{ openclaw_home }}/site"
+openclaw_data_dir: "{{ openclaw_home }}/data"
+openclaw_log_dir: "{{ openclaw_home }}/logs"
+openclaw_build_dir: "{{ openclaw_home }}/build/openclaw"
+
+# Source & build (no prebuilt image — clone repo and docker build on-host)
+openclaw_repo_url: "https://github.com/openclaw/openclaw.git"
+openclaw_version: ""  # REQUIRED — git tag, e.g. "v2026.7.1"
+openclaw_git_depth: 1
+openclaw_git_single_branch: true
+openclaw_image_name: "openclaw"
+openclaw_image_tag: "{{ openclaw_version }}"
+openclaw_force_rebuild: false
+
+# Networking
+openclaw_network_mode: bridge  # host forces a loopback-only Gateway listener
+openclaw_bind_host: "127.0.0.1"
+openclaw_host_port: 18789
+openclaw_container_port: 18789
+
+# Gateway mode
+openclaw_gateway_token: ""  # REQUIRED — gateway authentication token
+openclaw_restart_policy: unless-stopped
+openclaw_mem_limit: "2g"
+openclaw_cpus: "1.0"
+openclaw_pids_limit: 256
+openclaw_node_max_old_space_size: 1536
+openclaw_gateway_config_mode: "0600"
+
+# Gateway hardening
+openclaw_gateway_trusted_proxies:
+  - "127.0.0.1"
+  - "::1"
+openclaw_gateway_allow_real_ip_fallback: false
+openclaw_gateway_auth_rate_limit_enabled: true
+openclaw_gateway_auth_rate_limit_max_attempts: 10
+openclaw_gateway_auth_rate_limit_window_ms: 60000
+openclaw_gateway_auth_rate_limit_lockout_ms: 300000
+openclaw_gateway_auth_rate_limit_exempt_loopback: true
+
+# Gateway HTTP endpoints
+# OpenAI-compatible Chat Completions surface (gateway.http.endpoints.chatCompletions).
+# Disabled by default upstream; the flag is written explicitly in both states so an
+# explicit false always overrides a stale true already present in a supplied config.
+openclaw_gateway_http_chat_completions_enabled: false
+
+# AI provider credentials
+openclaw_anthropic_api_key: ""  # REQUIRED — Anthropic API key
+openclaw_openai_api_key: ""  # OPTIONAL — OpenAI API key (provider `openai`)
+openclaw_openrouter_api_key: ""  # OPTIONAL — OpenRouter API key (provider `openrouter`)
+openclaw_ollama_api_key: ""  # OPTIONAL — Ollama API key (provider `ollama`)
+openclaw_ollama_base_url: ""  # OPTIONAL — Ollama base URL (e.g. http://127.0.0.1:11434)
+
+# Agent model policy (optional; when primary is set, role patches agents.defaults.model)
+openclaw_agent_model_primary: ""
+openclaw_agent_model_fallbacks: []
+openclaw_agent_thinking_default: ""  # Optional reasoning level; empty preserves runtime setting
+openclaw_openai_auth_order: []  # Optional ordered canonical OpenAI auth profiles, e.g. ["openai:default"]
+openclaw_codex_plugin_enabled: false  # Install and enable the official Codex app-server runtime plugin
+openclaw_codex_plugin_id: "codex"
+openclaw_codex_plugin_package: "@openclaw/codex"
+openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}"
+# Exact-version backport for upstream commit 26e5c2858a. Disable management when
+# production advances beyond the affected @openclaw/codex 2026.9.1 package.
+openclaw_codex_v2026_9_1_registration_backport_managed: false
+openclaw_codex_v2026_9_1_registration_backport_enabled: true
+# Managed extension for v2026.9.1's generic empty-heartbeat retry prompts.
+openclaw_heartbeat_recovery_managed: false
+openclaw_heartbeat_recovery_enabled: true
+openclaw_upgrade_migrations_enabled: true
+# v2026.9.7+: when the target image differs from the running gateway, stop the
+# gateway and run the official entrypoint's Doctor repair with the new image
+# before any role CLI task (plugin install, secrets apply) opens the state.
+openclaw_doctor_activation_enabled: true
+
+# Audio transcription (optional OpenAI-compatible endpoint)
+# The API key is exposed to OpenClaw under a dedicated environment name and
+# referenced from the agent auth store; it is never written into openclaw.json.
+# Set managed=true to make this role own the audio enable/disable lifecycle.
+openclaw_audio_transcription_managed: false
+openclaw_audio_transcription_enabled: false
+openclaw_audio_transcription_base_url: ""
+openclaw_audio_transcription_allow_private_network: false
+openclaw_audio_transcription_provider: "senseaudio"
+openclaw_audio_transcription_model: "gpt-4o-mini-transcribe"
+openclaw_audio_transcription_profile_id: "senseaudio:audio"
+openclaw_audio_transcription_api_key: ""
+openclaw_audio_transcription_api_key_env: "OPENCLAW_AUDIO_TRANSCRIPTION_API_KEY"  # pragma: allowlist secret (env name)
+openclaw_audio_transcription_timeout_seconds: 120
+
+# Telegram channel
+openclaw_telegram_enabled: false
+openclaw_telegram_bot_token: ""
+openclaw_telegram_dm_policy: allowlist  # allowlist | open
+openclaw_telegram_allow_from: []  # numeric Telegram user IDs
+openclaw_telegram_streaming_mode: partial  # off | partial | block | progress
+openclaw_telegram_streaming_preview_tool_progress: true
+openclaw_telegram_streaming_preview_command_text: raw  # raw | status
+
+# Direct-message session isolation. Use per-channel-peer for shared bot inboxes.
+openclaw_session_dm_scope: main  # main | per-peer | per-channel-peer | per-account-channel-peer
+
+# Managed agent workspace guidance
+openclaw_agent_workspace_dir: "{{ openclaw_data_dir }}/workspace"
+openclaw_reply_system_prompt: ""  # Empty preserves the existing workspace SOUL.md
+openclaw_user_profile: ""  # Empty preserves the existing workspace USER.md
+openclaw_workspace_skills: []  # Controller-local files deployed under workspace/skills/<name>
+
+# Full config override (rendered as openclaw.json).
+# When set, this dict is rendered directly — individual openclaw_telegram_*
+# variables are ignored.
+openclaw_gateway_config: {}
+
+# Config behavior: only seed openclaw.json if absent. Set true to overwrite.
+openclaw_force_config: false
+
+# Managed session-state refresh
+openclaw_session_state_path: "{{ openclaw_data_dir }}/agents/main/sessions/sessions.json"
+openclaw_managed_skills_manifest_path: "{{ openclaw_data_dir }}/managed-skills-manifest.json"
+
+# Extra env for overrides
+openclaw_extra_env: {}
+
+# Traefik reverse proxy
+openclaw_traefik_enabled: false
+openclaw_traefik_config_path: "/etc/traefik/dynamic/openclaw.yml"
+openclaw_traefik_host: ""  # REQUIRED when traefik enabled
+openclaw_traefik_entrypoints:
+  - web-secure
+openclaw_traefik_cert_resolver: ""
+openclaw_traefik_ip_allowlist: []  # e.g. ["100.64.0.0/10", "fd7a:115c:a1e0::/48"] for Tailscale-only
+
+# Feature flags
+openclaw_install_docker: true
+openclaw_manage_user: true
+openclaw_healthcheck_enabled: true
+
+# Health check (gateway RPC readiness plus configured channel readiness)
+openclaw_startup_timeout: 300  # Entry-point Doctor may finish before the listener opens
+openclaw_healthcheck_retries: 6
+openclaw_healthcheck_delay: 5
+
+# Log rotation
+openclaw_logrotate_days: 7
+
+# Nyxmon/OpenClaw metrics endpoint (json-metrics compatible)
+openclaw_metrics_endpoint_enabled: false
+openclaw_metrics_endpoint_user: metrics
+openclaw_metrics_endpoint_group: "{{ openclaw_metrics_endpoint_user }}"
+openclaw_metrics_endpoint_service_name: openclaw-metrics-endpoint
+# HTTP server implementation of the metrics endpoint
+# (rust/metrics-httpd/PLAN.md 7.1): python runs
+# openclaw_metrics_endpoint_server_path; rust runs the pinned metrics-httpd
+# release (fleet variables metrics_httpd_rust_version /
+# metrics_httpd_rust_sha256) through the drop-in
+# /etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf (internal
+# helper metrics_httpd_switch). Defaults to the fleet variable
+# metrics_httpd_impl; override per host for a canary.
+openclaw_metrics_endpoint_impl: "{{ metrics_httpd_impl | default('python') }}"
+openclaw_metrics_endpoint_timer_name: openclaw-metrics-collector
+openclaw_metrics_endpoint_bind: "127.0.0.1"
+openclaw_metrics_endpoint_port: 9104
+openclaw_metrics_endpoint_path: "/.well-known/openclaw-health"
+openclaw_metrics_endpoint_auth_user: "CHANGEME"
+openclaw_metrics_endpoint_auth_password: "CHANGEME"  # pragma: allowlist secret (placeholder)
+openclaw_metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+openclaw_metrics_endpoint_data_dir: "/var/lib/openclaw-metrics"
+openclaw_metrics_endpoint_json_path: "{{ openclaw_metrics_endpoint_data_dir }}/openclaw-health.json"
+openclaw_metrics_endpoint_server_path: "/usr/local/bin/openclaw_metrics_httpd.py"
+openclaw_metrics_endpoint_collector_path: "/usr/local/bin/openclaw_metrics_collector.py"
+openclaw_metrics_endpoint_htpasswd_dir: "/etc/openclaw-metrics-endpoint"
+openclaw_metrics_endpoint_htpasswd_path: "{{ openclaw_metrics_endpoint_htpasswd_dir }}/htpasswd"
+openclaw_metrics_endpoint_container_name: "{{ openclaw_container_name }}"
+openclaw_metrics_endpoint_command_timeout: 45
+openclaw_metrics_endpoint_timer_interval: 120
+# Historical name; used as the initial delay after timer activation.
+openclaw_metrics_endpoint_timer_on_boot_sec: 30
+openclaw_metrics_endpoint_timer_accuracy_sec: 10
+openclaw_metrics_endpoint_timer_randomized_delay_sec: 15
+openclaw_metrics_endpoint_remove_data_on_disable: false
+openclaw_metrics_endpoint_synthetic_canary_enabled: false
+openclaw_metrics_endpoint_synthetic_canary_agent: "main"
+openclaw_metrics_endpoint_synthetic_canary_session_id: "probe-openclaw-canary"
+openclaw_metrics_endpoint_synthetic_canary_message: "Reply exactly: OPENCLAW_CANARY_OK"
+openclaw_metrics_endpoint_synthetic_canary_expected_text: "OPENCLAW_CANARY_OK"
+openclaw_metrics_endpoint_synthetic_canary_interval: 1800
+openclaw_metrics_endpoint_synthetic_canary_timeout: 45
+openclaw_metrics_endpoint_synthetic_canary_max_attempts: 2
+openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds: 5
+openclaw_metrics_endpoint_synthetic_canary_state_path: "{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json"
+openclaw_metrics_endpoint_synthetic_canary_sessions_dir: "{{ openclaw_data_dir }}/agents/main/sessions"
+openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds: 86400
+openclaw_metrics_endpoint_synthetic_canary_output_max_chars: 256
+
+# IMAP read-only mail skill
+openclaw_imap_enabled: false
+openclaw_imap_host: ""
+openclaw_imap_port: 993
+openclaw_imap_tls_mode: "imaps"  # imaps | starttls
+openclaw_imap_default_mailbox: "INBOX"
+openclaw_imap_account_map: {}
+openclaw_imap_default_account: ""
+openclaw_imap_skill_name: "mail-imap"
+openclaw_imap_command_skill_name: "mail"
+openclaw_imap_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_imap_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_imap_credentials_path: "{{ openclaw_data_dir }}/credentials/imap_accounts.json"
+openclaw_imap_container_credentials_path: "/home/node/.openclaw/credentials/imap_accounts.json"
+openclaw_imap_connect_timeout_seconds: 10
+openclaw_imap_command_timeout_seconds: 15
+openclaw_imap_default_limit: 10
+openclaw_imap_max_limit: 25
+openclaw_imap_header_max_chars: 240
+openclaw_imap_subject_max_chars: 240
+openclaw_imap_read_fetch_bytes: 4096
+openclaw_imap_read_snippet_chars: 800
+openclaw_imap_search_query_max_chars: 200
+
+# SMTP send mail skill (phase-2, per-account sender credentials)
+openclaw_smtp_enabled: false
+openclaw_smtp_host: ""
+openclaw_smtp_port: 587
+openclaw_smtp_tls_mode: "starttls"  # starttls | smtps
+openclaw_smtp_account_map: {}
+openclaw_smtp_default_account: ""
+openclaw_smtp_credentials_path: "{{ openclaw_data_dir }}/credentials/smtp_accounts.json"
+openclaw_smtp_container_credentials_path: "/home/node/.openclaw/credentials/smtp_accounts.json"
+openclaw_smtp_connect_timeout_seconds: 10
+openclaw_smtp_command_timeout_seconds: 15
+openclaw_smtp_max_recipients: 10
+openclaw_smtp_address_max_chars: 254
+openclaw_smtp_from_name_max_chars: 120
+openclaw_smtp_subject_max_chars: 240
+openclaw_smtp_body_max_chars: 4000
+
+# Home Assistant skill (read + guarded write actions)
+openclaw_homeassistant_enabled: false
+openclaw_homeassistant_base_url: ""
+openclaw_homeassistant_token: ""
+openclaw_homeassistant_skill_name: "homeassistant-read"
+openclaw_homeassistant_command_skill_name: "homeassistant"
+openclaw_homeassistant_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_homeassistant_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_homeassistant_credentials_path: "{{ openclaw_data_dir }}/credentials/homeassistant.json"
+openclaw_homeassistant_container_credentials_path: "/home/node/.openclaw/credentials/homeassistant.json"
+openclaw_homeassistant_allow_domains: []
+openclaw_homeassistant_allow_entities: []
+openclaw_homeassistant_allow_write_domains: []
+openclaw_homeassistant_allow_write_entities: []
+openclaw_homeassistant_request_timeout_seconds: 8
+openclaw_homeassistant_default_limit: 10
+openclaw_homeassistant_max_limit: 25
+openclaw_homeassistant_state_max_chars: 200
+openclaw_homeassistant_friendly_name_max_chars: 120
+openclaw_homeassistant_attribute_max_items: 8
+openclaw_homeassistant_attribute_value_max_chars: 120
+
+# Calendar skill (CalDAV read + guarded create)
+openclaw_calendar_enabled: false
+openclaw_calendar_timezone: "Europe/Berlin"
+openclaw_calendar_skill_name: "calendar-caldav"
+openclaw_calendar_command_skill_name: "calendar"
+openclaw_calendar_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_calendar_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_calendar_credentials_path: "{{ openclaw_data_dir }}/credentials/calendar_accounts.json"
+openclaw_calendar_container_credentials_path: "/home/node/.openclaw/credentials/calendar_accounts.json"
+openclaw_calendar_account_map: {}
+openclaw_calendar_default_account: ""
+openclaw_calendar_map: {}
+openclaw_calendar_default_duration_minutes: 60
+openclaw_calendar_request_timeout_seconds: 10
+openclaw_calendar_read_parallelism: 4
+openclaw_calendar_read_aggregate_timeout_seconds: 20
+openclaw_calendar_default_limit: 10
+openclaw_calendar_max_limit: 25
+openclaw_calendar_title_max_chars: 180
+openclaw_calendar_location_max_chars: 140
+openclaw_calendar_health_state_path: "{{ openclaw_data_dir }}/credentials/calendar_health_state.json"
+openclaw_calendar_container_health_state_path: "/home/node/.openclaw/credentials/calendar_health_state.json"
+openclaw_calendar_auth_failure_window_seconds: 3600
+openclaw_calendar_auth_failure_threshold: 3
+
+# Paperless skill (read-only search/get/latest + Telegram delivery fallback)
+openclaw_paperless_enabled: false
+openclaw_paperless_base_url: ""
+openclaw_paperless_token: ""
+openclaw_paperless_skill_name: "paperless-read"
+openclaw_paperless_command_skill_name: "paperless"
+openclaw_paperless_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_paperless_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_paperless_credentials_path: "{{ openclaw_data_dir }}/credentials/paperless.json"
+openclaw_paperless_container_credentials_path: "/home/node/.openclaw/credentials/paperless.json"
+openclaw_paperless_health_state_path: "{{ openclaw_data_dir }}/credentials/paperless_health_state.json"
+openclaw_paperless_container_health_state_path: "/home/node/.openclaw/credentials/paperless_health_state.json"
+openclaw_paperless_search_timeout_seconds: 10
+openclaw_paperless_download_timeout_seconds: 60
+openclaw_paperless_delivery_timeout_seconds: 30
+openclaw_paperless_default_limit: 5
+openclaw_paperless_max_limit: 10
+openclaw_paperless_latest_default_days: 7
+openclaw_paperless_latest_max_days: 365
+openclaw_paperless_title_max_chars: 120
+openclaw_paperless_correspondent_max_chars: 80
+openclaw_paperless_max_download_bytes: 52428800  # 50 MB hard cap
+openclaw_paperless_download_chunk_bytes: 65536
+openclaw_paperless_downloads_dir: "{{ openclaw_data_dir }}/workspace/.paperless-downloads"
+openclaw_paperless_container_downloads_dir: "/home/node/.openclaw/workspace/.paperless-downloads"
+openclaw_paperless_session_state_path: "{{ openclaw_data_dir }}/agents/main/sessions/sessions.json"
+openclaw_paperless_container_session_state_path: "/home/node/.openclaw/agents/main/sessions/sessions.json"
+openclaw_paperless_session_target_max_age_seconds: 180
+openclaw_paperless_delivery_channel: "telegram"
+openclaw_paperless_auth_failure_window_seconds: 3600
+openclaw_paperless_auth_failure_threshold: 3
+
+# OpsGate skill (submit explicit investigator-only tickets; approval remains in OpsGate)
+openclaw_opsgate_enabled: false
+openclaw_opsgate_submit_base_url: ""
+openclaw_opsgate_approval_base_url: ""
+openclaw_opsgate_submit_token: ""
+openclaw_opsgate_extension_id: "opsgate-submit"
+openclaw_opsgate_tool_name: "opsgate_submit"
+openclaw_opsgate_extensions_dir: "{{ openclaw_data_dir }}/extensions"
+openclaw_opsgate_extension_dir: "{{ openclaw_opsgate_extensions_dir }}/{{ openclaw_opsgate_extension_id }}"
+openclaw_opsgate_container_extension_dir: "/home/node/.openclaw/extensions/{{ openclaw_opsgate_extension_id }}"
+openclaw_opsgate_skill_name: "opsgate-submit"
+openclaw_opsgate_command_skill_name: "opsgate"
+openclaw_opsgate_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_opsgate_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_opsgate_credentials_path: "{{ openclaw_data_dir }}/credentials/opsgate_submit.json"
+openclaw_opsgate_container_credentials_path: "/home/node/.openclaw/credentials/opsgate_submit.json"
+openclaw_opsgate_submit_timeout_seconds: 10
+openclaw_opsgate_ticket_expires_seconds: 14400
+openclaw_opsgate_title_max_chars: 120
+openclaw_opsgate_summary_max_chars: 240
+openclaw_opsgate_request_max_chars: 4000
+openclaw_opsgate_task_ref_max_chars: 120
+
+# Weeknotes/todo automation
+openclaw_weeknotes_enabled: false
+openclaw_weeknotes_tz: "Europe/Berlin"
+openclaw_weeknotes_skill_name: weeknotes-md
+openclaw_weeknotes_skills_dir: "{{ openclaw_data_dir }}/skills"
+openclaw_weeknotes_dir: "{{ openclaw_data_dir }}/weeknotes"
+openclaw_weeknotes_container_dir: "/home/node/.openclaw/weeknotes"
+openclaw_weeknotes_container_skills_dir: "/home/node/.openclaw/skills"
+openclaw_weeknotes_backend: "local"  # local | s3
+openclaw_weeknotes_command_skill_names:
+  - todo
+  - note
+  - snooze
+openclaw_weeknotes_snapshot_max_count: 200
+openclaw_weeknotes_snapshot_max_days: 14
+openclaw_weeknotes_lock_timeout: 5
+openclaw_weeknotes_max_payload_length: 4000
+openclaw_weeknotes_rate_limit_writes: 10
+openclaw_weeknotes_rate_limit_window_secs: 600
+openclaw_weeknotes_reminder_cron: "0 9 * * 1-5"
+openclaw_weeknotes_reminder_command: "/todo reminder"
+
+# Weeknotes S3 backend settings (used when openclaw_weeknotes_backend=s3)
+openclaw_weeknotes_s3_endpoint: ""
+openclaw_weeknotes_s3_region: "us-east-1"
+openclaw_weeknotes_s3_bucket: ""
+openclaw_weeknotes_s3_prefix: ""
+openclaw_weeknotes_s3_access_key: ""
+openclaw_weeknotes_s3_secret_key: ""
+openclaw_weeknotes_s3_note_key_format: "%Y-%m-%d.md"
+openclaw_weeknotes_s3_todo_list_mode: "current_note"  # current_note | daily_notes
+openclaw_weeknotes_s3_todo_list_key_regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.md$"
+openclaw_weeknotes_s3_todo_cache_refresh_secs: 120
+openclaw_weeknotes_s3_mc_alias: "weeknotes"
+openclaw_weeknotes_s3_mc_host_path: "/usr/local/bin/mc"
+openclaw_weeknotes_s3_mc_container_path: "/usr/local/bin/mc"
+
+# Prepared replacement CA store; empty keeps the image defaults.
+openclaw_ca_store_path: ""

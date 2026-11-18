@@ -1,0 +1,1 @@
+runuser	-u postgres -- pg_restore --no-owner --no-privileges --exit-on-error --store_84 < /varmp

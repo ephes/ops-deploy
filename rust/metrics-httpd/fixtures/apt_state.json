@@ -1,0 +1,1288 @@
+{
+ "template": "roles/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
+ "served_at_epoch": 1792576800,
+ "reboot_state": [
+  {
+   "id": "persisted-kernel-signal-served",
+   "state": {
+    "reboot_required": true,
+    "reboot_required_details": {
+     "required": true,
+     "reasons": [
+      "stale_kernel"
+     ],
+     "flag_present": false,
+     "running_kernel": "5.10.0-23-amd64",
+     "running_kernel_version": "5.10.0-23",
+     "newest_installed_kernel": "6.1.0-52"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "running_kernel": "5.10.0-23-amd64",
+    "running_kernel_version": "5.10.0-23",
+    "newest_installed_kernel": "6.1.0-52",
+    "required": true,
+    "reasons": [
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "reboot-into-new-kernel-clears",
+   "state": {
+    "reboot_required": true,
+    "reboot_required_details": {
+     "required": true,
+     "reasons": [
+      "stale_kernel"
+     ],
+     "flag_present": false,
+     "running_kernel": "5.10.0-23-amd64",
+     "running_kernel_version": "5.10.0-23",
+     "newest_installed_kernel": "6.1.0-52"
+    }
+   },
+   "flag_present": false,
+   "running_release": "6.1.0-52-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "live-marker-alone",
+   "state": {
+    "reboot_required": false
+   },
+   "flag_present": true,
+   "running_release": "6.8.0-138-generic",
+   "python": {
+    "flag_present": true,
+    "required": true,
+    "reasons": [
+     "reboot_required_flag"
+    ]
+   }
+  },
+  {
+   "id": "both-signals",
+   "state": {
+    "reboot_required": true,
+    "reboot_required_details": {
+     "required": true,
+     "reasons": [
+      "stale_kernel"
+     ],
+     "flag_present": false,
+     "running_kernel": "5.10.0-23-amd64",
+     "running_kernel_version": "5.10.0-23",
+     "newest_installed_kernel": "6.1.0-52"
+    }
+   },
+   "flag_present": true,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": true,
+    "running_kernel": "5.10.0-23-amd64",
+    "running_kernel_version": "5.10.0-23",
+    "newest_installed_kernel": "6.1.0-52",
+    "required": true,
+    "reasons": [
+     "reboot_required_flag",
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "legacy-reboot-required-only",
+   "state": {
+    "reboot_required": true
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "legacy-details-null",
+   "state": {
+    "reboot_required_details": null
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "legacy-empty",
+   "state": {},
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "legacy-with-marker",
+   "state": {},
+   "flag_present": true,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": true,
+    "required": true,
+    "reasons": [
+     "reboot_required_flag"
+    ]
+   }
+  },
+  {
+   "id": "details-not-object",
+   "state": {
+    "reboot_required_details": [
+     "stale_kernel"
+    ]
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "details-string",
+   "state": {
+    "reboot_required_details": "stale_kernel"
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-absent",
+   "state": {
+    "reboot_required_details": {
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-other",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "reboot_required_flag"
+     ],
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-two",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "reboot_required_flag",
+      "stale_kernel"
+     ],
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "running_kernel": "5.10.0-23-amd64",
+    "required": true,
+    "reasons": [
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "reasons-nested-list",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      [
+       "stale_kernel"
+      ]
+     ],
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-substring",
+   "state": {
+    "reboot_required_details": {
+     "reasons": "prefix stale_kernel suffix",
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "running_kernel": "5.10.0-23-amd64",
+    "required": true,
+    "reasons": [
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "reasons-string-other",
+   "state": {
+    "reboot_required_details": {
+     "reasons": "stale",
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-object-key",
+   "state": {
+    "reboot_required_details": {
+     "reasons": {
+      "stale_kernel": false
+     },
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "running_kernel": "5.10.0-23-amd64",
+    "required": true,
+    "reasons": [
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "reasons-object-value",
+   "state": {
+    "reboot_required_details": {
+     "reasons": {
+      "x": "stale_kernel"
+     },
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-null",
+   "state": {
+    "reboot_required_details": {
+     "reasons": null,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-false",
+   "state": {
+    "reboot_required_details": {
+     "reasons": false,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-zero",
+   "state": {
+    "reboot_required_details": {
+     "reasons": 0,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-zero-float",
+   "state": {
+    "reboot_required_details": {
+     "reasons": 0.0,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-empty-string",
+   "state": {
+    "reboot_required_details": {
+     "reasons": "",
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "reasons-empty-list",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [],
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": true,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": true,
+    "required": true,
+    "reasons": [
+     "reboot_required_flag"
+    ]
+   }
+  },
+  {
+   "id": "reasons-int",
+   "state": {
+    "reboot_required_details": {
+     "reasons": 1,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": "TypeError"
+  },
+  {
+   "id": "reasons-int-other-kernel",
+   "state": {
+    "reboot_required_details": {
+     "reasons": 1,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "6.8.0-138-generic",
+   "python": "TypeError"
+  },
+  {
+   "id": "reasons-true",
+   "state": {
+    "reboot_required_details": {
+     "reasons": true,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": true,
+   "running_release": "5.10.0-23-amd64",
+   "python": "TypeError"
+  },
+  {
+   "id": "reasons-float",
+   "state": {
+    "reboot_required_details": {
+     "reasons": 2.5,
+     "running_kernel": "5.10.0-23-amd64"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": "TypeError"
+  },
+  {
+   "id": "reasons-not-a-reason-for-other-details",
+   "state": {
+    "reboot_required_details": [
+     1
+    ]
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "running-kernel-int",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "stale_kernel"
+     ],
+     "running_kernel": 5
+    }
+   },
+   "flag_present": false,
+   "running_release": "5",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "running-kernel-null",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "stale_kernel"
+     ],
+     "running_kernel": null
+    }
+   },
+   "flag_present": false,
+   "running_release": "None",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "running-kernel-absent",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "stale_kernel"
+     ]
+    }
+   },
+   "flag_present": false,
+   "running_release": "",
+   "python": {
+    "flag_present": false,
+    "required": false,
+    "reasons": []
+   }
+  },
+  {
+   "id": "kernel-keys-partly-present",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "stale_kernel"
+     ],
+     "running_kernel": "5.10.0-23-amd64",
+     "newest_installed_kernel": null,
+     "extra": "ignored"
+    }
+   },
+   "flag_present": false,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": false,
+    "running_kernel": "5.10.0-23-amd64",
+    "newest_installed_kernel": null,
+    "required": true,
+    "reasons": [
+     "stale_kernel"
+    ]
+   }
+  },
+  {
+   "id": "kernel-keys-any-value",
+   "state": {
+    "reboot_required_details": {
+     "reasons": [
+      "stale_kernel"
+     ],
+     "running_kernel": "5.10.0-23-amd64",
+     "running_kernel_version": {
+      "major": 5
+     },
+     "newest_installed_kernel": [
+      6,
+      1
+     ]
+    }
+   },
+   "flag_present": true,
+   "running_release": "5.10.0-23-amd64",
+   "python": {
+    "flag_present": true,
+    "running_kernel": "5.10.0-23-amd64",
+    "running_kernel_version": {
+     "major": 5
+    },
+    "newest_installed_kernel": [
+     6,
+     1
+    ],
+    "required": true,
+    "reasons": [
+     "reboot_required_flag",
+     "stale_kernel"
+    ]
+   }
+  }
+ ],
+ "http": {
+  "argv": [
+   "apt-state",
+   "--path",
+   "/.well-known/os-apt-maintenance",
+   "--json-path",
+   "{json}",
+   "--htpasswd-file",
+   "{htpasswd}",
+   "--freshness-max-age",
+   "1209600",
+   "--state-max-age",
+   "1296000",
+   "--reboot-flag",
+   "{reboot_flag}",
+   "--realm",
+   "os-apt-maintenance",
+   "--server-name",
+   "os-apt-maintenance-httpd/0.1"
+  ],
+  "cases": [
+   {
+    "id": "success-fresh",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1602"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "success-file-without-details",
+    "state_text": "{\"last_status\": \"success\", \"last_success_epoch\": 1792576790}",
+    "mtime_epoch": 1792576790,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "609"
+    },
+    "body": "{\"last_status\": \"success\", \"last_success_epoch\": 1792576790, \"meta\": {\"age_seconds\": 10, \"generated_at\": \"2026-10-21T09:59:50+00:00\", \"generated_at_epoch\": 1792576790, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 10, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "running-fresh-last-success",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1791367200, \"last_exit_code\": 0, \"last_status\": \"running\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576795,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1603"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"running\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1791367200, \"meta\": {\"age_seconds\": 5, \"generated_at\": \"2026-10-21T09:59:55+00:00\", \"generated_at_epoch\": 1792576795, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": true, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 1209600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "running-stale-last-success",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1791367199, \"last_exit_code\": 0, \"last_status\": \"running\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576795,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1606"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"running\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1791367199, \"meta\": {\"age_seconds\": 5, \"generated_at\": \"2026-10-21T09:59:55+00:00\", \"generated_at_epoch\": 1792576795, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": true, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": 1209601, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "running-without-last-success",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": null, \"last_exit_code\": 0, \"last_status\": \"running\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576795,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1597"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"running\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": null, \"meta\": {\"age_seconds\": 5, \"generated_at\": \"2026-10-21T09:59:55+00:00\", \"generated_at_epoch\": 1792576795, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": true, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "failed",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 100, \"last_status\": \"failed\", \"last_error\": \"E: Unable to locate package\", \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1630"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": \"E: Unable to locate package\", \"last_exit_code\": 100, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"failed\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "never-run",
+    "state_text": "{\"last_status\": \"never_run\"}",
+    "mtime_epoch": 1792576800,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "581"
+    },
+    "body": "{\"last_status\": \"never_run\", \"meta\": {\"age_seconds\": 0, \"generated_at\": \"2026-10-21T10:00:00+00:00\", \"generated_at_epoch\": 1792576800, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "status-not-a-string",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": 1, \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1596"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": 1, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "status-absent",
+    "state_text": "{\"last_success_epoch\": 1792576740}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "585"
+    },
+    "body": "{\"last_success_epoch\": 1792576740, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": 60, \"last_success_fresh\": true, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "success-without-last-success",
+    "state_text": "{\"last_status\": \"success\"}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "579"
+    },
+    "body": "{\"last_status\": \"success\", \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "state-age-at-limit",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1791280800,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1607"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 1296000, \"generated_at\": \"2026-10-06T10:00:00+00:00\", \"generated_at_epoch\": 1791280800, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "state-age-over-limit",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1791280799,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1609"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 1296001, \"generated_at\": \"2026-10-06T09:59:59+00:00\", \"generated_at_epoch\": 1791280799, \"served_at_epoch\": 1792576800, \"state_file_fresh\": false, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "mtime-in-the-future",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576900,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1604"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": -100, \"generated_at\": \"2026-10-21T10:01:40+00:00\", \"generated_at_epoch\": 1792576900, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-in-the-future",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792577300, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1599"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792577300, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 0, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-true",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": true, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1604"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": true, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 1792576799, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-false",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": false, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1605"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": false, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 1792576800, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-float",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792576740.0, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1606"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792576740.0, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-exponent",
+    "state_text": "{\"last_status\": \"success\", \"last_success_epoch\": 1.7925768e9}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "615"
+    },
+    "body": "{\"last_status\": \"success\", \"last_success_epoch\": 1792576800.0, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-string",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": \"1792576740\", \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1606"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": \"1792576740\", \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-big-negative",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": -1000000000000000000000000000000, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1653"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": -1000000000000000000000000000000, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 1000000000000000000001792576800, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-big-positive",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1000000000000000000000000000000, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1620"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1000000000000000000000000000000, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 0, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "last-success-outside-i128",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 10000000000000000000000000000000000000000, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 500,
+    "rust_error_type": "internal_error",
+    "d": "D-5",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1630"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 10000000000000000000000000000000000000000, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 0, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "rust_only"
+   },
+   {
+    "id": "reboot-required-truthy-string",
+    "state_text": "{\"reboot_required\": \"yes\"}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "553"
+    },
+    "body": "{\"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "reboot-required-zero",
+    "state_text": "{\"reboot_required\": 0}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "554"
+    },
+    "body": "{\"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "reboot-required-empty-list",
+    "state_text": "{\"reboot_required\": []}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "554"
+    },
+    "body": "{\"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "reboot-flag-present",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": false, \"reboot_required_details\": {\"required\": false, \"reasons\": [], \"flag_present\": false}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": true,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1620"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": true, \"reboot_required_details\": {\"flag_present\": true, \"reasons\": [\"reboot_required_flag\"], \"required\": true}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": true}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "stale-kernel-served",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": true, \"reboot_required_details\": {\"required\": true, \"reasons\": [\"stale_kernel\"], \"flag_present\": false, \"running_kernel\": \"5.10.0-23-amd64\", \"running_kernel_version\": \"5.10.0-23\", \"newest_installed_kernel\": \"6.1.0-52\"}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "5.10.0-23-amd64",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1727"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": true, \"reboot_required_details\": {\"flag_present\": false, \"newest_installed_kernel\": \"6.1.0-52\", \"reasons\": [\"stale_kernel\"], \"required\": true, \"running_kernel\": \"5.10.0-23-amd64\", \"running_kernel_version\": \"5.10.0-23\"}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": true}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "stale-kernel-cleared-by-reboot",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": true, \"reboot_required_details\": {\"required\": true, \"reasons\": [\"stale_kernel\"], \"flag_present\": false, \"running_kernel\": \"5.10.0-23-amd64\", \"running_kernel_version\": \"5.10.0-23\", \"newest_installed_kernel\": \"6.1.0-52\"}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.1.0-52-amd64",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1601"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "stale-kernel-and-flag",
+    "state_text": "{\"schema_version\": 1, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"freshness_max_age_seconds\": 1209600, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"last_exit_code\": 0, \"last_status\": \"success\", \"last_error\": null, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"reboot_required\": true, \"reboot_required_details\": {\"required\": true, \"reasons\": [\"stale_kernel\"], \"flag_present\": false, \"running_kernel\": \"5.10.0-23-amd64\", \"running_kernel_version\": \"5.10.0-23\", \"newest_installed_kernel\": \"6.1.0-52\"}, \"auto_reboot_enabled\": false, \"auto_reboot_attempted\": false, \"auto_reboot_result\": null, \"steps\": {\"update_cache\": {\"enabled\": true, \"attempted\": true, \"started_at\": \"2026-10-21T08:59:00+00:00\", \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"duration_seconds\": 12.345, \"exit_code\": 0, \"status\": \"success\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\u2026 Done\", \"stderr_tail\": \"\", \"error\": null}}, \"summary\": {\"last_run_ok\": true, \"reboot_required\": false}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": true,
+    "running_release": "5.10.0-23-amd64",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "1750"
+    },
+    "body": "{\"auto_reboot_attempted\": false, \"auto_reboot_enabled\": false, \"auto_reboot_result\": null, \"freshness_max_age_seconds\": 1209600, \"generated_at\": \"2026-10-21T09:00:00+00:00\", \"generated_epoch\": 1792573200, \"host_id\": \"fixture-host\", \"hostname\": \"fixture-host\", \"last_error\": null, \"last_exit_code\": 0, \"last_run_finished_at\": \"2026-10-21T09:00:00+00:00\", \"last_run_finished_epoch\": 1792573200, \"last_run_started_at\": \"2026-10-21T08:59:00+00:00\", \"last_run_started_epoch\": 1792573140, \"last_skipped_at\": null, \"last_skipped_epoch\": null, \"last_skipped_reason\": null, \"last_status\": \"success\", \"last_success_at\": \"2026-10-21T09:00:00+00:00\", \"last_success_epoch\": 1792573200, \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": true, \"reboot_required_details\": {\"flag_present\": true, \"newest_installed_kernel\": \"6.1.0-52\", \"reasons\": [\"reboot_required_flag\", \"stale_kernel\"], \"required\": true, \"running_kernel\": \"5.10.0-23-amd64\", \"running_kernel_version\": \"5.10.0-23\"}, \"schema_version\": 1, \"steps\": {\"update_cache\": {\"attempted\": true, \"duration_seconds\": 12.345, \"enabled\": true, \"error\": null, \"exit_code\": 0, \"finished_at\": \"2026-10-21T08:59:12+00:00\", \"started_at\": \"2026-10-21T08:59:00+00:00\", \"status\": \"success\", \"stderr_tail\": \"\", \"stdout_tail\": \"Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\\nReading package lists\\u2026 Done\"}}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": 3600, \"last_success_fresh\": true, \"overall_ok\": true, \"reboot_required\": true}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "legacy-state-with-flag",
+    "state_text": "{\"last_status\": \"success\", \"reboot_required\": true}",
+    "mtime_epoch": 1792576740,
+    "flag_present": true,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "596"
+    },
+    "body": "{\"last_status\": \"success\", \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": true, \"reboot_required_details\": {\"flag_present\": true, \"reasons\": [\"reboot_required_flag\"], \"required\": true}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": true}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "reasons-substring",
+    "state_text": "{\"reboot_required_details\": {\"reasons\": \"stale_kernel\", \"running_kernel\": \"5.10.0-23-amd64\"}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "5.10.0-23-amd64",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "602"
+    },
+    "body": "{\"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": true, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [\"stale_kernel\"], \"required\": true, \"running_kernel\": \"5.10.0-23-amd64\"}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": true}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "reasons-int",
+    "state_text": "{\"reboot_required_details\": {\"reasons\": 1, \"running_kernel\": \"5.10.0-23-amd64\"}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "5.10.0-23-amd64",
+    "rust_status": 500,
+    "rust_error_type": "internal_error",
+    "d": "D-2",
+    "python": "crash",
+    "python_exception": "TypeError",
+    "compare": "rust_only"
+   },
+   {
+    "id": "reasons-true-other-kernel",
+    "state_text": "{\"reboot_required_details\": {\"reasons\": true, \"running_kernel\": \"5.10.0-23-amd64\"}}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 500,
+    "rust_error_type": "internal_error",
+    "d": "D-2",
+    "python": "crash",
+    "python_exception": "TypeError",
+    "compare": "rust_only"
+   },
+   {
+    "id": "computed-keys-replaced",
+    "state_text": "{\"meta\": {\"collector\": \"x\", \"age_seconds\": 1}, \"summary\": [1, 2], \"reboot_required\": \"maybe\", \"reboot_required_details\": {\"required\": true, \"reasons\": [\"reboot_required_flag\"]}, \"unicode\": \"\u00e9 \u20ac \ud83d\ude00\", \"big\": 123456789012345678901234567890, \"floats\": [1.0, 1e+16, 1e-05, 181703637716804.12]}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "684"
+    },
+    "body": "{\"big\": 123456789012345678901234567890, \"floats\": [1.0, 1e+16, 1e-05, 181703637716804.12], \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": true}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}, \"unicode\": \"\\u00e9 \\u20ac \\ud83d\\ude00\"}",
+    "compare": "bytes"
+   },
+   {
+    "id": "empty-object",
+    "state_text": "{}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "554"
+    },
+    "body": "{\"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": false, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "whitespace-and-duplicates",
+    "state_text": " {\"last_status\": \"failed\", \"last_status\": \"success\"}\n",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "579"
+    },
+    "body": "{\"last_status\": \"success\", \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}}",
+    "compare": "bytes"
+   },
+   {
+    "id": "invalid-json",
+    "state_text": "{\"last_status\": ",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 502,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Expecting value: line 1 column 17 (char 16)\"}",
+    "message_prefix": "Invalid JSON in state file: ",
+    "compare": "error_type_only"
+   },
+   {
+    "id": "empty-file",
+    "state_text": "",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 502,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Expecting value: line 1 column 1 (char 0)\"}",
+    "message_prefix": "Invalid JSON in state file: ",
+    "compare": "error_type_only"
+   },
+   {
+    "id": "bom",
+    "state_text": "\ufeff{}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 502,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"invalid_json\", \"message\": \"Invalid JSON in state file: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)\"}",
+    "message_prefix": "Invalid JSON in state file: ",
+    "compare": "error_type_only"
+   },
+   {
+    "id": "top-level-list",
+    "state_text": "[1, 2]",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 502,
+    "rust_error_type": "invalid_json",
+    "d": "D-2",
+    "python": "crash",
+    "python_exception": "AttributeError",
+    "compare": "rust_only"
+   },
+   {
+    "id": "top-level-null",
+    "state_text": "null",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 502,
+    "rust_error_type": "invalid_json",
+    "d": "D-2",
+    "python": "crash",
+    "python_exception": "AttributeError",
+    "compare": "rust_only"
+   },
+   {
+    "id": "not-utf8",
+    "state_latin1": "{\"last_status\": \"\u00ff\"}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 502,
+    "rust_error_type": "invalid_json",
+    "d": "D-2",
+    "python": "crash",
+    "python_exception": "UnicodeDecodeError",
+    "compare": "rust_only"
+   },
+   {
+    "id": "nan",
+    "state_text": "{\"last_status\": \"success\", \"x\": NaN}",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "rust_status": 502,
+    "rust_error_type": "invalid_json",
+    "d": "D-4",
+    "status": 200,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "589"
+    },
+    "body": "{\"last_status\": \"success\", \"meta\": {\"age_seconds\": 60, \"generated_at\": \"2026-10-21T09:59:00+00:00\", \"generated_at_epoch\": 1792576740, \"served_at_epoch\": 1792576800, \"state_file_fresh\": true, \"state_max_age_seconds\": 1296000, \"state_reboot_required\": false}, \"reboot_required\": false, \"reboot_required_details\": {\"flag_present\": false, \"reasons\": [], \"required\": false}, \"summary\": {\"currently_running\": false, \"freshness_max_age_seconds\": 1209600, \"last_run_ok\": true, \"last_success_age_seconds\": null, \"last_success_fresh\": false, \"overall_ok\": false, \"reboot_required\": false}, \"x\": NaN}",
+    "compare": "rust_only"
+   },
+   {
+    "id": "missing",
+    "state_kind": "missing",
+    "mtime_epoch": 1792576800,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 503,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "102"
+    },
+    "body": "{\"error\": true, \"error_type\": \"state_file_missing\", \"message\": \"Apt maintenance state file not found\"}",
+    "compare": "bytes"
+   },
+   {
+    "id": "directory",
+    "state_kind": "directory",
+    "mtime_epoch": 1792576800,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 503,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "102"
+    },
+    "body": "{\"error\": true, \"error_type\": \"state_file_missing\", \"message\": \"Apt maintenance state file not found\"}",
+    "compare": "bytes"
+   },
+   {
+    "id": "broken-symlink",
+    "state_kind": "broken-symlink",
+    "mtime_epoch": 1792576800,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 503,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": "102"
+    },
+    "body": "{\"error\": true, \"error_type\": \"state_file_missing\", \"message\": \"Apt maintenance state file not found\"}",
+    "compare": "bytes"
+   },
+   {
+    "id": "unreadable",
+    "state_kind": "unreadable",
+    "mtime_epoch": 1792576740,
+    "flag_present": false,
+    "running_release": "6.8.0-138-generic",
+    "status": 503,
+    "response_headers": {
+     "Content-Type": "application/json",
+     "Content-Length": null
+    },
+    "body": "{\"error\": true, \"error_type\": \"read_error\", \"message\": \"Cannot read state file: [Errno 13] Permission denied: '{tmp}/case-046/state.json'\"}",
+    "message_prefix": "Cannot read state file: ",
+    "compare": "error_type_only"
+   }
+  ]
+ }
+}

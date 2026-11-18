@@ -1,0 +1,65 @@
+[package]
+name = "software-live"
+# Own version (not the workspace's): the binary is released by the tag
+# `software-live-v<version>` (PLAN.md 7.2, PLAN-foundation.md section 4).
+version = "0.1.2"
+description = "Read-only Linux software observations and their authenticated endpoint (Rust port of software_live.py)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The endpoint (`serve`, PLAN.md 3.4, 5.4): strict base64 of the
+# Authorization header, bcrypt entries of the role's htpasswd file, hyper 1
+# over a current-thread tokio runtime.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
+bytes = "1.12.1"
+# Lifecycle dates (`date.fromisoformat`, PLAN.md 3.3 and 4.2 item 6).
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+# `subprocess`'s close_fds for every child without `unsafe` (probe.rs).
+close_fds = "0.3.2"
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+hex = "0.4"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"] }
+# `grp.getgrnam` of the export and state groups (PLAN.md 3.6, 5.3);
+# `getrusage` of `collect --report-usage` (PLAN.md 3.1).
+nix = { version = "0.31.3", default-features = false, features = ["user", "resource"] }
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+# `fs`: the export's `open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK)` (PLAN.md 3.6).
+rustix = { version = "1", default-features = false, features = ["std", "fs"] }
+# The TLS stack of the upstream requests (PLAN.md 5.3): rustls with ring,
+# handed to ureq explicitly; trust comes from the system store only
+# (rustls-native-certs), never from bundled roots.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
+# SHA-256 (the Traefik binary, the policy hash): ring's digest, already in
+# the tree through rustls, with the assembly of BoringSSL (AVX/SSSE3 on
+# x86_64 CPUs without the SHA extensions, about OpenSSL's speed); S9b,
+# PLAN.md 10.
+ring = { version = "0.17.14", default-features = false }
+# Shortest float digits with ties to even, as Python's repr (PLAN.md 3.2).
+ryu = "1"
+serde = { version = "1", features = ["derive"] }
+# arbitrary_precision: numbers keep their JSON text, so nothing Python could
+# have written is rounded (PLAN.md 3.2); raw_value: pyjson::loads takes the
+# text apart through RawValue (see there).
+serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
+# Atomic JSON writes (`atomic_json`, PLAN.md 3.5).
+tempfile = "3"
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "net", "time", "sync", "macros"] }
+# Upstream HTTPS (GitHub, endoflife.date): synchronous, no proxy, no gzip,
+# no bundled roots (PLAN.md 3.3, 5.3).
+ureq = { version = "3.4.2", default-features = false, features = ["rustls-no-provider"] }
+wait-timeout = "0.2"
+
+[dev-dependencies]
+# The certificate of the local HTTPS test server (src/testutil.rs).
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,1605 @@
+{
+ "errors": [
+  {
+   "class": "ValueError",
+   "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "text": "ValueError: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "class": "OSError",
+   "message": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+   "text": "OSError: \u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+  },
+  {
+   "class": "KeyError",
+   "message": "'k'",
+   "text": "KeyError: 'k'"
+  },
+  {
+   "class": "TypeError",
+   "message": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+   "text": "TypeError: \ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+  },
+  {
+   "class": "ValueError",
+   "message": "short",
+   "text": "ValueError: short"
+  }
+ ],
+ "freshness": [
+  {
+   "id": "fresh",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "age_zero",
+   "now": 1000.5,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 0.0, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "age_limit",
+   "now": 2800.5,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 1800.0, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "stale",
+   "now": 2800.75,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 1800.25, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": false, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "future",
+   "now": 999.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": -1.5, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": false, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "schema_float",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"schema_version\": 2.0, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2.0, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "schema_str",
+   "now": 2000.0,
+   "text": "{\"schema_version\": \"2\", \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "schema_true",
+   "now": 2000.0,
+   "text": "{\"schema_version\": true, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "schema_one",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 1, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "schema_missing",
+   "now": 2000.0,
+   "text": "{\"generated_at_epoch\": 1, \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "summary_missing",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "summary_list",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": []}"
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid summary"
+   },
+   "id": "summary_key_missing",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid summary"
+   },
+   "id": "summary_key_str",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": \"yes\", \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid summary"
+   },
+   "id": "summary_key_int",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": 1, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "TypeError",
+    "message": "invalid summary"
+   },
+   "id": "summary_key_null",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": null}}"
+  },
+  {
+   "id": "summary_extra_keys_and_old_fresh",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true, \"x\": 1}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true, \"fresh\": \"old\", \"x\": 1}}"
+  },
+  {
+   "error": {
+    "class": "KeyError",
+    "message": "'generated_at_epoch'"
+   },
+   "id": "timestamp_missing",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "timestamp_int",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000, \"host\": \"h\", \"meta\": {\"age_seconds\": 1000.0, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid timestamp"
+   },
+   "id": "timestamp_bool",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": true, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid timestamp"
+   },
+   "id": "timestamp_str",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": \"1000\", \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid timestamp"
+   },
+   "id": "timestamp_null",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": null, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid timestamp"
+   },
+   "id": "timestamp_infinite_float",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1e400, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "error": {
+    "class": "OverflowError",
+    "message": null
+   },
+   "id": "timestamp_huge_int",
+   "now": 2000.0,
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "timestamp_big_int",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 18446744073709551617, \"host\": \"h\", \"meta\": {\"age_seconds\": -1.844674407370955e+19, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": false, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 18446744073709551617, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "timestamp_negative_zero",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": -0.0, \"host\": \"h\", \"meta\": {\"age_seconds\": 2000.0, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": false, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": -0.0, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "timestamp_exponent",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1.0005E3, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  },
+  {
+   "id": "old_meta_replaced",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"meta\": {\"age_seconds\": -1, \"other\": true}}"
+  },
+  {
+   "id": "extra_keys_kept",
+   "now": 2000.0,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 999.5, \"max_age_seconds\": 1800}, \"os\": {\"nested\": [1, 2.5], \"status\": \"ok\"}, \"policy_sha256\": \"ab\", \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}, \"os\": {\"status\": \"ok\", \"nested\": [1, 2.5]}, \"policy_sha256\": \"ab\"}"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "not_mapping",
+   "now": 2000.0,
+   "text": "[]"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "invalid report schema"
+   },
+   "id": "null",
+   "now": 2000.0,
+   "text": "null"
+  },
+  {
+   "id": "fractional_now",
+   "now": 1234.0625,
+   "result": "{\"generated_at_epoch\": 1000.5, \"host\": \"h\", \"meta\": {\"age_seconds\": 233.5625, \"max_age_seconds\": 1800}, \"schema_version\": 2, \"summary\": {\"apt_indexes_fresh\": true, \"fresh\": true, \"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"security_updates_ok\": true, \"traefik_ok\": true}}",
+   "text": "{\"schema_version\": 2, \"generated_at_epoch\": 1000.5, \"host\": \"h\", \"summary\": {\"observation_ok\": true, \"os_ok\": true, \"postgresql_ok\": true, \"traefik_ok\": true, \"security_updates_ok\": true, \"apt_indexes_fresh\": true}}"
+  }
+ ],
+ "summary": [
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "all_ok",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "traefik_warning",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [
+      "outdated_running_version"
+     ],
+     "main_pid": 11,
+     "observed": true,
+     "status": "warning"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": false
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "traefik_not_observed",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "error": "ValueError: service stopped or managed binary missing",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": false,
+     "status": "unknown"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": false,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": false
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "os_unknown_but_observed",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "error": "x",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "unknown"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": false,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "os_not_observed",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "issues": [],
+     "observed": false,
+     "status": "unknown"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": false,
+    "os_ok": false,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "postgresql_warning",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [
+      "outdated_minor"
+     ],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "warning"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": false,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "postgresql_not_observed",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "error": "ValueError: lifecycle upstream unavailable",
+     "issues": [
+      "desired_major_drift"
+     ],
+     "observed": false,
+     "server_version": "16.1",
+     "status": "unknown"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": false,
+    "os_ok": true,
+    "postgresql_ok": false,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_unknown",
+   "observations": {
+    "apt": {
+     "error": "APT observation failed (ImportError)",
+     "indexes_fresh": false,
+     "pending_security_count": null,
+     "status": "unknown"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": false,
+    "observation_ok": false,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": false,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_pending",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 3,
+     "pending_security_updates": [
+      {
+       "package": "a:amd64"
+      }
+     ],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": false,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_stale_indexes",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": false,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": false,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_count_float_zero",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0.0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_count_false",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": false,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_count_true",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": true,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": false,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_status_other",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "warning"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"unit\": \"traefik.service\"}, {\"status\": \"not_applicable\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_postgresql({\"expected\": false}, {\"status\": \"not_applicable\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "nothing_expected",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "clusters": [],
+     "expected": false,
+     "issues": [],
+     "observed": true,
+     "present": false,
+     "status": "ok"
+    },
+    "traefik": {
+     "expected": false,
+     "issues": [],
+     "observed": true,
+     "present": false,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "c74793074f2eb4550da4fff846202941dae9dc4eb5e48061eeb410c2018810ed",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": false, \"unit\": \"traefik.service\"}, {\"status\": \"not_applicable\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_postgresql({\"expected\": false}, {\"status\": \"not_applicable\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "unexpected_installations",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [
+      "standard_support_ended"
+     ],
+     "observed": true,
+     "status": "warning"
+    },
+    "postgresql": {
+     "clusters": [
+      {
+       "major": "16"
+      }
+     ],
+     "expected": false,
+     "issues": [
+      "unexpected_cluster"
+     ],
+     "observed": true,
+     "present": true,
+     "status": "warning"
+    },
+    "traefik": {
+     "expected": false,
+     "issues": [
+      "unexpected_installation"
+     ],
+     "observed": true,
+     "present": true,
+     "status": "warning"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": false}, \"traefik\": {\"expected\": false, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "c74793074f2eb4550da4fff846202941dae9dc4eb5e48061eeb410c2018810ed",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": false,
+    "postgresql_ok": false,
+    "security_updates_ok": true,
+    "traefik_ok": false
+   }
+  },
+  {
+   "cache": null,
+   "calls": [
+    "time",
+    "upstream(null, 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", null, 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", null, 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(3600, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "apt_max_age_from_policy",
+   "observations": {
+    "apt": {
+     "index_age_limit_seconds": 172800,
+     "index_source": "cached security InRelease publication mtimes; no refresh performed",
+     "indexes_fresh": true,
+     "oldest_security_index_age_seconds": 3600.5,
+     "pending_security_count": 0,
+     "pending_security_updates": [],
+     "status": "ok"
+    },
+    "os": {
+     "cycle": "24.04",
+     "id": "ubuntu",
+     "issues": [],
+     "observed": true,
+     "status": "ok"
+    },
+    "postgresql": {
+     "expected": true,
+     "issues": [],
+     "observed": true,
+     "server_version": "17.6",
+     "status": "ok"
+    },
+    "traefik": {
+     "binary_path": "/usr/local/bin/traefik",
+     "expected": true,
+     "installed": {
+      "sha256": "ab",
+      "version": "3.7.9"
+     },
+     "issues": [],
+     "main_pid": 11,
+     "observed": true,
+     "status": "ok"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}, \"apt_max_age_seconds\": 3600}",
+   "policy_sha256": "274a9a3bd0be8660cd67ba69a05868270ec9d47b3fd776c7e151f6d5e20eab1b",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": true,
+    "observation_ok": true,
+    "os_ok": true,
+    "postgresql_ok": true,
+    "security_updates_ok": true,
+    "traefik_ok": true
+   }
+  },
+  {
+   "cache": "/var/lib/software-live/upstream.json",
+   "calls": [
+    "time",
+    "upstream(\"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_traefik({\"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\", \"expected\": true, \"unit\": \"traefik.service\"}, {\"cached\": true, \"status\": \"ok\", \"version\": \"3.7.9\"})",
+    "lifecycle_upstream(\"ubuntu\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_os({\"desired_cycle\": \"24.04\", \"expected_id\": \"ubuntu\", \"product\": \"ubuntu\"}, {\"product\": \"ubuntu\", \"status\": \"ok\"}, 1760000000.25)",
+    "lifecycle_upstream(\"postgresql\", \"/var/lib/software-live/upstream.json\", 1760000000.25)",
+    "observe_postgresql({\"cluster\": \"main\", \"desired_major\": \"17\", \"expected\": true, \"port\": 5432}, {\"product\": \"postgresql\", \"status\": \"ok\"}, 1760000000.25)",
+    "observe_apt(172800, 1760000000.25)",
+    "time"
+   ],
+   "generated_at_epoch": 1760000042.75,
+   "id": "everything_unknown",
+   "observations": {
+    "apt": {
+     "error": "APT observation failed (ImportError)",
+     "indexes_fresh": false,
+     "pending_security_count": null,
+     "status": "unknown"
+    },
+    "os": {
+     "error": "OSError: x",
+     "issues": [],
+     "observed": false,
+     "status": "unknown"
+    },
+    "postgresql": {
+     "error": "OSError: x",
+     "issues": [],
+     "observed": false,
+     "status": "unknown"
+    },
+    "traefik": {
+     "error": "OSError: x",
+     "issues": [],
+     "observed": false,
+     "status": "unknown"
+    }
+   },
+   "policy": "{\"host\": \"example\", \"os\": {\"expected_id\": \"ubuntu\", \"desired_cycle\": \"24.04\", \"product\": \"ubuntu\"}, \"postgresql\": {\"expected\": true, \"desired_major\": \"17\", \"cluster\": \"main\", \"port\": 5432}, \"traefik\": {\"expected\": true, \"unit\": \"traefik.service\", \"binary_path\": \"/usr/local/bin/traefik\", \"desired_version\": \"3.7.9\"}}",
+   "policy_sha256": "a33f6a08bcd328bebeae7a61b9ed3a0f763ac197a26a542499d89c1567df051c",
+   "report_keys": [
+    "apt",
+    "generated_at_epoch",
+    "host",
+    "os",
+    "policy_sha256",
+    "postgresql",
+    "schema_version",
+    "summary",
+    "traefik"
+   ],
+   "summary": {
+    "apt_indexes_fresh": false,
+    "observation_ok": false,
+    "os_ok": false,
+    "postgresql_ok": false,
+    "security_updates_ok": false,
+    "traefik_ok": false
+   }
+  }
+ ]
+}

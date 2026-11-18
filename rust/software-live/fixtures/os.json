@@ -1,0 +1,3165 @@
+{
+ "observe": [
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "desired_drift_and_lts_phase",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-06-30",
+      "support": "2028-08-09"
+     },
+     {
+      "cycle": "12",
+      "eol": "2028-06-30",
+      "latest": "12.15",
+      "support": "2026-07-11"
+     }
+    ],
+    "status": "ok"
+   },
+   "now": 1789344000,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian"
+   },
+   "result": {
+    "codename": "bookworm",
+    "cycle": "12",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "desired_cycle_drift",
+     "standard_support_ended"
+    ],
+    "lifecycle": {
+     "eol": "2028-06-30",
+     "latest_release": "12.15",
+     "newest_cycle": "13",
+     "support_end": "2026-07-11"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 12 (bookworm)",
+    "status": "warning",
+    "upstream": {
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\nVERSION_ID=\"12\"\nVERSION_CODENAME=bookworm\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "boolean_support_false_warns",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": false,
+      "support": false
+     }
+    ],
+    "status": "ok"
+   },
+   "now": 1789430400,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "standard_support_ended"
+    ],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": false
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\nVERSION_ID=\"13\"\nVERSION_CODENAME=trixie\nPRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "boolean_support_true_is_ok",
+   "latest": {
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": false,
+      "support": true
+     }
+    ],
+    "status": "ok"
+   },
+   "now": 1789430400,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": true
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\nVERSION_ID=\"13\"\nVERSION_CODENAME=trixie\nPRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "ubuntu_ok",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "debian_ok",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-06-30",
+      "support": "2028-08-09"
+     },
+     {
+      "cycle": "12",
+      "eol": "2028-06-30",
+      "latest": "12.15",
+      "support": "2026-07-11"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2030-06-30",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "2028-08-09"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "id": "fallback_to_usr_lib",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "uppercase_id",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": null,
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Linux",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=UBUNTU\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "no_codename_or_pretty_name",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": null,
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Linux",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": "operating system does not match policy"
+   },
+   "id": "id_mismatch",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": "operating system does not match policy"
+   },
+   "id": "id_default_linux",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "VERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": "operating system does not match policy"
+   },
+   "id": "id_with_tab",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\t\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "KeyError",
+    "message": "'VERSION_ID'"
+   },
+   "id": "version_id_missing",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "KeyError",
+    "message": "'VERSION_ID'"
+   },
+   "id": "version_id_missing_and_id_mismatch",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "FileNotFoundError",
+    "message": null
+   },
+   "id": "os_release_unreadable",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {}
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "PermissionError",
+    "message": null
+   },
+   "id": "os_release_denied",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "errno": "EACCES"
+     },
+     "/usr/lib/os-release": {
+      "errno": "EACCES"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "UnicodeDecodeError",
+    "message": null
+   },
+   "id": "os_release_not_utf8",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "issues": [],
+    "observed": false,
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "hex": "49443d7562756e74750aff"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "desired_cycle_float",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": 24.04,
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": 24.04,
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [
+     "desired_cycle_drift"
+    ],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "desired_cycle_int",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-06-30",
+      "support": "2028-08-09"
+     },
+     {
+      "cycle": "12",
+      "eol": "2028-06-30",
+      "latest": "12.15",
+      "support": "2026-07-11"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": 13,
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": 13,
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "desired_cycle_drift"
+    ],
+    "lifecycle": {
+     "eol": "2030-06-30",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "2028-08-09"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "desired_cycle_other",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "26.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "26.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [
+     "desired_cycle_drift"
+    ],
+    "lifecycle": {
+     "eol": "2029-05-31",
+     "latest_release": "24.04.5",
+     "newest_cycle": "25.10",
+     "support_end": "2029-05-31"
+    },
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "upstream_unknown",
+   "latest": {
+    "error": "URLError",
+    "last_success": null,
+    "status": "unknown"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [
+     "upstream_unknown"
+    ],
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "unknown",
+    "upstream": {
+     "error": "URLError",
+     "status": "unknown"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "upstream_unknown_with_stale_evidence",
+   "latest": {
+    "error": "HTTPError",
+    "last_success": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "cycles": [
+      {
+       "cycle": "25.10",
+       "eol": "2026-07-09",
+       "latest": "25.10",
+       "lts": false,
+       "releaseDate": "2025-10-09",
+       "support": "2026-07-09"
+      },
+      {
+       "cycle": "24.04",
+       "eol": "2029-05-31",
+       "extendedSupport": "2036-04-25",
+       "latest": "24.04.5",
+       "lts": true,
+       "releaseDate": "2024-04-25",
+       "support": "2029-05-31"
+      }
+     ],
+     "product": "ubuntu",
+     "status": "ok"
+    },
+    "status": "unknown"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [
+     "upstream_unknown"
+    ],
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "unknown",
+    "upstream": {
+     "error": "HTTPError",
+     "last_success_checked_at_epoch": 1789000000.5,
+     "status": "unknown"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "upstream_unknown_and_drift",
+   "latest": {
+    "error": "URLError",
+    "last_success": null,
+    "status": "unknown"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "bookworm",
+    "cycle": "12",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "desired_cycle_drift",
+     "upstream_unknown"
+    ],
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 12 (bookworm)",
+    "status": "unknown",
+    "upstream": {
+     "error": "URLError",
+     "status": "unknown"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\nVERSION_ID=\"12\"\nVERSION_CODENAME=bookworm\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "upstream_not_applicable",
+   "latest": {
+    "status": "not_applicable"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [
+     "upstream_unknown"
+    ],
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "unknown",
+    "upstream": {
+     "status": "not_applicable"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": "observed cycle missing from lifecycle upstream"
+   },
+   "id": "cycle_missing",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "25.10",
+      "eol": "2026-07-09",
+      "latest": "25.10",
+      "lts": false,
+      "releaseDate": "2025-10-09",
+      "support": "2026-07-09"
+     },
+     {
+      "cycle": "24.04",
+      "eol": "2029-05-31",
+      "extendedSupport": "2036-04-25",
+      "latest": "24.04.5",
+      "lts": true,
+      "releaseDate": "2024-04-25",
+      "support": "2029-05-31"
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "22.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": null,
+    "cycle": "22.04",
+    "desired_cycle": "22.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "observed": true,
+    "pretty_name": "Linux",
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\nVERSION_ID=\"22.04\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "KeyError",
+    "message": "'cycles'"
+   },
+   "id": "cycles_key_missing",
+   "latest": {
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "AttributeError",
+    "message": null
+   },
+   "id": "cycles_not_a_list",
+   "latest": {
+    "cycles": "13",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "cycle_number",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": 13,
+      "eol": false
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": 13,
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "cycle_float_number",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": 24.04,
+      "eol": false
+     }
+    ],
+    "product": "ubuntu",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "product": "ubuntu"
+   },
+   "result": {
+    "codename": "noble",
+    "cycle": "24.04",
+    "desired_cycle": "24.04",
+    "expected_id": "ubuntu",
+    "id": "ubuntu",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": 24.04,
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Ubuntu 24.04.5 LTS",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "ubuntu",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_reached",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2026-09-14",
+      "support": "2026-01-01"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "cycle_eol"
+    ],
+    "lifecycle": {
+     "eol": "2026-09-14",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "2026-01-01"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_tomorrow_support_ended",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2026-09-15",
+      "support": "2026-09-14"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "standard_support_ended"
+    ],
+    "lifecycle": {
+     "eol": "2026-09-15",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "2026-09-14"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "support_tomorrow",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-06-30",
+      "support": "2026-09-15"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2030-06-30",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "2026-09-15"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_true",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": true,
+      "support": true
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "cycle_eol"
+    ],
+    "lifecycle": {
+     "eol": true,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": true
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_false_support_absent",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": false
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_null_support_null",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": null,
+      "support": null
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": null,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_missing",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": null,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "eol_invalid_date",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-02-30"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2030-02-30",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "TypeError",
+    "message": "invalid lifecycle date"
+   },
+   "id": "eol_number",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": 2030
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": 2030,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "support_invalid_after_eol_check",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2030-06-30",
+      "support": "soon"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2030-06-30",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "soon"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "eol_reached_hides_invalid_support",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": true,
+      "support": "soon"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "cycle_eol"
+    ],
+    "lifecycle": {
+     "eol": true,
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": "soon"
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "newest_cycle_without_cycle_key",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "latest": "x"
+     },
+     {
+      "cycle": "13",
+      "eol": false
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": null,
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "newest_cycle_number",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": 14
+     },
+     {
+      "cycle": "13",
+      "eol": false
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789344000.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": false,
+     "latest_release": null,
+     "newest_cycle": 14,
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "today_rounds_to_the_next_day",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2026-09-15"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789430399.9999995,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [
+     "cycle_eol"
+    ],
+    "lifecycle": {
+     "eol": "2026-09-15",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "warning",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "today_stays_before_midnight",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": "2026-09-15"
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 1789430399.9999993,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "lifecycle": {
+     "eol": "2026-09-15",
+     "latest_release": null,
+     "newest_cycle": "13",
+     "support_end": null
+    },
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "ok",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "ValueError",
+    "message": null
+   },
+   "id": "now_out_of_range",
+   "latest": {
+    "cached": true,
+    "checked_at_epoch": 1789000000.5,
+    "cycles": [
+     {
+      "cycle": "13",
+      "eol": false
+     }
+    ],
+    "product": "debian",
+    "status": "ok"
+   },
+   "now": 253402300800.0,
+   "policy": {
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "product": "debian"
+   },
+   "result": {
+    "codename": "trixie",
+    "cycle": "13",
+    "desired_cycle": "13",
+    "expected_id": "debian",
+    "id": "debian",
+    "issues": [],
+    "observed": true,
+    "pretty_name": "Debian GNU/Linux 13 (trixie)",
+    "status": "unknown",
+    "upstream": {
+     "cached": true,
+     "checked_at_epoch": 1789000000.5,
+     "product": "debian",
+     "status": "ok"
+    }
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  }
+ ],
+ "release": [
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "ubuntu",
+   "result": {
+    "HOME_URL": "https://www.ubuntu.com/",
+    "ID": "ubuntu",
+    "ID_LIKE": "debian",
+    "LOGO": "ubuntu-logo",
+    "NAME": "Ubuntu",
+    "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+    "UBUNTU_CODENAME": "noble",
+    "VERSION": "24.04.5 LTS (Noble Numbat)",
+    "VERSION_CODENAME": "noble",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "debian",
+   "result": {
+    "DEBIAN_VERSION_FULL": "13.1",
+    "HOME_URL": "https://www.debian.org/",
+    "ID": "debian",
+    "NAME": "Debian GNU/Linux",
+    "PRETTY_NAME": "Debian GNU/Linux 13 (trixie)",
+    "VERSION": "13 (trixie)",
+    "VERSION_CODENAME": "trixie",
+    "VERSION_ID": "13"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "empty",
+   "result": {
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": ""
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "no_trailing_newline",
+   "result": {
+    "ID": "ubuntu",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\nVERSION_ID=24.04"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "crlf",
+   "result": {
+    "ID": "ubuntu",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\r\nVERSION_ID=\"24.04\"\r\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "cr_only",
+   "result": {
+    "ID": "ubuntu",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\rVERSION_ID=24.04\r"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "double_quotes",
+   "result": {
+    "A": "x",
+    "B": "x y",
+    "C": "",
+    "D": "\"",
+    "E": "\"x",
+    "F": "x\"",
+    "G": "x\"y",
+    "H": "\"x\"'",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "A=\"x\"\nB=\"x y\"\nC=\"\"\nD=\"\nE=\"x\nF=x\"\nG=\"x\"y\"\nH=\"x\"'\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "single_quotes",
+   "result": {
+    "A": "x",
+    "B": "x \"y\"",
+    "C": "",
+    "D": "'",
+    "E": "'x\"",
+    "F": "\"x'",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "A='x'\nB='x \"y\"'\nC=''\nD='\nE='x\"\nF=\"x'\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "escapes",
+   "result": {
+    "A": "a\"b",
+    "B": "a\\b",
+    "C": "$HOME",
+    "D": "`x`",
+    "E": "'x",
+    "F": "a\\nb",
+    "G": "trailing\\",
+    "H": "\\\"",
+    "I": "\\x\\\\",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "A=\"a\\\"b\"\nB=a\\\\b\nC=\\$HOME\nD=\\`x\\`\nE=\\'x\nF=a\\nb\nG=trailing\\\nH=\\\\\\\"\nI=\\x\\\\\\\\\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "names",
+   "result": {
+    "9DIGIT": "2",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "_U": "3",
+    "lower": "1"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "lower=1\n9DIGIT=2\n_U=3\nA-B=4\nA.B=5\n=6\n \u00c4=7\n\u00c4=8\nA B=9\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "spacing",
+   "result": {
+    "C": "d ",
+    "D": "\te",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "A = b\n B=c\nC=d \nD=\te\nexport E=f\n#F=g\n# comment\n\n   \n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "equals_in_value",
+   "result": {
+    "A": "b=c",
+    "B": "=",
+    "C": "=",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "A=b=c\nB==\nC='='\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "duplicates",
+   "result": {
+    "ID": "ubuntu",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=debian\nID=ubuntu\nVERSION_ID=1\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "defaults_only",
+   "result": {
+    "ID": "linux",
+    "NAME": "Linux",
+    "OTHER": "1",
+    "PRETTY_NAME": "Linux"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "OTHER=1\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "unicode_values",
+   "result": {
+    "A": "\u2028x\u2029",
+    "B": "\u000bx\f",
+    "C": "\u001cx\u001d\u0085",
+    "D": "a\u0000b",
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "\u00dcbuntu \u65e5\u672c \ud83d\ude00"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "PRETTY_NAME=\"\u00dcbuntu \u65e5\u672c \ud83d\ude00\"\nA=\u2028x\u2029\nB=\u000bx\f\nC=\u001cx\u001d\u0085\nD=a\u0000b\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "bom",
+   "result": {
+    "ID": "linux",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "\ufeffID=ubuntu\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "uppercase_id",
+   "result": {
+    "ID": "Ubuntu",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=Ubuntu\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "id": "tab_after_value",
+   "result": {
+    "ID": "ubuntu\t",
+    "NAME": "Linux",
+    "PRETTY_NAME": "Linux",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "ok": "ID=ubuntu\t\nVERSION_ID=24.04\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "UnicodeDecodeError",
+    "message": null
+   },
+   "id": "invalid_utf8",
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "hex": "49443d7562756e74750a56455253494f4e5f49443d32342e30340aff0a"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "UnicodeDecodeError",
+    "message": null
+   },
+   "id": "invalid_utf8_late",
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "hex": "49443d7562756e74750a414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141c3"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "UnicodeDecodeError",
+    "message": null
+   },
+   "id": "latin1",
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "hex": "4e414d453d22c3bc220a50524554545f4e414d453d22fc220a"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "id": "fallback_missing",
+   "result": {
+    "DEBIAN_VERSION_FULL": "13.1",
+    "HOME_URL": "https://www.debian.org/",
+    "ID": "debian",
+    "NAME": "Debian GNU/Linux",
+    "PRETTY_NAME": "Debian GNU/Linux 13 (trixie)",
+    "VERSION": "13 (trixie)",
+    "VERSION_CODENAME": "trixie",
+    "VERSION_ID": "13"
+   },
+   "world": {
+    "files": {
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "id": "fallback_denied",
+   "result": {
+    "HOME_URL": "https://www.ubuntu.com/",
+    "ID": "ubuntu",
+    "ID_LIKE": "debian",
+    "LOGO": "ubuntu-logo",
+    "NAME": "Ubuntu",
+    "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+    "UBUNTU_CODENAME": "noble",
+    "VERSION": "24.04.5 LTS (Noble Numbat)",
+    "VERSION_CODENAME": "noble",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "errno": "EACCES"
+     },
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "id": "fallback_directory",
+   "result": {
+    "HOME_URL": "https://www.ubuntu.com/",
+    "ID": "ubuntu",
+    "ID_LIKE": "debian",
+    "LOGO": "ubuntu-logo",
+    "NAME": "Ubuntu",
+    "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+    "UBUNTU_CODENAME": "noble",
+    "VERSION": "24.04.5 LTS (Noble Numbat)",
+    "VERSION_CODENAME": "noble",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "errno": "EISDIR"
+     },
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "id": "fallback_io_error",
+   "result": {
+    "HOME_URL": "https://www.ubuntu.com/",
+    "ID": "ubuntu",
+    "ID_LIKE": "debian",
+    "LOGO": "ubuntu-logo",
+    "NAME": "Ubuntu",
+    "PRETTY_NAME": "Ubuntu 24.04.5 LTS",
+    "UBUNTU_CODENAME": "noble",
+    "VERSION": "24.04.5 LTS (Noble Numbat)",
+    "VERSION_CODENAME": "noble",
+    "VERSION_ID": "24.04"
+   },
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "errno": "EIO"
+     },
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release"
+   ],
+   "error": {
+    "class": "UnicodeDecodeError",
+    "message": null
+   },
+   "id": "no_fallback_after_decode_error",
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "hex": "ff"
+     },
+     "/usr/lib/os-release": {
+      "ok": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "FileNotFoundError",
+    "message": null
+   },
+   "id": "both_missing",
+   "world": {
+    "files": {}
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "FileNotFoundError",
+    "message": null
+   },
+   "id": "denied_then_missing",
+   "world": {
+    "files": {
+     "/etc/os-release": {
+      "errno": "EACCES"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "PermissionError",
+    "message": null
+   },
+   "id": "missing_then_denied",
+   "world": {
+    "files": {
+     "/usr/lib/os-release": {
+      "errno": "EACCES"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "IsADirectoryError",
+    "message": null
+   },
+   "id": "missing_then_directory",
+   "world": {
+    "files": {
+     "/usr/lib/os-release": {
+      "errno": "EISDIR"
+     }
+    }
+   }
+  },
+  {
+   "calls": [
+    "read_file /etc/os-release",
+    "read_file /usr/lib/os-release"
+   ],
+   "error": {
+    "class": "OSError",
+    "message": null
+   },
+   "id": "missing_then_loop",
+   "world": {
+    "files": {
+     "/usr/lib/os-release": {
+      "errno": "ELOOP"
+     }
+    }
+   }
+  }
+ ]
+}

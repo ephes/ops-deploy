@@ -1,0 +1,11 @@
+{
+  "postgres": {
+    "dump_databases": [
+   "h",
+      "spyocast"
+   ]
+  },  "units": ["mho",
+    "hl"
+  ], "ready_urls": [
+    "", "adyz" ]
+}

@@ -1,0 +1,11 @@
+{
+
+"units": [
+    "al"
+  ],
+  "private_media_paths": [
+    "/h/me/pst/ite/private_media"
+  ],  "read_files": [
+    "/etc/gotosocial/scpconfz"
+  ]
+}

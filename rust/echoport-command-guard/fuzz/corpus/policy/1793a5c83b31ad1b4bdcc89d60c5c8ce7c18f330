@@ -1,0 +1,26 @@
+{
+  "postgres": {
+    "dump_databases": [
+      "hoge",
+      "python-podcast"
+   ,
+      "pp"
+    ]
+  },
+  "units": [
+    "gotosocial"
+  ],
+  "private_media_paths": [
+    "/homotsocial/scpconfig.yaml"
+  ],
+  "sqlite_snapshots": [
+    {
+      "database": "/var/lib/gotosociale.db",
+      "owner": "goposocial:gocial",
+      "temp_dir": "/var/tmp/cial-echoport.XXXXXX"
+    }
+  ],
+  "ready_urls": [
+    "http://127.0.0.1:10070/roadyz"
+  ]
+}

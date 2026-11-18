@@ -1,0 +1,1858 @@
+{
+ "template": "roles/static_site_deploy/templates/static-site-httpd.py.j2",
+ "argv": [
+  "static",
+  "--root",
+  "{root}"
+ ],
+ "mtime": 1791035870,
+ "tree": [
+  [
+   "file",
+   "site/index.html",
+   "<!doctype html><title>benchpack registry snapshot</title>\n",
+   420
+  ],
+  [
+   "file",
+   "site/report.md",
+   "# Report\n\nbenchpack registry snapshot \u00fcnicode\n",
+   420
+  ],
+  [
+   "file",
+   "site/snapshot.json",
+   "{\"benchmarks\": [1, 2, 3]}\n",
+   420
+  ],
+  [
+   "file",
+   "site/style.css",
+   "body { margin: 0 }\n",
+   420
+  ],
+  [
+   "file",
+   "site/app.js",
+   "console.log(1);\n",
+   420
+  ],
+  [
+   "file",
+   "site/notes.txt",
+   "plain text\n",
+   420
+  ],
+  [
+   "file",
+   "site/logo.svg",
+   "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
+   420
+  ],
+  [
+   "file",
+   "site/data.csv",
+   "a,b\n1,2\n",
+   420
+  ],
+  [
+   "file",
+   "site/page.htm",
+   "htm page\n",
+   420
+  ],
+  [
+   "file",
+   "site/data",
+   "no extension\n",
+   420
+  ],
+  [
+   "file",
+   "site/archive.tar.gz",
+   "not really gzip\n",
+   420
+  ],
+  [
+   "file",
+   "site/UPPER.HTML",
+   "upper-case extension\n",
+   420
+  ],
+  [
+   "file",
+   "site/a b.txt",
+   "space in the name\n",
+   420
+  ],
+  [
+   "file",
+   "site/\u00fc.txt",
+   "non-ASCII name\n",
+   420
+  ],
+  [
+   "file",
+   "site/.hidden",
+   "dot file\n",
+   420
+  ],
+  [
+   "file",
+   "site/empty.txt",
+   "",
+   420
+  ],
+  [
+   "file",
+   "site/private.txt",
+   "unreadable\n",
+   0
+  ],
+  [
+   "file",
+   "site/sub/index.html",
+   "sub index\n",
+   420
+  ],
+  [
+   "file",
+   "site/sub/page.html",
+   "sub page\n",
+   420
+  ],
+  [
+   "file",
+   "site/htm/index.htm",
+   "htm index\n",
+   420
+  ],
+  [
+   "dir",
+   "site/empty",
+   "",
+   493
+  ],
+  [
+   "file",
+   "outside.txt",
+   "outside the root\n",
+   420
+  ],
+  [
+   "symlink",
+   "site/link.txt",
+   "../outside.txt",
+   0
+  ],
+  [
+   "symlink",
+   "site/linkdir",
+   "sub",
+   0
+  ]
+ ],
+ "cases": [
+  {
+   "id": "root",
+   "method": "GET",
+   "target": "/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET / HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "root-head",
+   "method": "HEAD",
+   "target": "/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"HEAD / HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "index",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "index-head",
+   "method": "HEAD",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"HEAD /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "report-md",
+   "method": "GET",
+   "target": "/report.md",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/markdown",
+    "Content-Length": "47",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "# Report\n\nbenchpack registry snapshot \u00fcnicode\n",
+   "access_log": "\"GET /report.md HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "snapshot-json",
+   "method": "GET",
+   "target": "/snapshot.json",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "application/json",
+    "Content-Length": "26",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "{\"benchmarks\": [1, 2, 3]}\n",
+   "access_log": "\"GET /snapshot.json HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "css",
+   "method": "GET",
+   "target": "/style.css",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/css",
+    "Content-Length": "19",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "body { margin: 0 }\n",
+   "access_log": "\"GET /style.css HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "js",
+   "method": "GET",
+   "target": "/app.js",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/javascript",
+    "Content-Length": "16",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "console.log(1);\n",
+   "access_log": "\"GET /app.js HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "txt",
+   "method": "GET",
+   "target": "/notes.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/plain",
+    "Content-Length": "11",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "plain text\n",
+   "access_log": "\"GET /notes.txt HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "svg",
+   "method": "GET",
+   "target": "/logo.svg",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "image/svg+xml",
+    "Content-Length": "42",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
+   "access_log": "\"GET /logo.svg HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "csv",
+   "method": "GET",
+   "target": "/data.csv",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/csv",
+    "Content-Length": "8",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "a,b\n1,2\n",
+   "access_log": "\"GET /data.csv HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "htm",
+   "method": "GET",
+   "target": "/page.htm",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "htm page\n",
+   "access_log": "\"GET /page.htm HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "no-extension",
+   "method": "GET",
+   "target": "/data",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": "13",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "no extension\n",
+   "access_log": "\"GET /data HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "gz",
+   "method": "GET",
+   "target": "/archive.tar.gz",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "application/gzip",
+    "Content-Length": "16",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "not really gzip\n",
+   "access_log": "\"GET /archive.tar.gz HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "upper-case-extension",
+   "method": "GET",
+   "target": "/UPPER.HTML",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "21",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "upper-case extension\n",
+   "access_log": "\"GET /UPPER.HTML HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "space-encoded",
+   "method": "GET",
+   "target": "/a%20b.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/plain",
+    "Content-Length": "18",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "space in the name\n",
+   "access_log": "\"GET /a%20b.txt HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "non-ascii-encoded",
+   "method": "GET",
+   "target": "/%C3%BC.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/plain",
+    "Content-Length": "15",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "non-ASCII name\n",
+   "access_log": "\"GET /%C3%BC.txt HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "hidden",
+   "method": "GET",
+   "target": "/.hidden",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "dot file\n",
+   "access_log": "\"GET /.hidden HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "empty-file",
+   "method": "GET",
+   "target": "/empty.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/plain",
+    "Content-Length": "0",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /empty.txt HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "query",
+   "method": "GET",
+   "target": "/index.html?x=1",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html?x=1 HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "empty-query",
+   "method": "GET",
+   "target": "/index.html?",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html? HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "double-slash",
+   "method": "GET",
+   "target": "//index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET //index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "inner-double-slash",
+   "method": "GET",
+   "target": "/sub//page.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "sub page\n",
+   "access_log": "\"GET /sub//page.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dot-segment",
+   "method": "GET",
+   "target": "/./index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /./index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "encoded-slash",
+   "method": "GET",
+   "target": "/sub%2Fpage.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "sub page\n",
+   "access_log": "\"GET /sub%2Fpage.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "sub-index",
+   "method": "GET",
+   "target": "/sub/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "10",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "sub index\n",
+   "access_log": "\"GET /sub/ HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "sub-page",
+   "method": "GET",
+   "target": "/sub/page.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "sub page\n",
+   "access_log": "\"GET /sub/page.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect",
+   "method": "GET",
+   "target": "/sub",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/sub/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /sub HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect-head",
+   "method": "HEAD",
+   "target": "/sub",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/sub/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"HEAD /sub HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect-query",
+   "method": "GET",
+   "target": "/sub?x=1",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/sub/?x=1",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /sub?x=1 HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect-empty-query",
+   "method": "GET",
+   "target": "/sub?",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/sub/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /sub? HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect-double-slash",
+   "method": "GET",
+   "target": "//sub",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/sub/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET //sub HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "dir-redirect-encoded",
+   "method": "GET",
+   "target": "/s%75b",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/s%75b/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /s%75b HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "empty-dir-redirect",
+   "method": "GET",
+   "target": "/empty",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 301,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": "0",
+    "Last-Modified": null,
+    "Location": "/empty/",
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /empty HTTP/1.1\" 301 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "symlink-dir",
+   "method": "GET",
+   "target": "/linkdir/page.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "9",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "sub page\n",
+   "access_log": "\"GET /linkdir/page.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "symlink-outside",
+   "method": "GET",
+   "target": "/link.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/plain",
+    "Content-Length": "17",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "outside the root\n",
+   "access_log": "\"GET /link.txt HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "htm-index",
+   "method": "GET",
+   "target": "/htm/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "rust_status": 404,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "10",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "htm index\n",
+   "access_log": "\"GET /htm/ HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "empty-dir",
+   "method": "GET",
+   "target": "/empty/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "rust_status": 404,
+   "d": "D-3",
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "475",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: Directory listing is disabled.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /empty/ HTTP/1.1\" 404 -",
+   "compare": "status"
+  },
+  {
+   "id": "missing",
+   "method": "GET",
+   "target": "/missing.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /missing.html HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "missing-head",
+   "method": "HEAD",
+   "target": "/missing.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"HEAD /missing.html HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "missing-dir",
+   "method": "GET",
+   "target": "/missing/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /missing/ HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "file-trailing-slash",
+   "method": "GET",
+   "target": "/index.html/",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /index.html/ HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "file-as-dir",
+   "method": "GET",
+   "target": "/index.html/x",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /index.html/x HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "unreadable",
+   "method": "GET",
+   "target": "/private.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /private.txt HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "parent-escape",
+   "method": "GET",
+   "target": "/../outside.txt",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /../outside.txt HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "parent-inside",
+   "method": "GET",
+   "target": "/sub/../index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "rust_status": 404,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /sub/../index.html HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "encoded-parent",
+   "method": "GET",
+   "target": "/sub/%2e%2e/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "rust_status": 404,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /sub/%2e%2e/index.html HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "backslash",
+   "method": "GET",
+   "target": "/sub%5Cpage.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /sub%5Cpage.html HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "nul",
+   "method": "GET",
+   "target": "/index.html%00",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "rust_status": 404,
+   "d": "D-2",
+   "status": null,
+   "access_log": null,
+   "compare": "no-response"
+  },
+  {
+   "id": "invalid-utf8",
+   "method": "GET",
+   "target": "/%FF",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /%FF HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "absolute-form",
+   "method": "GET",
+   "target": "http://127.0.0.1/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET http://127.0.0.1/index.html HTTP/1.1\" 404 -",
+   "compare": "html"
+  },
+  {
+   "id": "ims-equal",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:50 GMT"
+    ]
+   ],
+   "status": 304,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": null,
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /index.html HTTP/1.1\" 304 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-equal-head",
+   "method": "HEAD",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:50 GMT"
+    ]
+   ],
+   "status": 304,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": null,
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"HEAD /index.html HTTP/1.1\" 304 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-later",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 14:57:50 GMT"
+    ]
+   ],
+   "status": 304,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": null,
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /index.html HTTP/1.1\" 304 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-earlier",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:49 GMT"
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-directory-index",
+   "method": "GET",
+   "target": "/",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:50 GMT"
+    ]
+   ],
+   "status": 304,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": null,
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET / HTTP/1.1\" 304 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-invalid",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "yesterday"
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "ims-numeric-zone",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:50 +0000"
+    ]
+   ],
+   "rust_status": 200,
+   "d": "D-11",
+   "status": 304,
+   "response_headers": {
+    "Content-Type": null,
+    "Content-Length": null,
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "",
+   "access_log": "\"GET /index.html HTTP/1.1\" 304 -",
+   "compare": "status"
+  },
+  {
+   "id": "ims-with-if-none-match",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Modified-Since",
+     "Sat, 03 Oct 2026 13:57:50 GMT"
+    ],
+    [
+     "If-None-Match",
+     "\"x\""
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "if-none-match-star",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-None-Match",
+     "*"
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "if-match",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Match",
+     "\"nope\""
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "if-unmodified-since",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "If-Unmodified-Since",
+     "Sat, 03 Oct 2026 12:00:00 GMT"
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "range",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Range",
+     "bytes=0-4"
+    ]
+   ],
+   "rust_status": 206,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "range-multi",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Range",
+     "bytes=0-1,3-4"
+    ]
+   ],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "range-unsatisfiable",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Range",
+     "bytes=9999-"
+    ]
+   ],
+   "rust_status": 416,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "range-malformed",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Range",
+     "lines=1-2"
+    ]
+   ],
+   "rust_status": 416,
+   "d": "D-11",
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.1\" 200 -",
+   "compare": "status"
+  },
+  {
+   "id": "post",
+   "method": "POST",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Content-Length",
+     "0"
+    ]
+   ],
+   "status": 501,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "482",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('POST').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+   "access_log": "\"POST /index.html HTTP/1.1\" 501 -",
+   "compare": "html"
+  },
+  {
+   "id": "put",
+   "method": "PUT",
+   "target": "/new.txt",
+   "version": "HTTP/1.1",
+   "headers": [
+    [
+     "Content-Length",
+     "0"
+    ]
+   ],
+   "status": 501,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "481",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('PUT').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+   "access_log": "\"PUT /new.txt HTTP/1.1\" 501 -",
+   "compare": "html"
+  },
+  {
+   "id": "delete",
+   "method": "DELETE",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 501,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "484",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('DELETE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+   "access_log": "\"DELETE /index.html HTTP/1.1\" 501 -",
+   "compare": "html"
+  },
+  {
+   "id": "options",
+   "method": "OPTIONS",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 501,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "485",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('OPTIONS').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+   "access_log": "\"OPTIONS /index.html HTTP/1.1\" 501 -",
+   "compare": "html"
+  },
+  {
+   "id": "lowercase-get",
+   "method": "get",
+   "target": "/index.html",
+   "version": "HTTP/1.1",
+   "headers": [],
+   "status": 501,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "481",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('get').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n",
+   "access_log": "\"get /index.html HTTP/1.1\" 501 -",
+   "compare": "html"
+  },
+  {
+   "id": "http10",
+   "method": "GET",
+   "target": "/index.html",
+   "version": "HTTP/1.0",
+   "headers": [],
+   "status": 200,
+   "response_headers": {
+    "Content-Type": "text/html",
+    "Content-Length": "58",
+    "Last-Modified": "Sat, 03 Oct 2026 13:57:50 GMT",
+    "Location": null,
+    "Connection": null,
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!doctype html><title>benchpack registry snapshot</title>\n",
+   "access_log": "\"GET /index.html HTTP/1.0\" 200 -",
+   "compare": "bytes"
+  },
+  {
+   "id": "http10-missing",
+   "method": "GET",
+   "target": "/missing.html",
+   "version": "HTTP/1.0",
+   "headers": [],
+   "status": 404,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "460",
+    "Last-Modified": null,
+    "Location": null,
+    "Connection": "close",
+    "Cache-Control": "no-cache",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 404</p>\n        <p>Message: File not found.</p>\n        <p>Error code explanation: 404 - Nothing matches the given URI.</p>\n    </body>\n</html>\n",
+   "access_log": "\"GET /missing.html HTTP/1.0\" 404 -",
+   "compare": "html"
+  }
+ ]
+}

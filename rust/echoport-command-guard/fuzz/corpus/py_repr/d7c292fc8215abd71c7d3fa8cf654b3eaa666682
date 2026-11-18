@@ -1,0 +1,1 @@
+runuser -u'' postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d django_chat_restore_42 -c 'SELECT count(*) FROM public.wagtailcore_page;'
