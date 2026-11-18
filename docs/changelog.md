@@ -10,6 +10,13 @@
   minute). Unset leaves the environment file byte for byte as before
   (`docs/services/rustfs.md`, "What runs").
 
+- rustfs: optional `tier_free_version_recovery: false` writes
+  `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walks every
+  bucket for tier free versions up to every 10 minutes even without a remote
+  tier (upstream #8758, fixed in 1.0.5). The default (true) leaves the
+  environment file unchanged. Disable it only on servers without a tier
+  configuration; the role does not check for tiers created outside it.
+
 - chesslab: new `trusted_proxy_hops` (`0` default, not rendered; `1` renders
   `CHESSLAB_TRUSTED_PROXY_HOPS="1"` into `.env`). With `1` Chesslab keys its
   login address window on Traefik's right-most `X-Forwarded-For` entry instead

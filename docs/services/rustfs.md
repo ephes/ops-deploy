@@ -53,6 +53,17 @@ so a running server never has its executable overwritten.
   after the last one ended and the scanner never rests. A longer cycle delays
   only scanner work: noncurrent-version expiry, usage counts and the scanner's
   heal checks. Changing it rewrites the environment file and restarts RustFS.
+- `tier_free_version_recovery` (default true) set to false writes
+  `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walks every
+  bucket up to every 10 minutes for tier free versions even when no remote tier
+  exists (upstream issue #8758, fixed in 1.0.5 by skipping empty tier recovery
+  scans). This role configures no tiers, but it does not inspect tiers
+  configured outside it: disable the sweep only on a server whose data root has
+  no tier configuration (no `.rustfs.sys/config/tier-config.bin` or
+  `tier-config.json`; `mc ilm tier ls <alias>` answers successfully with no
+  tiers). With a tier, a disabled sweep
+  leaves free versions of transitioned objects unreclaimed until it is enabled
+  again. Changing it rewrites the environment file and restarts RustFS.
 - A port preflight refuses when anything but `rustfs.service` holds the port.
   After rollout the deploy waits for the port and for `GET /health/ready`.
 - With `expose_via_traefik`, `/etc/traefik/dynamic/rustfs.yml` routes

@@ -277,6 +277,12 @@ class RustfsConfig(RoleConfig):
     # speed, so a long full scan restarts almost at once); a replica can wait
     # hours, since its scanner only expires noncurrent versions and counts usage.
     scanner_cycle_seconds: Annotated[StrictInt, Field(ge=60, le=7 * 24 * 3600)] | None = None
+    # RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED: RustFS 1.0.4 walks every bucket
+    # up to every 10 minutes looking for tier free versions even when no remote
+    # tier exists (upstream #8758, fixed in 1.0.5). False writes the opt-out;
+    # True keeps the environment file unchanged. Only for servers without a
+    # tier configuration (this role never creates one, nor checks for one).
+    tier_free_version_recovery: StrictBool = True
     # A controller copy of the extracted executable (owned fixtures, offline
     # installs); it must match the pinned binary digest of the host's arch.
     local_binary: Path | None = None

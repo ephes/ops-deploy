@@ -197,6 +197,26 @@ def test_scanner_cycle_is_rendered_only_when_set() -> None:
             RustfsConfig(scanner_cycle_seconds=bad)
 
 
+def test_tier_recovery_opt_out_is_rendered_only_when_disabled() -> None:
+    default = render("rustfs.env.j2", RustfsConfig(), CREDS)
+    assert "TIER" not in default
+    off = render("rustfs.env.j2", RustfsConfig(tier_free_version_recovery=False), CREDS)
+    assert 'RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"' in off.splitlines()
+    assert off.startswith(default)
+    both = render(
+        "rustfs.env.j2",
+        RustfsConfig(scanner_cycle_seconds=21600, tier_free_version_recovery=False),
+        CREDS,
+    )
+    lines = both.splitlines()
+    assert lines.index('RUSTFS_SCANNER_CYCLE="21600"') < lines.index(
+        'RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"'
+    )
+    for bad in ("false", 0):
+        with pytest.raises(ValidationError, match="tier_free_version_recovery"):
+            RustfsConfig(tier_free_version_recovery=bad)
+
+
 def test_templates_disable_console_alternate_protocols_and_update_checks() -> None:
     env = render("rustfs.env.j2", RustfsConfig(), CREDS)
     for line in (
