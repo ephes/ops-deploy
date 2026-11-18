@@ -20,6 +20,38 @@ to it means reverting the S12 change (PLAN.md 7.6).
 The ops-control manual CLI `just software-live --host H` runs the installed
 release on hosts switched to `rust` (S11, PLAN.md 4.2 item 10).
 
+## Traefik patch window (0.1.3)
+
+The first behaviour of the port that the Python program never had (it is
+not in the frozen oracle under `rust/oracle/`, and its fixtures do not use
+it). ops-control's Traefik patch policy (`traefik-releases.yml`
+`patch_policy`) installs a new patch of its line only after a cooldown since
+GitHub published it (72 h) on the first host (staging), and after a soak on
+staging (24 h more) on the others. During that time a host runs an older
+patch on purpose; 0.1.2 reported it as `outdated_running_version` and the
+Nyxmon check `summary.traefik_ok` warned.
+
+- Policy: `traefik.patch_line` (`major.minor`, e.g. `"3.7"`) and
+  `traefik.patch_window_hours` (an integer, 1 to 720), both or neither
+  (`invalid Traefik patch window` otherwise). ops-control's policy resolver
+  sets them for the hosts of the patch policy: the cooldown on the first,
+  cooldown plus soak on the others. A policy without them behaves as 0.1.2;
+  0.1.2 ignores them (a policy may carry extra keys).
+- Upstream: the Traefik lookup keeps GitHub's `published_at` of the latest
+  release (result and cache) when it has GitHub's `YYYY-MM-DDTHH:MM:SSZ`
+  form. A cache written by 0.1.2 has none; it is used until it expires (one
+  day), and until then no window applies.
+- Observation: when the running release is older than the latest one, both
+  are in the policy's patch line, the latest has `published_at`, and the
+  clock is before `published_at + patch_window_hours`, the observation gets
+  `notices: ["newer_patch_in_patch_window"]` and `patch_window_ends_at`
+  (`YYYY-MM-DDTHH:MM:SSZ`) instead of the issue `outdated_running_version`;
+  without other issues its status stays `ok`, so `summary.traefik_ok` is
+  `true`. Outside the window, for another line (a new minor release) or
+  without `published_at` the issue is reported as before. Only the latest
+  release is known: a host that skipped an older patch whose own window has
+  passed is still within the window of the newest one.
+
 ## Status
 
 Slice S2 (crate skeleton):

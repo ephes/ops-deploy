@@ -29,11 +29,16 @@ use crate::probe::{
 };
 use crate::pyjson::{INT_MAX_STR_DIGITS, int_digits_error, type_name};
 use crate::report::Observation;
-use crate::version::{Release, python_strip, version};
+use crate::upstream::published_epoch;
+use crate::version::{Release, numeric_version, python_strip, version};
 
 /// The suffix the kernel appends to the target of `/proc/<pid>/exe` when the
 /// executable was removed or replaced.
 const DELETED: &[u8] = b" (deleted)";
+
+/// The notice (0.1.3) that replaces `outdated_running_version` while a newer
+/// patch of the policy's patch line is inside its patch window.
+pub const PATCH_WINDOW_NOTICE: &str = "newer_patch_in_patch_window";
 
 /// `(?m)^Version:\s*(v?\d+\.\d+\.\d+)\s*$` with Python's `\s` (Unicode
 /// whitespace plus U+001C..U+001F) and ASCII digits (PLAN.md 4.2 item 11).
@@ -244,6 +249,8 @@ struct TraefikPolicy<'a> {
     unit: &'a str,
     binary_path: &'a str,
     desired_version: Value,
+    /// 0.1.3: `patch_line` (`major.minor`) and `patch_window_hours`.
+    patch: Option<(Release, u64)>,
 }
 
 impl<'a> TraefikPolicy<'a> {
@@ -257,6 +264,13 @@ impl<'a> TraefikPolicy<'a> {
                 .get("desired_version")
                 .cloned()
                 .unwrap_or(Value::Null),
+            patch: match (
+                policy.get("patch_line").and_then(Value::as_str),
+                policy.get("patch_window_hours").and_then(Value::as_u64),
+            ) {
+                (Some(line), Some(hours)) => numeric_version(line).ok().map(|line| (line, hours)),
+                _ => None,
+            },
         }
     }
 }
@@ -385,12 +399,58 @@ fn observe_into<S: System>(
         if let Some(running_version) = &running.version
             && version(running_version)? < version_of(subscript(latest, "version")?)?
         {
-            result.push_issue("outdated_running_version");
+            match patch_window_end(system, policy, running_version, latest)? {
+                Some(ends) => {
+                    result
+                        .set("notices", vec![Value::from(PATCH_WINDOW_NOTICE)])
+                        .set("patch_window_ends_at", ends);
+                }
+                None => {
+                    result.push_issue("outdated_running_version");
+                }
+            }
         }
         let status = if result.has_issues() { "warning" } else { "ok" };
         result.set("status", status);
     }
     Ok(())
+}
+
+/// 0.1.3, not in the Python program (README "Traefik patch window"): while
+/// a newer release is inside the patch window of the Traefik patch policy,
+/// the end of that window as `YYYY-MM-DDTHH:MM:SSZ`; `None` otherwise, and
+/// the newer release is `outdated_running_version` as before. Inside means:
+/// the policy has a patch window, the running and the newer release are both
+/// in its patch line, the upstream answer has GitHub's `published_at`, and
+/// `now` is before `published_at` plus `patch_window_hours`.
+fn patch_window_end<S: System>(
+    system: &S,
+    policy: &TraefikPolicy<'_>,
+    running: &str,
+    latest: &Value,
+) -> Result<Option<String>, PyError> {
+    let Some((line, hours)) = &policy.patch else {
+        return Ok(None);
+    };
+    let newer = version_of(subscript(latest, "version")?)?;
+    let running = version(running)?;
+    if newer[..2] != line[..] || running[..2] != line[..] {
+        return Ok(None);
+    }
+    let Some(published) = latest
+        .get("published_at")
+        .and_then(Value::as_str)
+        .and_then(published_epoch)
+    else {
+        return Ok(None);
+    };
+    let window = i64::try_from(*hours).unwrap_or(i64::MAX) * 3600;
+    let ends = published.saturating_add(window);
+    if system.now() >= ends as f64 {
+        return Ok(None);
+    }
+    Ok(chrono::DateTime::from_timestamp(ends, 0)
+        .map(|ends| ends.format("%Y-%m-%dT%H:%M:%SZ").to_string()))
 }
 
 #[cfg(test)]
@@ -537,6 +597,107 @@ mod tests {
         // images that are read again.
         assert!(reused >= 30, "{reused}");
         assert!(hashed_twice >= 10, "{hashed_twice}");
+    }
+
+    /// 0.1.3 (README "Traefik patch window"): the Python case
+    /// `new_upstream_and_unassigned_desired` (running 3.7.9) with an assigned
+    /// desired version, a patch window in the policy, and an upstream answer
+    /// with `published_at`, observed at `now`.
+    fn patch_window_case(
+        window: Option<(&str, u64)>,
+        latest: &str,
+        published_at: Option<&str>,
+        now: f64,
+    ) -> (Map<String, Value>, Vec<String>) {
+        let case = fixtures()
+            .observe
+            .into_iter()
+            .find(|case| case.id == "new_upstream_and_unassigned_desired")
+            .expect("the Python case");
+        let mut policy = case.policy.clone();
+        policy["desired_version"] = "3.7.9".into();
+        if let Some((line, hours)) = window {
+            policy["patch_line"] = line.into();
+            policy["patch_window_hours"] = hours.into();
+        }
+        let mut upstream = case.latest.clone();
+        upstream["version"] = latest.into();
+        if let Some(published_at) = published_at {
+            upstream["published_at"] = published_at.into();
+        }
+        let mut world = case.world;
+        world.now = vec![now];
+        let fake = FakeSystem::new(world);
+        let result = observe(&fake, &policy, &upstream);
+        (result.as_map().clone(), calls(&fake))
+    }
+
+    #[test]
+    fn newer_patch_inside_the_patch_window_is_a_notice() {
+        let published = "2026-11-17T12:00:00Z";
+        let at = |hours: f64| 1_794_916_800.0 + hours * 3600.0;
+        // Inside the window: no issue, status ok, one notice and the end.
+        for (hours, now) in [
+            (72, at(0.0)),
+            (72, at(71.99)),
+            (96, at(95.0)),
+            (72, at(-1.0)),
+        ] {
+            let (result, calls) =
+                patch_window_case(Some(("3.7", hours)), "3.7.12", Some(published), now);
+            assert_eq!(result["status"], "ok", "{hours} {now}: {result:?}");
+            assert_eq!(result["issues"], serde_json::json!([]), "{hours} {now}");
+            assert_eq!(
+                result["notices"],
+                serde_json::json!([PATCH_WINDOW_NOTICE]),
+                "{hours} {now}"
+            );
+            let ends = if hours == 72 {
+                "2026-11-20T12:00:00Z"
+            } else {
+                "2026-11-21T12:00:00Z"
+            };
+            assert_eq!(result["patch_window_ends_at"], ends, "{hours} {now}");
+            assert_eq!(result["upstream"]["published_at"], published);
+            assert_eq!(
+                calls.iter().filter(|call| *call == "now").count(),
+                1,
+                "{calls:?}"
+            );
+        }
+        // Everything else is the issue of before, without the new fields.
+        for (window, latest, published_at, now) in [
+            (Some(("3.7", 72)), "3.7.12", Some(published), at(72.0)),
+            (Some(("3.7", 72)), "3.7.12", Some(published), at(500.0)),
+            (None, "3.7.12", Some(published), at(1.0)),
+            (Some(("3.7", 72)), "3.8.0", Some(published), at(1.0)),
+            (Some(("3.8", 72)), "3.8.0", Some(published), at(1.0)),
+            (Some(("3.6", 72)), "3.7.12", Some(published), at(1.0)),
+            (Some(("3.7", 72)), "3.7.12", None, at(1.0)),
+            (
+                Some(("3.7", 72)),
+                "3.7.12",
+                Some("2026-11-17T12:00:00+00:00"),
+                at(1.0),
+            ),
+        ] {
+            let id = format!("{window:?} {latest} {published_at:?} {now}");
+            let (result, _) = patch_window_case(window, latest, published_at, now);
+            assert_eq!(result["status"], "warning", "{id}: {result:?}");
+            assert_eq!(
+                result["issues"],
+                serde_json::json!(["outdated_running_version"]),
+                "{id}"
+            );
+            assert!(!result.contains_key("notices"), "{id}");
+            assert!(!result.contains_key("patch_window_ends_at"), "{id}");
+        }
+        // Without a newer release the window changes nothing and reads no clock.
+        let (result, calls) =
+            patch_window_case(Some(("3.7", 72)), "3.7.9", Some(published), at(1.0));
+        assert_eq!(result["status"], "ok");
+        assert!(!result.contains_key("notices"));
+        assert!(!calls.contains(&"now".to_owned()), "{calls:?}");
     }
 
     fn script(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {

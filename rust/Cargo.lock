@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "software-live"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "bcrypt",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "software-live-apt"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "rust-apt",
  "rustix",

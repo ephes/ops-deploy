@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- software-live 0.1.3 (`rust/software-live`, `software-live-apt` follows):
+  a newer Traefik patch inside the patch window of ops-control's Traefik
+  patch policy is a notice, not a warning. New optional policy keys
+  `traefik.patch_line` and `traefik.patch_window_hours`; the Traefik upstream
+  lookup keeps GitHub's `published_at`; while the running release is older
+  than the latest of the same patch line and the clock is before
+  `published_at + patch_window_hours`, the observation reports
+  `notices: ["newer_patch_in_patch_window"]` and `patch_window_ends_at`
+  instead of `outdated_running_version`, so `summary.traefik_ok` stays true
+  (`rust/software-live/README.md`, "Traefik patch window"). Without the keys
+  status and issues are unchanged; the state's `traefik.upstream` and the
+  upstream cache now also carry `published_at`. The first release built with
+  `rust/scripts/release.py`.
+
 - Rust release downloads come from ops-deploy: the install helper's
   `DEFAULT_URL` (`helpers/templates/rust_release_host.py.txt`), the
   software-live switch's variant URL (new `default_release_url`) and the DNS

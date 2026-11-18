@@ -29,6 +29,11 @@ const OS_IDS: [&str; 2] = ["debian", "ubuntu"];
 static CYCLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]+(?:\.[0-9]+)?$").expect("valid pattern"));
 static MAJOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+$").expect("valid pattern"));
+/// `traefik.patch_line` (0.1.3): the `major.minor` of the patch policy.
+pub static PATCH_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9]+\.[0-9]+$").expect("valid pattern"));
+/// The longest `traefik.patch_window_hours` (0.1.3) a policy may give: 30 days.
+pub const MAX_PATCH_WINDOW_HOURS: u64 = 720;
 /// The PostgreSQL cluster name pattern (also used for `pg_lsclusters`).
 pub static CLUSTER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_-]*$").expect("valid pattern"));
@@ -126,6 +131,20 @@ pub fn validate(policy: &Value) -> Result<(), PyError> {
                 type_name(other)
             )));
         }
+    }
+    // 0.1.3, not in the Python program: the optional patch window of the
+    // Traefik patch policy (README "Traefik patch window"). Both keys or none.
+    match (
+        get(traefik, "patch_line")?,
+        get(traefik, "patch_window_hours")?,
+    ) {
+        (None, None) => {}
+        (Some(Value::String(line)), Some(Value::Number(hours)))
+            if PATCH_LINE.is_match(line)
+                && hours
+                    .as_u64()
+                    .is_some_and(|hours| (1..=MAX_PATCH_WINDOW_HOURS).contains(&hours)) => {}
+        _ => return Err(PyError::value("invalid Traefik patch window")),
     }
 
     let os = subscript(policy, "os")?;
@@ -250,6 +269,48 @@ pub(crate) mod tests {
 
     fn cases() -> Vec<Case> {
         serde_json::from_str(include_str!("../fixtures/policy.json")).unwrap()
+    }
+
+    /// 0.1.3: the optional patch window, both keys or none.
+    #[test]
+    fn traefik_patch_window_is_optional_and_checked() {
+        let with = |extra: Value| {
+            let mut traefik = serde_json::json!({"expected": true, "unit": "traefik.service",
+                "binary_path": "/usr/bin/traefik", "desired_version": "3.7.19"});
+            for (key, value) in extra.as_object().unwrap() {
+                traefik[key] = value.clone();
+            }
+            serde_json::json!({"host": "h", "traefik": traefik,
+                "os": {"expected_id": "debian", "product": "debian", "desired_cycle": "13"},
+                "postgresql": {"expected": false}})
+        };
+        assert!(validate(&with(serde_json::json!({}))).is_ok());
+        for hours in [1, 72, 96, 720] {
+            let ok = with(serde_json::json!({"patch_line": "3.7", "patch_window_hours": hours}));
+            assert!(validate(&ok).is_ok(), "{hours}");
+        }
+        for extra in [
+            serde_json::json!({"patch_line": "3.7"}),
+            serde_json::json!({"patch_window_hours": 72}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": 0}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": 721}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": 72.0}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": -1}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": true}),
+            serde_json::json!({"patch_line": "3.7", "patch_window_hours": "72"}),
+            serde_json::json!({"patch_line": "3", "patch_window_hours": 72}),
+            serde_json::json!({"patch_line": "3.7.1", "patch_window_hours": 72}),
+            serde_json::json!({"patch_line": "v3.7", "patch_window_hours": 72}),
+            serde_json::json!({"patch_line": 3.7, "patch_window_hours": 72}),
+            serde_json::json!({"patch_line": null, "patch_window_hours": null}),
+        ] {
+            let error = validate(&with(extra.clone())).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "ValueError: invalid Traefik patch window",
+                "{extra}"
+            );
+        }
     }
 
     #[test]

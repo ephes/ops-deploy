@@ -21,7 +21,7 @@
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
 
 use crate::error::PyError;
@@ -202,6 +202,14 @@ fn epoch_value(now: f64) -> Value {
     pyjson::number_from_f64(now).map_or(Value::Null, Value::Number)
 }
 
+/// The epoch seconds of a GitHub timestamp `YYYY-MM-DDTHH:MM:SSZ` (UTC).
+pub fn published_epoch(text: &str) -> Option<i64> {
+    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%SZ")
+        .ok()
+        .filter(|parsed| parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() == text)
+        .map(|parsed| parsed.and_utc().timestamp())
+}
+
 /// `upstream(cache_path, now)`: the latest stable Traefik release.
 pub fn upstream<S: System + ?Sized>(system: &S, cache_path: Option<&Path>, now: f64) -> Value {
     let mut cached = None;
@@ -260,6 +268,14 @@ fn refresh_release<S: System + ?Sized>(
         "version".into(),
         tag.strip_prefix('v').unwrap_or(tag).into(),
     );
+    // 0.1.3, not in the Python program: when GitHub published the release,
+    // for the Traefik patch window (traefik.rs). Kept only in GitHub's
+    // `YYYY-MM-DDTHH:MM:SSZ` form; without it no window applies.
+    if let Some(Value::String(published)) = data.get("published_at")
+        && published_epoch(published).is_some()
+    {
+        result.insert("published_at".into(), published.clone().into());
+    }
     result.insert("checked_at_epoch".into(), epoch_value(now));
     if let Some(path) = cache_path {
         system
@@ -575,6 +591,72 @@ mod tests {
         assert_eq!(UPSTREAM_URL, constants.upstream_url);
         assert_eq!(lifecycle_url("{product}"), constants.lifecycle_url);
         assert_eq!(UPSTREAM_TTL, constants.ttl);
+    }
+
+    /// 0.1.3: GitHub's `published_at` is kept (result and cache) only in
+    /// GitHub's own form; a cached answer returns it as written.
+    #[test]
+    fn release_keeps_github_published_at() {
+        assert_eq!(published_epoch("2026-11-17T12:00:00Z"), Some(1_794_916_800));
+        for invalid in [
+            "2026-11-17T12:00:00+00:00",
+            "2026-11-17 12:00:00Z",
+            "2026-11-17T12:00:00.5Z",
+            "2026-11-17",
+            "2026-02-30T12:00:00Z",
+            " 2026-11-17T12:00:00Z",
+            "",
+        ] {
+            assert_eq!(published_epoch(invalid), None, "{invalid:?}");
+        }
+        let cache = PathBuf::from(at("upstream.json"));
+        for (body, expected) in [
+            (
+                r#"{"tag_name": "v3.7.20", "published_at": "2026-11-17T12:00:00Z"}"#,
+                Some("2026-11-17T12:00:00Z"),
+            ),
+            (
+                r#"{"tag_name": "v3.7.20", "published_at": "2026-11-17"}"#,
+                None,
+            ),
+            (r#"{"tag_name": "v3.7.20", "published_at": null}"#, None),
+            (r#"{"tag_name": "v3.7.20"}"#, None),
+        ] {
+            let fake = FakeSystem::new(World::default());
+            fake.push_http(&[spec(UPSTREAM_URL, true, body)]);
+            let answer = upstream(&fake, Some(&cache), 1_763_400_000.0);
+            assert_eq!(answer["status"], "ok", "{body}");
+            assert_eq!(answer["version"], "3.7.20", "{body}");
+            assert_eq!(
+                answer.get("published_at").and_then(Value::as_str),
+                expected,
+                "{body}"
+            );
+            let writes = fake.writes.borrow();
+            assert_eq!(writes.len(), 1, "{body}");
+            assert_eq!(
+                writes[0].value.get("published_at").and_then(Value::as_str),
+                expected,
+                "{body}"
+            );
+            // The next lookup within a day answers from the cache, as written.
+            let fake = FakeSystem::new(World {
+                files: BTreeMap::from([(
+                    at("upstream.json"),
+                    FileEntry::Text {
+                        ok: writes[0].value.to_string(),
+                    },
+                )]),
+                ..World::default()
+            });
+            let cached = upstream(&fake, Some(&cache), 1_763_400_001.0);
+            assert_eq!(cached["cached"], true, "{body}");
+            assert_eq!(
+                cached.get("published_at").and_then(Value::as_str),
+                expected,
+                "{body}"
+            );
+        }
     }
 
     #[test]
