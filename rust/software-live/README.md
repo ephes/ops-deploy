@@ -11,7 +11,8 @@ The Rust release runs in production on all four hosts since 2026-10-23
 (cutover S10, PLAN.md 8.2 and section 10) with the shadow off on fractal,
 macmini, staging and production: `software-live-v0.1.1` (S9b, see
 "Release") until 2026-11-10, then `software-live-v0.1.2`, the same code
-rebuilt with tokio 1.54.1 (RUSTSEC-2026-0384). Since the Python retirement (S12, after the
+rebuilt with tokio 1.54.1 (RUSTSEC-2026-0384), and since 2026-11-18
+`software-live-v0.1.3` (the Traefik patch window). Since the Python retirement (S12, after the
 7-day soak that ended 2026-10-30) the role's base units run the release
 directly; the drop-ins of S6, the deployed Python program and `python3-apt`
 in the role's packages are gone. The Python program stays in this
@@ -245,6 +246,7 @@ no release installs itself.
 | 0.1.0 (S7, first release: `validate`, `collect`, `serve`, `export-inventory`) | `software-live-v0.1.0` (`98c68001`) | `ubuntu24.04`: `89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`; `debian13`: `9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3` | `software-live` 3,464,320 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
 | 0.1.1 (S9b: the Traefik binary hashed once per run, SHA-256 from `ring`; reports unchanged) | `software-live-v0.1.1` (`2f6091e9`) | `ubuntu24.04`: `65be5aa98574b73f87e385610d4fa9ffebad99d4ecf64238991abeef5662fc10`; `debian13`: `502663e0d25bdb750996801c28bc6dfc8d5e5b5e7bc0910c89d2cb62d889aec4` | `software-live` 3,454,264 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
 | 0.1.2 (0.1.1's code with tokio 1.54.1, RUSTSEC-2026-0384) | `software-live-v0.1.2` (`e317ef13`) | `ubuntu24.04`: `eeb142bafaf85f014b81bb4d3d906279aa2613e15323ef349bcfc084b3f6502b`; `debian13`: `5414228170380ef924fb5f8d0b8f239a63308fa8bb9c401d141986158cc0be9d` | `software-live` 3,454,896 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
+| 0.1.3 (the Traefik patch window; first release built by `rust/scripts/release.py`) | `software-live-v0.1.3` (`298aafff`) | `ubuntu24.04`: `94576f2b3ed0d5504d5e7bb9075ba8097e9a99cc7e833b61c1d84706f38fab75`; `debian13`: `52203458cc4b2302638d01c5288d0ddc4741f523c29c011db188f9fa291bb1ea` | `software-live` 3,511,176 bytes (same file in both), `software-live-apt` 464,144 / 461,984 bytes; highest `GLIBC_2.34` |
 
 ## Layout
 

@@ -14,7 +14,9 @@
   (`rust/software-live/README.md`, "Traefik patch window"). Without the keys
   status and issues are unchanged; the state's `traefik.upstream` and the
   upstream cache now also carry `published_at`. The first release built with
-  `rust/scripts/release.py`.
+  `rust/scripts/release.py`. Released as `software-live-v0.1.3` (from
+  `298aafff`; README release table) and live on all four hosts since
+  2026-11-18 (ops-control pin `28e59c65`).
 
 - Rust release downloads come from ops-deploy: the install helper's
   `DEFAULT_URL` (`helpers/templates/rust_release_host.py.txt`), the
