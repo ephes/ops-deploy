@@ -105,7 +105,7 @@ def test_fresh_install_downloads_verified_artifact_then_defers_iam() -> None:
     names = [name.removeprefix(PREFIX) for name in run.mutating_changed_ops]
     assert "Download pinned RustFS" in names
     assert names.index("Download pinned RustFS") < names.index("Converge declared RustFS buckets and IAM")
-    download = next(command for command in run.executed_commands if "rustfs-linux-x86_64-musl-v1.0.4.zip" in command)
+    download = next(command for command in run.executed_commands if "rustfs-linux-x86_64-musl-v1.0.6.zip" in command)
     assert RUSTFS_ARTIFACTS["x86_64"].archive_sha256 in download
     assert RUSTFS_ARTIFACTS["x86_64"].binary_sha256 in download
 
@@ -321,8 +321,8 @@ def test_identity_credentials_must_match_declarations_and_differ_from_root() -> 
 
 def test_pins_are_the_published_release_digests() -> None:
     assert {artifact.archive for artifact in RUSTFS_ARTIFACTS.values()} == {
-        "rustfs-linux-x86_64-musl-v1.0.4.zip",
-        "rustfs-linux-aarch64-musl-v1.0.4.zip",
+        "rustfs-linux-x86_64-musl-v1.0.6.zip",
+        "rustfs-linux-aarch64-musl-v1.0.6.zip",
     }
     assert all(len(artifact.binary_sha256) == 64 for artifact in RUSTFS_ARTIFACTS.values())
 

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- rustfs: pinned RustFS 1.0.6 (GitHub release of 2026-11-15, tag commit
+  `de9009d88264`) instead of 1.0.4. Archive digests from the release's
+  `SHA256SUMS`, provenance subjects and asset digests (re-checked 2026-11-23);
+  binary digests from the single archive member (`config.py`). A deploy
+  replaces the executable and restarts RustFS once. Environment unchanged:
+  `RUSTFS_SCANNER_CYCLE` stays the normal cadence between cycles (1.0.6 may
+  insert a short retry after a deferred cycle) and
+  `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED` is still read; since 1.0.5 the
+  first scanner cycle after a restart with a warm usage cache starts after
+  `min(cycle, 60 s)`. The Echoport provisioner container test pins the
+  `rustfs/rustfs:1.0.6` image by digest.
+  Replication targets need `s3:DeleteObjectVersion` on the replicated
+  buckets: since 1.0.5 RustFS authorizes replicated deletes carrying a source
+  version ID (delete markers too) that way (docs and the local replication test policy).
+
 - snappymail 3.1.4 (from 3.0.0; signed archive verified with the release
   key): a new `_mail_web/releases` manifest built like the earlier ones (the
   builder reproduces the 3.0.0 manifest), 3.0.0 becomes `previous_only` for

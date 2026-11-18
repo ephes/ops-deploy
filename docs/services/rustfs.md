@@ -9,14 +9,17 @@ noncurrent-version expiry and a replication monitor are optional declarations
 
 ## Pinned release
 
-RustFS **1.0.4** (GitHub release of 2026-10-25, commit `46337942d55f`), the
-latest stable release when pinned, with no published advisory affecting it.
+RustFS **1.0.6** (GitHub release of 2026-11-15, tag commit `de9009d88264`),
+the latest stable release when pinned, with no published advisory affecting
+it. 1.0.6 replaced 1.0.4 (pinned 2026-11-03); the 1.0.5/1.0.6 scanner fixes
+(usage convergence, partial-cycle progress, skipped empty tier recovery
+scans) address the replica's idle load measured on 1.0.4.
 The deploy picks the artifact for the host's `uname -m`:
 
 | Arch | Release archive | Archive sha256 | `rustfs` sha256 |
 |---|---|---|---|
-| x86_64 | `rustfs-linux-x86_64-musl-v1.0.4.zip` | `4924ad4b…c534b` | `96eab436…d5ecc` |
-| aarch64 | `rustfs-linux-aarch64-musl-v1.0.4.zip` | `81414fd0…187a` | `d3a23915…544f` |
+| x86_64 | `rustfs-linux-x86_64-musl-v1.0.6.zip` | `a4d109a0…398f` | `9bb7de39…f0f1` |
+| aarch64 | `rustfs-linux-aarch64-musl-v1.0.6.zip` | `dcbe86db…5855` | `21e3f324…13fb` |
 
 Full digests live in `config.py` (`RUSTFS_ARTIFACTS`); the archive digests are
 the release's `SHA256SUMS` and provenance subjects. A matching installed
@@ -54,19 +57,27 @@ so a running server never has its executable overwritten.
   budget, ended partial and the next one started about a minute later, so the
   scanner never rested. A longer pause delays only scanner work:
   noncurrent-version expiry, usage counts and the scanner's heal checks.
-  RustFS 1.0.4 skips the pause while it still rebuilds a usage snapshot it did
-  not find at startup (admin `GET /rustfs/admin/v3/scanner/status`,
-  `cycle_schedule.usage_bootstrap_rebuild_pending`). After a change check
-  `runtime_config.cycle_interval_seconds` (source `env`), and once the first
-  cycle has ended (`cycle_schedule.effective_interval_available` true; before
-  that the flag reads false by default) that the flag is false and
-  `effective_interval_seconds` is the configured value.
+  An explicit value is the normal inter-cycle cadence; dirty-usage
+  notifications do not bypass it, but after a deferred cycle RustFS 1.0.6 may
+  schedule a short retry (seconds) and reports that as the effective
+  interval. RustFS skips the pause while it still
+  rebuilds a usage snapshot it did not find at startup (admin `GET
+  /rustfs/admin/v3/scanner/status`,
+  `cycle_schedule.usage_bootstrap_rebuild_pending`). Since 1.0.5 the first
+  cycle after a restart with a warm usage cache starts after
+  `min(cycle, 60 s)` (±10 %), not after the whole interval; a cold cache or
+  active replication can start it at once. Expect one scan right after every
+  restart, then the configured pause; a deferred scan (the first one too) can
+  be followed by a retry within seconds before that pause applies. After a change check
+  `runtime_config.cycle_interval_seconds` (source `env`); that is the
+  configured value. `cycle_schedule.effective_interval_seconds` may show a
+  short retry after a deferred cycle and is not a check of the setting.
   Changing it rewrites the environment file and restarts RustFS.
 - `tier_free_version_recovery` (default true) set to false writes
-  `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walks every
+  `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walked every
   bucket up to every 10 minutes for tier free versions even when no remote tier
   exists (upstream issue #8758, fixed in 1.0.5 by skipping empty tier recovery
-  scans). This role configures no tiers, but it does not inspect tiers
+  scans; 1.0.6 still reads the opt-out). This role configures no tiers, but it does not inspect tiers
   configured outside it: disable the sweep only on a server whose data root has
   no tier configuration (no `.rustfs.sys/config/tier-config.bin` or
   `tier-config.json`; `mc ilm tier ls <alias>` answers successfully with no
@@ -131,9 +142,13 @@ target write checks the remote bucket.
   replicated buckets (versioned, `noncurrent_expiry_days`), a replicator
   identity whose policy allows the replication actions on those buckets
   (`s3:ReplicateObject`, `s3:ReplicateDelete`, `s3:ReplicateTags`, `s3:PutObject`,
-  `s3:DeleteObject`, the bucket reads `s3:GetBucketVersioning`,
+  `s3:DeleteObject`, `s3:DeleteObjectVersion`, the bucket reads `s3:GetBucketVersioning`,
   `s3:GetReplicationConfiguration`, `s3:ListBucket`, ...) and a monitor identity
   that may only list those buckets and read the heartbeat objects.
+  `s3:DeleteObjectVersion` is required: RustFS authorizes a replicated DELETE
+  that carries a source version ID (delete markers since 1.0.5, and version
+  purges such as noncurrent expiry) as `s3:DeleteObjectVersion`; without it the
+  replica answers `AccessDenied` and the deleted object stays visible there.
 - **Source:** the same buckets and one `RustfsReplication` per bucket
   (`endpoint` is the replica's `host:port`). The helper creates one remote
   target per bucket (`set-remote-target`, which RustFS validates against the

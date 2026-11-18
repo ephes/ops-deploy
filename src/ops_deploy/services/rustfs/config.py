@@ -21,11 +21,12 @@ ObjectKey = Annotated[str, Field(min_length=1, max_length=512, pattern=r"^[^\x00
 HostPort = Annotated[str, Field(pattern=r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[0-9]{1,5}$")]
 Hours = Annotated[float, Field(gt=0, le=8760)]
 
-# Official GitHub release 1.0.4 (2026-10-25, commit 46337942d55f), no open
-# advisory at pin time. The archive digests are the release's SHA256SUMS and
-# provenance subjects; the binary digest is the single archive member.
-RUSTFS_VERSION = "1.0.4"
-RUSTFS_COMMIT = "46337942d55f3a8e6a97b147ca98d9ea8115555d"
+# Official GitHub release 1.0.6 (2026-11-15, tag commit de9009d88264, the
+# provenance's source sha), no open advisory at pin time. The archive digests
+# are the release's SHA256SUMS, provenance subjects and GitHub asset digests;
+# the binary digest is the single archive member.
+RUSTFS_VERSION = "1.0.6"
+RUSTFS_COMMIT = "de9009d882644effc2628e777650025c3d8e7c65"
 # MinIO keeps 9001/9002 on loopback until its retirement.
 MINIO_PORTS = frozenset({9001, 9002})
 
@@ -43,14 +44,14 @@ class RustfsArtifact:
 
 RUSTFS_ARTIFACTS = {
     "x86_64": RustfsArtifact(
-        "rustfs-linux-x86_64-musl-v1.0.4.zip",
-        "4924ad4b699b9f59943051efedae2d1eb6d4cac503a1b0384c4b25f7c2c31b5c",
-        "96eab436e123765d17ca432419750ddc02836de503310615dfee7b6e9e0d5ecc",
+        "rustfs-linux-x86_64-musl-v1.0.6.zip",
+        "a4d109a09857c04bf5d11b2cec0fbbf0887819b9392e5d46d7d153dae6a1398f",
+        "9bb7de3922807c4e8b7c6d1b666d641ea0591b7150b966a94d68215e3d56f0f1",
     ),
     "aarch64": RustfsArtifact(
-        "rustfs-linux-aarch64-musl-v1.0.4.zip",
-        "81414fd0e41969f4f5c2e0555951cee76d3f224c112c269c80f52b31276f187a",
-        "d3a23915ff222ed878301ec3be744e5409942c162f0cc0d156a263658b2b544f",
+        "rustfs-linux-aarch64-musl-v1.0.6.zip",
+        "dcbe86dbb0c521cb6738f72bb36a2d056866667d3d137c2118ee7e2cc9475855",
+        "21e3f324690b04b1632bfa908f0c84e192c0de91a8c847c165e355a3e35e13fb",
     ),
 }
 BINARY_SHA256 = frozenset(artifact.binary_sha256 for artifact in RUSTFS_ARTIFACTS.values())
@@ -282,9 +283,10 @@ class RustfsConfig(RoleConfig):
     # restarts almost at once); a replica can wait
     # hours, since its scanner only expires noncurrent versions and counts usage.
     scanner_cycle_seconds: Annotated[StrictInt, Field(ge=60, le=7 * 24 * 3600)] | None = None
-    # RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED: RustFS 1.0.4 walks every bucket
+    # RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED: RustFS 1.0.4 walked every bucket
     # up to every 10 minutes looking for tier free versions even when no remote
-    # tier exists (upstream #8758, fixed in 1.0.5). False writes the opt-out;
+    # tier exists (upstream #8758; 1.0.5 skips empty tier recovery scans, #8804,
+    # and still reads the opt-out). False writes the opt-out;
     # True keeps the environment file unchanged. Only for servers without a
     # tier configuration (this role never creates one, nor checks for one).
     tier_free_version_recovery: StrictBool = True

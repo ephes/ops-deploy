@@ -1,7 +1,7 @@
-"""``RustfsAdminProvisioner`` against a real RustFS 1.0.4 server in an owned Docker container.
+"""``RustfsAdminProvisioner`` against a real RustFS 1.0.6 server in an owned Docker container.
 
 Skipped unless ``ECHOPORT_RUSTFS_DOCKER=1`` (``just test-echoport-rustfs``).
-Starts the pinned ``rustfs/rustfs`` 1.0.4 image (by digest) on a random
+Starts the pinned ``rustfs/rustfs`` 1.0.6 image (by digest) on a random
 loopback port, writes the environment file the RustFS deploy would write, and
 runs every command of the provisioner as the deploy would (the shell commands
 the fake-connector tests only compare as strings). It checks what they cannot:
@@ -35,7 +35,7 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("ECHOPORT_RUSTFS_DOCKER") != "1", reason="set ECHOPORT_RUSTFS_DOCKER=1 to start a RustFS container"
 )
 
-IMAGE = "rustfs/rustfs@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2"  # 1.0.4
+IMAGE = "rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a"  # 1.0.6
 PREFIX = "s3-echoport-per-target-store"
 ROOT_ACCESS = "fixture-root"
 BUCKET = "backups"

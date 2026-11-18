@@ -246,7 +246,7 @@ every object counts as already deleted), accounts sharing a policy file with
 different grants, and `store_aliases` without `minio_account`. Removing an
 entry later does not remove its alias or account from the host.
 `tests/test_echoport_rustfs_account_docker.py` runs every provisioner command
-against a real RustFS 1.0.4 container (`just test-echoport-rustfs`, needs
+against a real RustFS 1.0.6 container (`just test-echoport-rustfs`, needs
 Docker): probe states, policy round trip, upsert and rotation, attach, what
 the account may and may not do, the refusals, and no credential in any output.
 

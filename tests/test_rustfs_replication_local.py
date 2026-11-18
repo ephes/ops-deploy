@@ -1,4 +1,4 @@
-"""Bucket replication and its monitor between two real RustFS 1.0.4 servers.
+"""Bucket replication and its monitor between two real RustFS servers of the pinned release.
 
 Skipped unless ``RUSTFS_BINARY`` names the pinned release executable
 (``just test-rustfs-replication <binary>``). Starts a source and a replica
@@ -45,7 +45,7 @@ from ops_deploy.services.rustfs.config import BINARY_SHA256
 from ops_deploy.services.rustfs.deploy import RESOURCE, iam_payload, monitor_jobs
 
 BINARY = os.environ.get("RUSTFS_BINARY", "")
-pytestmark = pytest.mark.skipif(not BINARY, reason="set RUSTFS_BINARY to the pinned RustFS 1.0.4 executable")
+pytestmark = pytest.mark.skipif(not BINARY, reason="set RUSTFS_BINARY to the pinned RustFS executable")
 
 FILES = Path(str(RESOURCE.joinpath("files")))
 SECRETS = ("source-root-value", "replica-root-value", "replicator-value-1", "replicator-value-2", "monitor-value-1")
@@ -144,7 +144,7 @@ REPLICATOR_POLICY = RustfsPolicy(
                 "Action": [
                     "s3:ReplicateTags", "s3:AbortMultipartUpload", "s3:GetObject", "s3:GetObjectVersion",
                     "s3:GetObjectVersionTagging", "s3:PutObject", "s3:PutObjectRetention", "s3:PutObjectLegalHold",
-                    "s3:DeleteObject", "s3:ReplicateObject", "s3:ReplicateDelete",
+                    "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:ReplicateObject", "s3:ReplicateDelete",
                 ],
                 "Resource": [f"arn:aws:s3:::{job.bucket}/*" for job in JOBS],
             },

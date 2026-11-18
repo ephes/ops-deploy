@@ -4,7 +4,7 @@
 tests/integration/rustfs/run-container.sh /path/to/extracted/rustfs EVIDENCE_DIR
 ```
 
-The executable must be the pinned 1.0.4 `rustfs` for the Docker host's
+The executable must be the pinned `rustfs` for the Docker host's
 architecture (see `docs/services/rustfs.md`). The script builds an Ubuntu 24.04
 systemd image, starts a privileged container named `ops-rustfs-svc-it-<pid>`
 with an anonymous volume at `/mnt/cryptdata`, copies this checkout (no `.git`,
