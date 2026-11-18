@@ -12,7 +12,10 @@
   deploy lock for the whole apply, publishes wrapper/key/plist on fresh inodes,
   and never executes or opens build artifacts as root. `launchctl enable` now
   runs before `bootstrap` in both modes. Homebrew mode is otherwise unchanged
-  (`docs/services/llama_server.md`, "Source build").
+  (`docs/services/llama_server.md`, "Source build"). The verified build number and short
+  hash are passed to CMake (`LLAMA_BUILD_NUMBER`, `LLAMA_BUILD_COMMIT`), so the
+  build label does not depend on `git rev-parse --short`, whose length grows
+  with the upstream repository.
 
 - gunicorn ignores client-set forwarder headers in every role that starts it
   with a fixed command line: archive, daybook_operations_api, homelab,

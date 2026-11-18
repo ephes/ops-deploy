@@ -82,6 +82,9 @@ cfg = LlamaServerConfig(
   hash starting with its short commit. The host verifies after the checkout
   that `HEAD` and `refs/tags/<tag>` are `commit`, that `git rev-list --count`
   is the build number and that the tree is clean (before and after the build),
+  passes the verified build number and short hash to CMake
+  (`LLAMA_BUILD_NUMBER`, `LLAMA_BUILD_COMMIT`; otherwise the label comes from
+  `git rev-parse --short HEAD`, whose length depends on the repository),
   and that the binary's `--version` is the pinned build. Root writes the full
   commit into `<prefix>/SOURCE_COMMIT` at publication; a prefix is reused only
   when that marker matches (the prefix name carries only the short hash).

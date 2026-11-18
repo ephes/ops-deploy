@@ -377,7 +377,12 @@ def build_source(cfg, workspace):
     verify_tree()
     if step(GIT + ["-C", src, "rev-list", "--count", "HEAD"]) != spec["tag"][1:]:
         raise RuntimeError("source checkout does not match the pinned build number")
-    step(["cmake", "-S", src, "-B", build, *CMAKE_FLAGS], quiet=True)
+    # llama.cpp labels the build with `git rev-parse --short HEAD`, whose
+    # length depends on the (growing) object database. Commit and build
+    # number are verified above, so the label is passed exactly.
+    number, short = cfg["build"][1:].split("-", 1)
+    label = ["-DLLAMA_BUILD_NUMBER=" + number, "-DLLAMA_BUILD_COMMIT=" + short]
+    step(["cmake", "-S", src, "-B", build, *CMAKE_FLAGS, *label], quiet=True)
     step(["cmake", "--build", build, "--target", "llama-server", "-j", "8"], quiet=True)
     verify_tree()
     binary = build + "/bin/llama-server"

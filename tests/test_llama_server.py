@@ -452,3 +452,26 @@ def test_chain_rechecks_the_system_link_target_from_root() -> None:
     ):
         assert module.chain("/etc/llama-server") == "/private/etc/llama-server"
     assert seen == ["/", "/", "/private", "/private/etc", "/private/etc/llama-server"]
+
+
+def test_build_label_is_passed_exactly_to_cmake() -> None:
+    module = host_script()
+    calls: list[list[str]] = []
+
+    def fake(cfg: dict[str, Any], argv: list[str], **_: Any) -> str:
+        calls.append(argv)
+        if "rev-parse" in argv:
+            return PIN_COMMIT
+        if "rev-list" in argv:
+            return "11669"
+        if argv[-1] == "--version":
+            return "version: 0.7.0 (build 11669, commit 620d2225c)"
+        return ""
+
+    with (
+        patch.object(module, "build_run", side_effect=fake),
+        patch.object(module.Path, "is_file", return_value=True),
+    ):
+        assert module.build_source(source_host_cfg(), "/ws") == "/ws/build/bin/llama-server"
+    configure = next(argv for argv in calls if argv[:2] == ["cmake", "-S"])
+    assert configure[-2:] == ["-DLLAMA_BUILD_NUMBER=11669", "-DLLAMA_BUILD_COMMIT=620d2225c"]
