@@ -1,0 +1,26 @@
+# haushalt - managed by ops-deploy (haushalt service), do not edit
+[Unit]
+Description=haushalt (family finance dashboard behind a login)
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=haushalt
+Group=haushalt
+WorkingDirectory=/home/haushalt/site/web
+EnvironmentFile=/home/haushalt/haushalt.env
+UMask=0077
+ExecStart=/home/haushalt/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10067 --forwarded-allow-ips 127.0.0.1 --forwarder-headers= --access-logfile - site_config.wsgi:application
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/haushalt/data
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

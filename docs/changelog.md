@@ -19,6 +19,33 @@
   `04c410da`; unset means Production only). Validated: known names, non-empty,
   no duplicates, StoreKit enabled.
 
+- haushalt: new service for daybook's family finance dashboard
+  (`services/haushalt`, its own uv project inside daybook), until now deployed
+  by its own pyinfra script in its own repository. Same host layout as before
+  (user `haushalt`, `site/web`, `data/db.sqlite3` outside the synced tree,
+  gunicorn on `127.0.0.1:10067`, route `haushalt.yml`), so taking a host over
+  moves nothing; the route gains the shared edge-header deletion and gunicorn
+  `--forwarder-headers=` like every other ops-deploy route and unit.
+  Beyond opaq_app's shape: a missing, non-regular or non-rollback-journal
+  database fails the deploy before any change instead of being initialized
+  empty (only a fresh host gets an empty database, created before its
+  environment file); root records the database's identity in
+  `/var/lib/ops-deploy/haushalt/` before migrate and checks it afterwards, so
+  a database replaced meanwhile stops the run before the restart and blocks
+  later runs until an operator checked it; the database is handed back to the
+  service user through file descriptors without following links; and a
+  root-owned marker in the same directory, written before any change, makes
+  the next run finish a rollout an interrupted run left pending. Unlike
+  opaq_app it has no migration probe (it would open the live database while
+  planning): migrate runs on changes, a new database or venv, or a pending
+  rollout, as the old script did (`docs/services/haushalt.md`).
+
+- opaq_app: the port preflight, `/healthz` check and route checks
+  (`RouteChecks`, login redirect, allowlist 403) moved unchanged into
+  `ops_deploy.services._login_app`, shared with haushalt;
+  `ops_deploy.services.opaq_app.RouteChecks` still imports. Same operations,
+  names and commands.
+
 - rustfs: optional `scanner_cycle_seconds` (60 to 604800) writes
   `RUSTFS_SCANNER_CYCLE` to `/etc/default/rustfs`. RustFS 1.0.4 starts a new
   background scanner cycle 60 s after the last one at its default speed; on the

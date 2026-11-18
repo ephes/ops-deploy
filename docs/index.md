@@ -38,6 +38,7 @@ src/ops_deploy/
   services/nyxmon/    nyxmon (port of the nyxmon_deploy role)
   services/nyxmon_site_checks/ one Nyxmon service and its checks, upserted in Nyxmon's database
   services/opaq_app/  opaq_app (port of the opaq_app_deploy role)
+  services/haushalt/  haushalt (daybook's family finance dashboard)
   services/fastdeploy/ fastdeploy (port of the fastdeploy_deploy role)
   services/delve/     delve (port of the delve_deploy role)
   services/weeknotes_home/ weeknotes.home (port of the weeknotes_home_deploy role)

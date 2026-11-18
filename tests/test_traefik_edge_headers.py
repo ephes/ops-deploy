@@ -198,6 +198,7 @@ SAMPLES: dict[str, Sample] = {
     "services/homeassistant/templates/homeassistant.traefik.yml.j2": goldens(
         "homeassistant/*/homeassistant.traefik.yml"
     ),
+    "services/haushalt/templates/haushalt.traefik.yml.j2": goldens("haushalt/*/traefik.yml"),
     "services/homelab/templates/traefik.yml.j2": goldens("homelab/*/homelab.yml"),
     "services/jellyfin/templates/jellyfin-traefik.yml.j2": goldens("jellyfin/*/jellyfin.yml"),
     "services/livekit/templates/livekit-traefik.yml.j2": goldens("livekit/livekit.yml"),

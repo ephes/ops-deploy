@@ -1,0 +1,9 @@
+# haushalt environment - managed by ops-deploy (haushalt service), do not edit
+DJANGO_SETTINGS_MODULE=site_config.settings
+DJANGO_SECRET_KEY=haushalt-parity-key-abcdefghijabcdefghijabcdefghijabcdefghij
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=haushalt.example.com,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://haushalt.example.com
+HAUSHALT_DATABASE_PATH=/home/haushalt/data/db.sqlite3
+DJANGO_STATIC_ROOT=/home/haushalt/static
+HAUSHALT_UPLOAD_TOKEN_SHA256=7725983dbe2a1f12a94a88f299ec37d446bee5ca1c14636a7b7478b67d95b6b6

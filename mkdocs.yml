@@ -67,6 +67,7 @@ nav:
       - native_app: services/native_app.md
       - shared_tree: services/shared_tree.md
       - opaq_app: services/opaq_app.md
+      - haushalt: services/haushalt.md
       - weeknotes_home: services/weeknotes_home.md
       - echoport: services/echoport.md
       - Echoport backup runners (generic parts): services/echoport_runner.md

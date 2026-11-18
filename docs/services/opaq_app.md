@@ -121,3 +121,6 @@ Differences kept on purpose:
   behaviour, no secret outside its file.
 - Ansible coexistence (the role and the playbook's upserts taking turns with
   this deploy, data kept) runs from ops-control: `just smoke-opaq-app-coexistence`.
+
+The port preflight, `/healthz` check and route checks live in
+`ops_deploy.services._login_app`, shared with [haushalt](haushalt.md).

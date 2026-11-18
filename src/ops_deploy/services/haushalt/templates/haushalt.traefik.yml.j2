@@ -1,0 +1,42 @@
+{% import "_edge.j2" as edge -%}
+# haushalt - managed by ops-deploy (haushalt service), do not edit.
+# The tailnet allowlist is the first barrier, the Django login the second.
+http:
+  routers:
+    {{ cfg.service_name }}-secure:
+      rule: "Host(`{{ cfg.traefik_host }}`)"
+      entryPoints:
+        - {{ cfg.traefik_entrypoint }}
+      middlewares:
+        - {{ cfg.service_name }}-allowlist
+        - {{ cfg.service_name }}-edge-headers
+      service: {{ cfg.service_name }}
+      tls: {}
+    {{ cfg.service_name }}-http:
+      rule: "Host(`{{ cfg.traefik_host }}`)"
+      entryPoints:
+        - {{ cfg.traefik_http_entrypoint }}
+      middlewares:
+        - {{ cfg.service_name }}-allowlist
+        - {{ cfg.service_name }}-redirect
+      service: noop@internal
+
+  middlewares:
+    {{ cfg.service_name }}-allowlist:
+      ipAllowList:
+        sourceRange: {{ allowed_networks_json }}
+    {{ cfg.service_name }}-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
+    {{ cfg.service_name }}-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    {{ cfg.service_name }}:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://{{ cfg.app_host }}:{{ cfg.app_port }}"

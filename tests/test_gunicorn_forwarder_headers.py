@@ -123,6 +123,7 @@ def test_the_sweep_finds_the_known_gunicorn_launchers() -> None:
         "archive/templates/archive.service.j2",
         "daybook_operations_api/templates/service.j2",
         "django_site/templates/gunicorn.sh.j2",
+        "haushalt/templates/haushalt.service.j2",
         "homelab/templates/systemd.service.j2",
         "opaq_app/templates/opaq-app.service.j2",
         "paperless/templates/paperless.service.j2",
@@ -192,6 +193,7 @@ def test_the_sweep_sees_bare_executables_and_nested_templates(tmp_path: Path) ->
 CHECKED_ROLES = {
     "archive": '"archive.service.j2"',
     "daybook_operations_api": "systemd_unit(",
+    "haushalt": "systemd_unit(",
     "homelab": "systemd_unit(",
     "opaq_app": '"opaq-app.service.j2"',
     "weeknotes_home": '"weeknotes-home.service.j2"',
