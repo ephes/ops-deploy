@@ -31,6 +31,8 @@ Secrets are a separate mapping, never config/argv/host data. The mapping uses th
 
 Configuration retains the original public variable names. Computed defaults below resolve from other configured inputs before connection.
 
+Batch URL inputs (`VOXHELM_BATCH_MAX_DOWNLOAD_BYTES`, `VOXHELM_BATCH_URL_FETCH_TIMEOUT_SECONDS`) default to 16 GiB and 3600 s per try, matching Voxhelm's own defaults since 1b39853 and its 16 GiB staged-upload limit, so multi-hour recordings fetched by URL are not refused. Both must be positive. Sync URL inputs keep their small limits (`voxhelm_max_url_download_bytes`, `voxhelm_url_fetch_timeout_seconds`).
+
 | Input | Default |
 | --- | --- |
 | `remote_rsync_path` | `"/opt/homebrew/bin/rsync"` |
@@ -85,7 +87,8 @@ Configuration retains the original public variable names. Computed defaults belo
 | `voxhelm_staged_input_retention_seconds` | `""` |
 | `voxhelm_wyoming_stt_max_audio_seconds` | `""` |
 | `voxhelm_private_url_hosts` | `[]` |
-| `voxhelm_batch_max_download_bytes` | `536870912` |
+| `voxhelm_batch_max_download_bytes` | `17179869184` |
+| `voxhelm_batch_url_fetch_timeout_seconds` | `3600` |
 | `voxhelm_ffmpeg_bin` | `"/opt/homebrew/bin/ffmpeg"` |
 | `voxhelm_stt_backend` | `"whispercpp"` |
 | `voxhelm_stt_fallback_backend` | `"mlx"` |

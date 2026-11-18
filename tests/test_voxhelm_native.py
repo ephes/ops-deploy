@@ -238,3 +238,35 @@ def test_source_sync_protects_rendered_launchers_from_delete(tmp_path: Path) -> 
         assert "--exclude=/" + name in argv
     outside = control_config(tmp_path, voxhelm_start_script_path="/usr/local/libexec/voxhelm-start.sh")
     assert "/start.sh" not in deploy_module.generated_launchers(outside)
+
+
+def test_control_batch_url_limits_match_long_recordings(tmp_path: Path) -> None:
+    cfg = control_config(tmp_path)
+    data = control_payload(cfg, control_secrets())
+    env = data["contents"][cfg.voxhelm_config_dir + "/voxhelm.env"]["content"].splitlines()
+    assert f"VOXHELM_BATCH_MAX_DOWNLOAD_BYTES={16 * 1024**3}" in env
+    assert "VOXHELM_BATCH_URL_FETCH_TIMEOUT_SECONDS=3600" in env
+    assert f"VOXHELM_MAX_URL_DOWNLOAD_BYTES={128 * 1024**2}" in env
+    assert "VOXHELM_URL_FETCH_TIMEOUT_SECONDS=60" in env
+
+    custom = control_config(
+        tmp_path, voxhelm_batch_max_download_bytes=1024, voxhelm_batch_url_fetch_timeout_seconds=7200
+    )
+    custom_env = control_payload(custom, control_secrets())["contents"][custom.voxhelm_config_dir + "/voxhelm.env"][
+        "content"
+    ].splitlines()
+    assert "VOXHELM_BATCH_MAX_DOWNLOAD_BYTES=1024" in custom_env
+    assert "VOXHELM_BATCH_URL_FETCH_TIMEOUT_SECONDS=7200" in custom_env
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"voxhelm_batch_max_download_bytes": 0},
+        {"voxhelm_batch_url_fetch_timeout_seconds": 0},
+        {"voxhelm_batch_url_fetch_timeout_seconds": -1},
+    ],
+)
+def test_control_batch_url_limits_must_be_positive(tmp_path: Path, overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError, match="must be positive"):
+        control_config(tmp_path, **overrides)

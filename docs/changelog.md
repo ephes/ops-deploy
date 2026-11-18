@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- voxhelm: batch URL inputs default to 16 GiB (`voxhelm_batch_max_download_bytes`,
+  was 512 MiB, which overrode Voxhelm's own 16 GiB default since 1b39853 and
+  refused multi-hour recordings fetched by URL) and the per-try timeout is now
+  rendered explicitly as `VOXHELM_BATCH_URL_FETCH_TIMEOUT_SECONDS` from the new
+  `voxhelm_batch_url_fetch_timeout_seconds` (default 3600 s, Voxhelm's default).
+  Both are refused before connection unless positive. Sync URL limits are
+  unchanged.
+
 - Rust releases (`rust/scripts/release.py`): the builder images pin rustup
   1.29.2 (CVE-2026-111943, as mailgun-relay's, nyxmon's and graphyard's
   `local_release.py`) and, in the APT step before rustup-init is downloaded,

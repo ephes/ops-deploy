@@ -128,6 +128,7 @@ class VoxhelmConfig(RoleConfig):
     )
     voxhelm_private_url_hosts: list[str] = Field(default=DEFAULTS["voxhelm_private_url_hosts"])
     voxhelm_batch_max_download_bytes: int = Field(default=DEFAULTS["voxhelm_batch_max_download_bytes"])
+    voxhelm_batch_url_fetch_timeout_seconds: int = Field(default=DEFAULTS["voxhelm_batch_url_fetch_timeout_seconds"])
     voxhelm_ffmpeg_bin: str = Field(default=DEFAULTS["voxhelm_ffmpeg_bin"])
     voxhelm_stt_backend: str = Field(default=DEFAULTS["voxhelm_stt_backend"])
     voxhelm_stt_fallback_backend: str = Field(default=DEFAULTS["voxhelm_stt_fallback_backend"])
@@ -289,6 +290,9 @@ class VoxhelmConfig(RoleConfig):
         ):
             if getattr(self, name) <= 0:
                 raise ValueError("Remote worker lease, poll and attempts must be positive")
+        for name in ("voxhelm_batch_max_download_bytes", "voxhelm_batch_url_fetch_timeout_seconds"):
+            if getattr(self, name) <= 0:
+                raise ValueError("Batch URL download size and per-try timeout must be positive")
         for name in (
             "voxhelm_source_artifact_retention_seconds",
             "voxhelm_job_metadata_retention_seconds",
