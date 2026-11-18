@@ -56,8 +56,11 @@ so a running server never has its executable overwritten.
   noncurrent-version expiry, usage counts and the scanner's heal checks.
   RustFS 1.0.4 skips the pause while it still rebuilds a usage snapshot it did
   not find at startup (admin `GET /rustfs/admin/v3/scanner/status`,
-  `cycle_schedule.usage_bootstrap_rebuild_pending`); check that flag and
-  `runtime_config.cycle_interval_seconds` (source `env`) after a change.
+  `cycle_schedule.usage_bootstrap_rebuild_pending`). After a change check
+  `runtime_config.cycle_interval_seconds` (source `env`), and once the first
+  cycle has ended (`cycle_schedule.effective_interval_available` true; before
+  that the flag reads false by default) that the flag is false and
+  `effective_interval_seconds` is the configured value.
   Changing it rewrites the environment file and restarts RustFS.
 - `tier_free_version_recovery` (default true) set to false writes
   `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walks every
