@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Traefik configuration for Logyard
 # Managed by Ansible - do not edit manually
 
@@ -69,6 +70,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     logyard-gzip:
       compress: {}

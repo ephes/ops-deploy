@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible (openclaw_deploy). Do not edit on the host.
 
 http:
@@ -8,10 +9,11 @@ http:
 {% for ep in openclaw_traefik_entrypoints %}
         - {{ ep }}
 {% endfor %}
-{% if openclaw_traefik_ip_allowlist | length > 0 %}
       middlewares:
+{% if openclaw_traefik_ip_allowlist | length > 0 %}
         - openclaw-ipallow
 {% endif %}
+        - openclaw-edge-headers
       service: openclaw
 {% if openclaw_traefik_cert_resolver | default('') | length > 0 %}
       tls:
@@ -20,16 +22,20 @@ http:
       tls: {}
 {% endif %}
 
-{% if openclaw_traefik_ip_allowlist | length > 0 %}
   middlewares:
+{% if openclaw_traefik_ip_allowlist | length > 0 %}
     openclaw-ipallow:
       ipAllowList:
         sourceRange:
 {% for cidr in openclaw_traefik_ip_allowlist %}
           - "{{ cidr }}"
 {% endfor %}
-
 {% endif %}
+    openclaw-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
+
   services:
     openclaw:
       loadBalancer:

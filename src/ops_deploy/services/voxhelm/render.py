@@ -11,6 +11,8 @@ from typing import Any
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
+
 from .config import PACKAGE, VoxhelmConfig
 
 SECRET_DEFAULTS: dict[str, str] = json.loads(files(PACKAGE).joinpath("secret_defaults.json").read_text())
@@ -44,7 +46,7 @@ def payload(cfg: VoxhelmConfig, secrets: Mapping[str, str]) -> dict[str, Any]:
     if any(not values[name].strip() or "CHANGEME" in values[name] for name in required):
         raise ValueError("Voxhelm credentials are incomplete")
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(PACKAGE, "templates"),
+        loader=template_loader(PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

@@ -8,6 +8,7 @@ http:
         - web-secure
       middlewares:
         - opaq-app-allowlist
+        - opaq-app-edge-headers
       service: opaq-app
       tls: {}
     opaq-app-http:
@@ -23,6 +24,39 @@ http:
     opaq-app-allowlist:
       ipAllowList:
         sourceRange: ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
+    opaq-app-edge-headers:
+      headers:
+        customRequestHeaders:
+          # Deleted: a client must not choose its identity, address or path prefix (ops-deploy _edge.j2).
+          Remote-User: ""
+          Remote-Email: ""
+          Remote-Name: ""
+          Remote-Groups: ""
+          X-Remote-User: ""
+          X-Forwarded-User: ""
+          X-Forwarded-Email: ""
+          X-Forwarded-Groups: ""
+          X-Forwarded-Preferred-Username: ""
+          X-Auth-Request-User: ""
+          X-Auth-Request-Email: ""
+          X-WEBAUTH-USER: ""
+          True-Client-IP: ""
+          CF-Connecting-IP: ""
+          X-Client-IP: ""
+          X-Cluster-Client-IP: ""
+          Fastly-Client-IP: ""
+          X-Original-Forwarded-For: ""
+          Forwarded: ""
+          X-Forwarded-Prefix: ""
+          X-Forwarded-Uri: ""
+          X-Forwarded-Method: ""
+          X-Forwarded-Ssl: ""
+          X-Forwarded-Protocol: ""
+          X-Forwarded-Scheme: ""
+          X-Url-Scheme: ""
+          X-Script-Name: ""
+          SCRIPT_NAME: ""
+          PATH_INFO: ""
     opaq-app-redirect:
       redirectScheme:
         scheme: https

@@ -14,6 +14,8 @@ from urllib.parse import quote
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
+
 from .config import PACKAGE, OpsGateConfig
 
 SECRET_DEFAULTS: dict[str, Any] = json.loads(files(PACKAGE).joinpath("secret_defaults.json").read_text())
@@ -71,7 +73,7 @@ def payload(cfg: OpsGateConfig, secrets: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("OpsGate managed GitHub SSH workspaces require their configured keys")
     values["opsgate_rust_binary"] = cfg.opsgate_rust_install_root + "/" + cfg.opsgate_rust_version + "/opsgate"
     environment = jinja2.Environment(
-        loader=jinja2.PackageLoader(PACKAGE, "templates"),
+        loader=template_loader(PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

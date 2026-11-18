@@ -44,10 +44,12 @@ A downloaded candidate must still report the approved version before publication
 `source`, `account`, `configs`, `unit`, `binary_link` and health/listener checks
 are runtime parts. A route-only config omits all of them; `user` and `site_path`
 remain BaseServiceConfig metadata and cause no service user or site creation.
-Every proxied router's headers middleware deletes the client's `Remote-User`
-and `True-Client-IP` request headers. No native app takes its user from the
-proxy, so a client must not assert an identity (Navidrome's ExtAuth user
-header) or choose the client IP an app logs and rate-limits by.
+Every proxied router's headers middleware deletes the client-sent identity,
+client-address and path-prefix request headers of the shared edge list
+([Traefik: edge request-header hygiene](../traefik.md#edge-request-header-hygiene)),
+`Remote-User` and `True-Client-IP` among them. No native app takes its user
+from the proxy, so a client must not assert an identity (Navidrome's ExtAuth
+user header) or choose the client IP an app logs and rate-limits by.
 A remote route backend needs `remote_reason`. The route model requires
 `public_reason` for public access and secret references for basic auth. Unknown
 source kinds, including apt and PyPI, fail validation.

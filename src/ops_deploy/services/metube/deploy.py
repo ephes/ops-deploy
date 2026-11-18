@@ -22,6 +22,7 @@ from pyinfra.operations import apt, files, server
 
 from ops_deploy.base.uv_install import UvInstallConfig, deploy_uv_install
 from ops_deploy.core.git_source import fetch_source
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import (
     BasicAuth,
     TraefikRoute,
@@ -44,7 +45,7 @@ TRUST = resources("ops_deploy.helpers").joinpath("templates/python_security_chec
 
 def render(package: str, template: str, **context: Any) -> str:
     environment = jinja2.Environment(
-        loader=jinja2.PackageLoader(package, "templates"),
+        loader=template_loader(package),
         undefined=jinja2.StrictUndefined,
         keep_trailing_newline=True,
         trim_blocks=True,

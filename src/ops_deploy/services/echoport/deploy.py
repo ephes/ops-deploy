@@ -42,6 +42,7 @@ from pyinfra.operations import files, server
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import (
     BasicAuth,
     TraefikRoute,
@@ -389,7 +390,7 @@ def _templates() -> jinja2.Environment:
     # The role's own templates, rendered with the options and the ``quote``
     # filter of Ansible's template module.
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.echoport", "templates"),
+        loader=template_loader("ops_deploy.services.echoport"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

@@ -68,8 +68,8 @@ unit). Every file starts with the comment `# Managed by ops-deploy
 shebang in the launchers).
 
 With a `frontend`, the route has two more routers, `<fqdn>-<router>-router`
-(HTTP: `redirect`) and `<fqdn>-<router>-secure-router` (HTTPS: `csrf`,
-`sslHeaders`, `gzip-compress`), with the rule `<host rule> && (Path(p) ||
+(HTTP: `redirect`) and `<fqdn>-<router>-secure-router` (HTTPS:
+`<fqdn>-edge-headers`, `csrf`, `sslHeaders`, `gzip-compress`), with the rule `<host rule> && (Path(p) ||
 PathPrefix(p/) ...)` over `frontend.path_prefixes` (the HTTPS one with the
 TLS host rule; a host rule with `||` in parentheses) and priority 200; the site's routers get priority 100 and their
 service is `<fqdn>-django`, the frontend's `<fqdn>-next`. `route.backend`
@@ -130,7 +130,13 @@ The set is the classic one (marina/heis) with these choices:
   `<fqdn>-secure-router`), service name (`<fqdn>`) and the middlewares
   (`redirect`, `csrf`, `sslHeaders`, `gzip-compress`, `redirect-www`) stay as
   they are: Traefik's file provider shares one namespace, and other route
-  files may refer to these middlewares as `<name>@file`. The second header
+  files may refer to these middlewares as `<name>@file`. Both HTTPS routers
+  run `<fqdn>-edge-headers` first, which deletes the client-sent identity,
+  client-address and path-prefix headers
+  ([Traefik: edge request-header hygiene](../traefik.md#edge-request-header-hygiene)).
+  It has its own name per site because every site's file defines `sslHeaders`
+  identically, and a changed shared middleware would conflict with the other
+  sites' files on the host. The second header
   line states `route.public_reason`, the reason the route has no Basic Auth
   (a required field).
 - **The classic fish config**, unchanged apart from the header.

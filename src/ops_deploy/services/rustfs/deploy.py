@@ -24,6 +24,7 @@ from pyinfra.operations import files, server
 
 from ops_deploy.base._common import ensure_curl, require_linux, require_systemd
 from ops_deploy.core.secrets import SecretContent
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import TraefikRoute, http_check, mark_read_only, traefik_route, wait_port
 from ops_deploy.helpers.probes import StdinLines, probe, stdin_arguments
 from ops_deploy.helpers.systemd import service_rollout, systemd_unit
@@ -43,7 +44,7 @@ RESOURCE = resources("ops_deploy.services.rustfs")
 @cache
 def environment() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.rustfs", "templates"),
+        loader=template_loader("ops_deploy.services.rustfs"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

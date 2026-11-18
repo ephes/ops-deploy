@@ -406,7 +406,10 @@ completion; no inventory engine is switched by this prepared component.
 
 The shipped Traefik template retains the original router names, TLS empty-map
 versus certResolver behavior, header values, ordered middleware/entrypoint lists
-and local-address fallback. The backend defaults to the original application
+and local-address fallback. The HTTPS router always runs `homeassistant-headers`
+first (a `middlewares` list naming it does not repeat it), since that middleware
+deletes the client-sent identity, client-address and path-prefix headers
+([Traefik: edge request-header hygiene](../traefik.md#edge-request-header-hygiene)). The backend defaults to the original application
 port `10020`, matching the application configuration renderer. A missing IPv4 fact uses `192.168.178.50`; an explicit
 empty value is not silently replaced. The original future `traefik_mode` field
 still has no implementation effect.

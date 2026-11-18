@@ -16,6 +16,7 @@ from pyinfra.operations import files, server
 
 from ops_deploy.base import RoleConfig
 from ops_deploy.base._common import require_linux
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services._traefik_routes import route_put
 
 
@@ -94,7 +95,7 @@ class VoxhelmIngressConfig(RoleConfig):
 
 def render_ingress(cfg: VoxhelmIngressConfig) -> str:
     environment = jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.voxhelm", "templates"),
+        loader=template_loader("ops_deploy.services.voxhelm"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

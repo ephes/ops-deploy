@@ -55,10 +55,13 @@ def test_the_route_is_one_public_router_with_forwarded_headers(cfg: LivekitConfi
         "service": "livekit",
         "tls": {},
     }
-    assert doc["middlewares"]["livekit-headers"]["headers"]["customRequestHeaders"] == {
+    request_headers = doc["middlewares"]["livekit-headers"]["headers"]["customRequestHeaders"]
+    assert {key: value for key, value in request_headers.items() if value} == {
         "X-Forwarded-Proto": "https",
         "X-Forwarded-Host": "livekit.example.invalid",
     }
+    # Everything else the middleware lists is deleted (tests/test_traefik_edge_headers.py).
+    assert "SCRIPT_NAME" in request_headers
     assert doc["services"]["livekit"]["loadBalancer"]["servers"] == [{"url": "http://127.0.0.1:7880"}]
 
 

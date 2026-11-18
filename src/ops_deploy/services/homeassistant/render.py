@@ -5,13 +5,15 @@ from typing import Literal
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
+
 from .runtime_config import HomeAssistantRuntimeConfig
 
 
 @cache
 def templates() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.homeassistant", "templates"),
+        loader=template_loader("ops_deploy.services.homeassistant"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

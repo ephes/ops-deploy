@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Opaq app - managed by Ansible, do not edit.
 # The tailnet allowlist is the first barrier, the Django login the second.
 http:
@@ -8,6 +9,7 @@ http:
         - {{ cfg.traefik_entrypoint }}
       middlewares:
         - opaq-app-allowlist
+        - opaq-app-edge-headers
       service: opaq-app
       tls: {}
     opaq-app-http:
@@ -23,6 +25,10 @@ http:
     opaq-app-allowlist:
       ipAllowList:
         sourceRange: {{ allowed_networks_json }}
+    opaq-app-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
     opaq-app-redirect:
       redirectScheme:
         scheme: https

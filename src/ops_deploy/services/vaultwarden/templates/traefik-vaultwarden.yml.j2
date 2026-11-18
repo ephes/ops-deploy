@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible - Traefik configuration for Vaultwarden
 #
 # One router. Live sync (/notifications/hub) is served by Vaultwarden on the
@@ -57,6 +58,7 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ vaultwarden_hostname }}"
+{{- edge.request_headers(10) }}
 
     vaultwarden-redirect:
       redirectScheme:

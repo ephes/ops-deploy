@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible - static site {{ cfg.service_name }}
 
 http:
@@ -35,6 +36,8 @@ http:
         contentTypeNosniff: true
         customFrameOptionsValue: SAMEORIGIN
         referrerPolicy: no-referrer
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
         customResponseHeaders:
           Cache-Control: no-cache
 

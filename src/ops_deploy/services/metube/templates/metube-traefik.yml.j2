@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible - Traefik configuration for MeTube
 
 http:
@@ -95,6 +96,7 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ metube_traefik_host }}"
+{{- edge.request_headers(10) }}
 
     metube-gzip:
       compress: {}

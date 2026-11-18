@@ -32,6 +32,36 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+          # Deleted: a client must not choose its identity, address or path prefix (ops-deploy _edge.j2).
+          Remote-User: ""
+          Remote-Email: ""
+          Remote-Name: ""
+          Remote-Groups: ""
+          X-Remote-User: ""
+          X-Forwarded-User: ""
+          X-Forwarded-Email: ""
+          X-Forwarded-Groups: ""
+          X-Forwarded-Preferred-Username: ""
+          X-Auth-Request-User: ""
+          X-Auth-Request-Email: ""
+          X-WEBAUTH-USER: ""
+          True-Client-IP: ""
+          CF-Connecting-IP: ""
+          X-Client-IP: ""
+          X-Cluster-Client-IP: ""
+          Fastly-Client-IP: ""
+          X-Original-Forwarded-For: ""
+          Forwarded: ""
+          X-Forwarded-Prefix: ""
+          X-Forwarded-Uri: ""
+          X-Forwarded-Method: ""
+          X-Forwarded-Ssl: ""
+          X-Forwarded-Protocol: ""
+          X-Forwarded-Scheme: ""
+          X-Url-Scheme: ""
+          X-Script-Name: ""
+          SCRIPT_NAME: ""
+          PATH_INFO: ""
 
     gotosocial-redirect:
       redirectScheme:

@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 {% if cfg.route.wagtail %}
 {% include "wagtail-route.traefik.yml.j2" %}
 {% else %}
@@ -24,6 +25,7 @@ http:
       entryPoints:
         - web-secure
       middlewares:
+        - {{ cfg.route.fqdn }}-edge-headers
         - csrf
         - sslHeaders
         - gzip-compress
@@ -52,6 +54,7 @@ http:
       entryPoints:
         - web-secure
       middlewares:
+        - {{ cfg.route.fqdn }}-edge-headers
         - csrf
         - sslHeaders
         - gzip-compress
@@ -81,6 +84,13 @@ http:
           X-Forwarded-Port: "443"
     gzip-compress:
       compress: {}
+    # Per site: every site's route file defines csrf, sslHeaders and the
+    # redirects identically, so a changed shared middleware would conflict
+    # with the other sites' files on the host.
+    {{ cfg.route.fqdn }}-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
     redirect-www:
       redirectRegex:
         regex: "^https?://www\\.(.+)"

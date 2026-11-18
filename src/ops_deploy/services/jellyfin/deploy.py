@@ -45,6 +45,7 @@ from pyinfra.operations import apt, files, server, systemd
 
 from ops_deploy.base._common import RoleConfig, output, require_linux
 from ops_deploy.core.config import UnixUser
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import BasicAuth, TraefikRoute, http_check, mark_read_only, traefik_route, wait_port
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.services.compose_app.config import plain_path
@@ -242,7 +243,7 @@ class JellyfinConfig(RoleConfig):
 def _templates() -> jinja2.Environment:
     # Rendered like Ansible's template module (trim_blocks), for byte parity.
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

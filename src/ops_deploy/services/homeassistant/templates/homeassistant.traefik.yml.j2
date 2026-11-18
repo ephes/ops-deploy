@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 http:
   routers:
     homeassistant:
@@ -10,7 +11,8 @@ http:
       tls: {}
 {% endif %}
       middlewares:
-{% for middleware in homeassistant_traefik_middlewares %}
+        - homeassistant-headers
+{% for middleware in homeassistant_traefik_middlewares if middleware != "homeassistant-headers" %}
         - {{ middleware }}
 {% endfor %}
       entryPoints:
@@ -47,6 +49,7 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "homeassistant.{{ homeassistant_traefik_domain }}"
+{{- edge.request_headers(10) }}
     homeassistant-websocket:
       headers:
         customRequestHeaders:

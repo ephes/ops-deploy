@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Traefik configuration for the RustFS S3 API
 # Managed by ops-deploy - do not edit manually
 # Internal only (LAN + Tailscale): no router answers anyone else. S3 requests
@@ -46,6 +47,7 @@ http:
         stsSeconds: 15552000
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
   services:
     rustfs-api:

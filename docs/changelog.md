@@ -18,6 +18,28 @@
   sees past any path-scoped edge rule). Needs gunicorn 22 or newer; a site
   that turns it on gets its launcher rewritten and restarts once.
 
+- Traefik routes: every route ops-deploy renders deletes the client-sent
+  identity, client-address and path-prefix request headers (`Remote-User` and
+  eleven other identity headers, `True-Client-IP`, `Forwarded` and five other
+  client-address headers, `X-Forwarded-Prefix` and seven other scheme/prefix
+  headers, `SCRIPT_NAME`, `PATH_INFO`; the list in `docs/traefik.md`, "Edge
+  request-header hygiene"). The list lives once in the new macro
+  `helpers/templates/_edge.j2`; all 34 route templates import it, and the
+  environments that render them load templates through the new
+  `ops_deploy.core.templates.template_loader`. Templates without a headers
+  middleware get a `<name>-edge-headers` middleware (mastodon, opaq_app,
+  openclaw, unifi), django_site a per-site `<fqdn>-edge-headers` on both HTTPS
+  routers (its shared `sslHeaders` stays unchanged: a changed middleware that
+  every site's file defines would conflict while a host has old and new
+  files), static_site's headers middleware gains `customRequestHeaders`, and
+  Home Assistant's HTTPS router always runs `homeassistant-headers` first. The
+  drift test `tests/test_traefik_edge_headers.py` (a source sweep in
+  `scripts/affected_tests.py`) renders every route template and fails a router
+  that reaches a backend over HTTPS without the deletion. Route goldens gain
+  the list; the next deploy of each service rewrites its route file (Traefik's
+  file watcher applies it, no restart). `X-Forwarded-For`, `X-Real-Ip` and
+  `X-Forwarded-Host/-Port/-Proto` stay Traefik's own.
+
 - native_app routes (Navidrome, Ollama proxy): Traefik deletes the client's
   `Remote-User` and `True-Client-IP` request headers. Navidrome trusted
   `Remote-User` from its loopback peer, which is Traefik, so anyone reaching

@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 {%- macro middlewares(auth) %}
       middlewares:
 {%- if auth %}
@@ -95,6 +96,7 @@ http:
         customFrameOptionsValue: {{ route.frame_options }}
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     {{ route.name }}-gzip:
       compress: {}

@@ -30,6 +30,7 @@ from pyinfra.operations import apt, server
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import (
     BasicAuth,
     TraefikRoute,
@@ -159,7 +160,7 @@ class ChesslabConfig(BaseServiceConfig):
 def _templates() -> jinja2.Environment:
     # Rendered like Ansible's template module (trim_blocks), for byte parity.
     return jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

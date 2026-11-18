@@ -10,6 +10,7 @@ from typing import Any
 import jinja2
 
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services.mastodon.config import MastodonConfig, unquoted_env_literal
 from ops_deploy.services.mastodon.release_config import MastodonReleaseConfig
 
@@ -29,7 +30,7 @@ SECRET_KEYS = (
 
 def environment() -> jinja2.Environment:
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(PACKAGE, "templates"),
+        loader=template_loader(PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

@@ -7,6 +7,7 @@ from typing import Any
 import jinja2
 
 from ops_deploy.core.secrets import SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services.postfixadmin.config import PostfixAdminConfig
 from ops_deploy.services.snappymail.config import SnappyMailConfig
 
@@ -59,7 +60,7 @@ def render(cfg: Config, secrets: SecretValues) -> dict[str, Any]:
         )
         credentials["password"] = secrets["admin_password"]
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services." + app, "templates"),
+        loader=template_loader("ops_deploy.services." + app),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

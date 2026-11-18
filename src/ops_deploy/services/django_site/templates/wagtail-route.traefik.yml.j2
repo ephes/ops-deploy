@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # {{ managed }}
 # Public website, no Basic Auth: {{ cfg.route.public_reason }}
 
@@ -43,6 +44,7 @@ http:
         customFrameOptionsValue: SAMEORIGIN
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     {{ cfg.unit_name }}-gzip:
       compress: {}

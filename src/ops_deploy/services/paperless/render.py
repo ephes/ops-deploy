@@ -7,13 +7,15 @@ from typing import Any
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
+
 from .config import PaperlessConfig, PaperlessCredentials, validate_credentials
 
 
 @cache
 def environment() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.paperless", "templates"),
+        loader=template_loader("ops_deploy.services.paperless"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

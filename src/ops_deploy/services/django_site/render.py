@@ -15,6 +15,7 @@ from urllib.parse import quote
 import jinja2
 
 from ops_deploy.core.secrets import MissingSecretKeysError, SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services.django_site.config import (
     DjangoSiteConfig,
     EnvValue,
@@ -34,7 +35,7 @@ PLACEHOLDERS = frozenset({"CHANGEME", "CHANGE_ME"})
 @cache
 def _templates() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

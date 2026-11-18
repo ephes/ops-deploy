@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Traefik configuration for Homelab
 # Managed by Ansible - do not edit manually
 # Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
@@ -85,6 +86,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     homelab-gzip:
       compress: {}

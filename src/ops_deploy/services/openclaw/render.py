@@ -20,6 +20,7 @@ from typing import Any
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services.openclaw.variables import dict2items
 from ops_deploy.services.openclaw.variables import to_bool as bool_
 
@@ -29,7 +30,7 @@ TEMPLATE_PACKAGE = "ops_deploy.services.openclaw"
 @cache
 def templates() -> jinja2.Environment:
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

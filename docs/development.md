@@ -115,7 +115,8 @@ says why each path selects what. The rules:
 - `tests/test_policy.py`, `tests/test_traefik_hsts.py`, `tests/test_size_cap.py`
   and `tests/test_affected_tests.py` always run, and the sweeps over the whole
   package (`tests/test_become_environment_secrets.py`,
-  `tests/test_remote_shell_execution.py`) on any change under `src/`;
+  `tests/test_remote_shell_execution.py`, `tests/test_traefik_edge_headers.py`)
+  on any change under `src/`;
 - the whole suite runs (fail open) for the core packages (`core`, `ops`,
   `helpers`, `base`, `testing`), `conftest.py`, test helpers imported by 15
   or more test files (such as `tests/fakehost.py`), `pyproject.toml`,

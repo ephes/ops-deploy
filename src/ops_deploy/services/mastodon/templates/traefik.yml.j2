@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible - Mastodon Traefik config
 
 http:
@@ -16,12 +17,11 @@ http:
 {% else %}
       tls: {}
 {% endif %}
-{% if mastodon_traefik_middlewares | length > 0 %}
       middlewares:
+        - mastodon-edge-headers
 {% for middleware in mastodon_traefik_middlewares %}
         - {{ middleware }}
 {% endfor %}
-{% endif %}
 
     mastodon-web:
       rule: "Host(`{{ mastodon_traefik_host }}`)"
@@ -37,12 +37,11 @@ http:
 {% else %}
       tls: {}
 {% endif %}
-{% if mastodon_traefik_middlewares | length > 0 %}
       middlewares:
+        - mastodon-edge-headers
 {% for middleware in mastodon_traefik_middlewares %}
         - {{ middleware }}
 {% endfor %}
-{% endif %}
 
 {% if mastodon_traefik_local_domain_wellknown | bool %}
     mastodon-local-wellknown:
@@ -53,6 +52,8 @@ http:
 {% endfor %}
       service: {{ mastodon_traefik_service_web }}
       priority: {{ mastodon_traefik_local_domain_priority }}
+      middlewares:
+        - mastodon-edge-headers
 {% if mastodon_traefik_local_domain_cert_resolver | length > 0 %}
       tls:
         certResolver: {{ mastodon_traefik_local_domain_cert_resolver }}
@@ -61,6 +62,12 @@ http:
 {% endif %}
 
 {% endif %}
+  middlewares:
+    mastodon-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
+
   services:
     {{ mastodon_traefik_service_web }}:
       loadBalancer:

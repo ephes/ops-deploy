@@ -20,6 +20,7 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import files, git, server, systemd
 
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import mark_read_only, service_rollout, system_user, systemd_unit, wait_port
 from ops_deploy.helpers.probes import stdin_arguments
 from ops_deploy.helpers.python import uv_sync
@@ -36,7 +37,7 @@ HTTP_SCRIPT = (Path(__file__).parent / "files/mailgun_http_archive_host.py").rea
 @cache
 def environment() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.mailgun_relay", "templates"),
+        loader=template_loader("ops_deploy.services.mailgun_relay"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         lstrip_blocks=True,

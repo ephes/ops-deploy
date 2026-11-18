@@ -19,6 +19,7 @@ from pydantic import Field
 from pyinfra.api.operation import OperationMeta
 from pyinfra.operations.util import any_changed
 
+from ops_deploy.core.templates import template_loader
 from ops_deploy.services.logyard._common import Hostname, ImageRef, Part, Port, Url, Word, probe
 
 __all__ = [
@@ -68,7 +69,7 @@ def _environment() -> jinja2.Environment:
     """The role templates, rendered with the options and filters of Ansible's ``template`` module."""
 
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

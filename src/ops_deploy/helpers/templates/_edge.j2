@@ -1,0 +1,64 @@
+{#-
+Edge request-header hygiene, shared by every Traefik route template.
+
+request_headers(indent) emits one `Name: ""` line per header, each on a new
+line indented by `indent` spaces, for a headers middleware's
+customRequestHeaders. Traefik deletes a request header whose configured value
+is empty, so a client cannot choose:
+
+- an identity a backend might take from a proxy (Remote-User and friends);
+- a client address other than the one Traefik writes (True-Client-IP,
+  Forwarded and other alternatives to X-Forwarded-For);
+- a scheme or path prefix (X-Forwarded-Prefix, X-Forwarded-Ssl, ...);
+- gunicorn's SCRIPT_NAME/PATH_INFO, which it takes from its loopback peer.
+
+X-Forwarded-For, X-Real-Ip and X-Forwarded-Host/-Port/-Proto/-Server are not
+listed: no entry point trusts forwarded headers, so Traefik replaces the
+client's values with its own; deleting them would remove Traefik's.
+
+Use it in a template rendered through ops_deploy.core.templates.template_loader:
+
+  {% import "_edge.j2" as edge %}
+          customRequestHeaders:
+            X-Forwarded-Proto: https
+  {{- edge.request_headers(12) }}
+
+tests/test_traefik_edge_headers.py keeps every route template on it.
+-#}
+{%- set EDGE_DELETED_REQUEST_HEADERS = [
+    "Remote-User",
+    "Remote-Email",
+    "Remote-Name",
+    "Remote-Groups",
+    "X-Remote-User",
+    "X-Forwarded-User",
+    "X-Forwarded-Email",
+    "X-Forwarded-Groups",
+    "X-Forwarded-Preferred-Username",
+    "X-Auth-Request-User",
+    "X-Auth-Request-Email",
+    "X-WEBAUTH-USER",
+    "True-Client-IP",
+    "CF-Connecting-IP",
+    "X-Client-IP",
+    "X-Cluster-Client-IP",
+    "Fastly-Client-IP",
+    "X-Original-Forwarded-For",
+    "Forwarded",
+    "X-Forwarded-Prefix",
+    "X-Forwarded-Uri",
+    "X-Forwarded-Method",
+    "X-Forwarded-Ssl",
+    "X-Forwarded-Protocol",
+    "X-Forwarded-Scheme",
+    "X-Url-Scheme",
+    "X-Script-Name",
+    "SCRIPT_NAME",
+    "PATH_INFO",
+] -%}
+{%- macro request_headers(indent) -%}
+{{ "\n" ~ (" " * indent) ~ "# Deleted: a client must not choose its identity, address or path prefix (ops-deploy _edge.j2)." }}
+{%- for name in EDGE_DELETED_REQUEST_HEADERS -%}
+{{ "\n" ~ (" " * indent) ~ name ~ ': ""' }}
+{%- endfor -%}
+{%- endmacro -%}

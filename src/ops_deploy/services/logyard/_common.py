@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from pyinfra import host
 from pyinfra.facts.server import Command
 
+from ops_deploy.core.templates import template_loader
+
 TEMPLATE_PACKAGE = "ops_deploy.services.logyard"
 FILES = Path(__file__).parent / "files"
 
@@ -43,7 +45,7 @@ def _environment() -> jinja2.Environment:
     """The role templates, rendered with the options and filters of Ansible's ``template`` module."""
 
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(TEMPLATE_PACKAGE, "templates"),
+        loader=template_loader(TEMPLATE_PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

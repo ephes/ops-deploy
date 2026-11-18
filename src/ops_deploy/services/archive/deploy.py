@@ -36,6 +36,7 @@ from pyinfra.operations import apt, server
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.rsync import RsyncRunner, subprocess_rsync_runner
 from ops_deploy.core.secrets import SecretContent, SecretValues
+from ops_deploy.core.templates import template_loader
 from ops_deploy.helpers import (
     TraefikRoute,
     http_check,
@@ -249,7 +250,7 @@ def check_secrets(secrets: SecretValues) -> None:
 def _templates() -> jinja2.Environment:
     # The role's own templates, rendered with the options of Ansible's template module.
     return jinja2.Environment(
-        loader=jinja2.PackageLoader("ops_deploy.services.archive", "templates"),
+        loader=template_loader("ops_deploy.services.archive"),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

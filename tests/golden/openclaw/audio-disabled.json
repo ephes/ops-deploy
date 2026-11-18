@@ -31,7 +31,7 @@
       "mode": "0644"
     },
     "/etc/traefik/dynamic/openclaw.yml": {
-      "sha256": "e8d310766563356e6c8cd9cbc11d0089fb0dea0f9a6a9862945bd19768a8429b",
+      "sha256": "fe984fd6a911879f6decbb24c467883e7ad2e94ada1afa6c4e0f0b8b642f406c",
       "owner": "root",
       "group": "root",
       "mode": "0644"

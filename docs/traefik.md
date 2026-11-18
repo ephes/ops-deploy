@@ -509,6 +509,59 @@ roles, FastDeploy's own runs, certbot hooks) do not check at all. A raced
 transaction rolls back, which is safe but noisy; the deploy lock and the
 update windows keep that rare.
 
+## Edge request-header hygiene
+
+Traefik passes any request header a client sends on to the backend, and every
+backend sees Traefik as its loopback peer. So every route ops-deploy renders
+deletes the headers a client must not choose. The list lives once, in the
+macro `request_headers(indent)` of `helpers/templates/_edge.j2`; it emits
+`Name: ""` lines for a headers middleware's `customRequestHeaders`, and
+Traefik deletes a request header whose configured value is empty:
+
+| Group | Headers | Why |
+|---|---|---|
+| Identity | `Remote-User`, `Remote-Email`, `Remote-Name`, `Remote-Groups`, `X-Remote-User`, `X-Forwarded-User`, `X-Forwarded-Email`, `X-Forwarded-Groups`, `X-Forwarded-Preferred-Username`, `X-Auth-Request-User`, `X-Auth-Request-Email`, `X-WEBAUTH-USER` | a backend configured for proxy authentication would take the user from them (Navidrome did) |
+| Client address | `True-Client-IP`, `CF-Connecting-IP`, `X-Client-IP`, `X-Cluster-Client-IP`, `Fastly-Client-IP`, `X-Original-Forwarded-For`, `Forwarded` | alternatives to `X-Forwarded-For` that an application or library may prefer for logs and rate limits; no CDN sits in front |
+| Scheme and prefix | `X-Forwarded-Prefix`, `X-Forwarded-Uri`, `X-Forwarded-Method`, `X-Forwarded-Ssl`, `X-Forwarded-Protocol`, `X-Forwarded-Scheme`, `X-Url-Scheme`, `X-Script-Name` | Traefik does not own them; `X-Forwarded-Ssl` and `X-Forwarded-Protocol` are gunicorn secure-scheme headers |
+| WSGI environ | `SCRIPT_NAME`, `PATH_INFO` | gunicorn takes `SCRIPT_NAME` from its loopback peer; the entry points' `aliasHeadersStrategy = "delete"` already drops both on transaction-managed hosts, the macro covers hosts without it |
+
+`X-Forwarded-For`, `X-Real-Ip` and `X-Forwarded-Host/-Port/-Proto/-Server` are
+not listed: no entry point trusts forwarded headers, so Traefik replaces what
+the client sent with its own values, and deleting them would remove those.
+
+Every route template imports the macro (`{% import "_edge.j2" as edge -%}` in
+its first line) and calls it at the end of the `customRequestHeaders` of the
+headers middleware its HTTPS routers use. A template without such a middleware
+gets a `<name>-edge-headers` middleware (mastodon, opaq_app, openclaw, unifi;
+django_site's `<fqdn>-edge-headers`, see below). The middleware runs before any
+middleware that rewrites the path (`stripPrefix` sets `X-Forwarded-Prefix`
+itself). The environments that render routes load templates through
+`ops_deploy.core.templates.template_loader(package)`: the package's own
+`templates` directory first, then `ops_deploy.helpers`', where `_edge.j2` lives.
+
+A template that one host renders several times, one file per route
+(`traefik_route`, native_app, django_site, static_site), gives the deleting
+middleware a per-route name. Traefik's file provider drops a middleware that
+two files define differently, and with it every router that uses it: while a
+host had old and new route files side by side, a shared name (django_site's
+`sslHeaders`, defined identically in every site's file) would take all its
+sites offline. That is why django_site adds `<fqdn>-edge-headers` and leaves
+`sslHeaders` as it is.
+
+`tests/test_traefik_edge_headers.py` keeps every template on it: each route
+template under `src/ops_deploy` has a rendered sample (a golden or a fixture
+render), every router that reaches a backend over HTTPS runs a middleware that
+deletes the whole list before any path rewrite, no middleware sets a listed
+header, and the multi-route templates never share the deleting middleware's
+name between two routes. Routers on the plain `web` entry point only, plain
+HTTP routers whose first middleware is a `redirectScheme`, and routers to
+`noop@internal` are not checked: the static config redirects `web` to
+`web-secure`, and those routers answer before any backend. A new route
+template fails the first check until the test names a sample for it.
+
+The deletion reaches a host with the next deploy of each service that writes a
+route there (the file changes; Traefik's file watcher picks it up, no restart).
+
 ## Compatibility proof
 
 `binary` requires a `compatibility` block: the exact candidate executable and

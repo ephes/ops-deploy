@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 http:
   routers:
     paperless:
@@ -34,6 +35,7 @@ http:
         browserXssFilter: true
         customRequestHeaders:
           X-Forwarded-Proto: "https"
+{{- edge.request_headers(10) }}
         customResponseHeaders:
           X-Robots-Tag: "noindex, nofollow"
           server: ""

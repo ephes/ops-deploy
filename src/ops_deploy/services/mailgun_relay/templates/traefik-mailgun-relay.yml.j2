@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible (mailgun_relay_ingress_deploy) — do not edit manually.
 # The mailgun-relay service handles its own HTTP Basic auth; this file only
 # wires TLS termination and request forwarding.
@@ -38,6 +39,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     mailgun-relay-buffering:
       buffering:

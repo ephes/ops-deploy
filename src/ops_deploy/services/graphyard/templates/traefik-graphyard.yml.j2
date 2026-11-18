@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Traefik configuration for Graphyard + Grafana
 # Managed by Ansible - do not edit manually
 # Dual-router pattern: LAN/Tailscale bypass basic auth, public requires basic auth
@@ -205,6 +206,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     graphyard-gzip:
       compress: {}
@@ -221,6 +223,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     grafana-gzip:
       compress: {}

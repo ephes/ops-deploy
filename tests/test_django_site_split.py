@@ -216,9 +216,14 @@ def test_route_sends_the_frontend_prefixes_to_the_frontend(cfg: DjangoSiteConfig
     ]
     for name, service, priority, middlewares in (
         ("cms-router", "next", 200, ["redirect"]),
-        ("cms-secure-router", "next", 200, ["csrf", "sslHeaders", "gzip-compress"]),
+        ("cms-secure-router", "next", 200, [f"{FQDN}-edge-headers", "csrf", "sslHeaders", "gzip-compress"]),
         ("router", "django", 100, ["redirect", "csrf"]),
-        ("secure-router", "django", 100, ["csrf", "sslHeaders", "gzip-compress", "redirect-www"]),
+        (
+            "secure-router",
+            "django",
+            100,
+            [f"{FQDN}-edge-headers", "csrf", "sslHeaders", "gzip-compress", "redirect-www"],
+        ),
     ):
         router = routers[f"{FQDN}-{name}"]
         assert (router["service"], router["priority"], router["middlewares"]) == (

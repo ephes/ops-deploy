@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 http:
   routers:
     unifi:
@@ -7,19 +8,20 @@ http:
         - "{{ entrypoint }}"
 {% endfor %}
       service: unifi
-{% if unifi_traefik_ip_allowlist | length > 0 %}
       middlewares:
+{% if unifi_traefik_ip_allowlist | length > 0 %}
         - unifi-ipallow
 {% endif %}
+        - unifi-edge-headers
 {% if unifi_traefik_certresolver | default('') | length > 0 %}
       tls:
         certResolver: "{{ unifi_traefik_certresolver }}"
 {% else %}
       tls: {}
 {% endif %}
-{% if unifi_traefik_ip_allowlist | length > 0 %}
 
   middlewares:
+{% if unifi_traefik_ip_allowlist | length > 0 %}
     unifi-ipallow:
       ipAllowList:
         sourceRange:
@@ -27,6 +29,10 @@ http:
           - "{{ cidr }}"
 {% endfor %}
 {% endif %}
+    unifi-edge-headers:
+      headers:
+        customRequestHeaders:
+{{- edge.request_headers(10) }}
 
   services:
     unifi:

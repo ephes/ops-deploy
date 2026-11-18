@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Traefik configuration for the work app
 # Managed by Ansible - do not edit manually
 # Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
@@ -67,6 +68,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     work-app-gzip:
       compress: {}

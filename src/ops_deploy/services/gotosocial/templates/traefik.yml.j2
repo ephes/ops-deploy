@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible (ops-library gotosocial_deploy) - Traefik route for GoToSocial.
 # Public on purpose: federation peers and fediverse clients cannot pass Basic
 # Auth. See the role README (exception to the dual-router policy).
@@ -42,6 +43,7 @@ http:
         customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
 
     gotosocial-redirect:
       redirectScheme:

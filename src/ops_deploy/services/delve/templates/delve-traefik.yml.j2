@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 # Managed by Ansible (delve_deploy) - Traefik dynamic config for delve
 # HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
 http:
@@ -64,6 +65,7 @@ http:
         browserXssFilter: true
         customRequestHeaders:
           X-Forwarded-Proto: "https"
+{{- edge.request_headers(10) }}
 
   services:
     {{ route.name }}:

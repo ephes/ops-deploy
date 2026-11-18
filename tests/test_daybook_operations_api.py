@@ -62,7 +62,7 @@ def test_original_private_public_units_and_router_hashes() -> None:
     )
     assert (
         hashlib.sha256(render_route(cfg).encode()).hexdigest()
-        == "14e1e706af883667ee267ba3bf7916c350def2352eb9a118441ccf9914d84d76"
+        == "252c4bd6cfa0d65c6f3363c451f4d732b194e0d64a7f2577234863610b7d3846"
     )
 
 

@@ -1,3 +1,4 @@
+{% import "_edge.j2" as edge -%}
 http:
   routers:
     daybook-operations:
@@ -14,6 +15,7 @@ http:
       headers:
         customRequestHeaders:
           X-Forwarded-Proto: https
+{{- edge.request_headers(10) }}
     daybook-operations-limit:
       buffering:
         maxRequestBodyBytes: 16384

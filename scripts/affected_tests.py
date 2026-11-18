@@ -64,7 +64,11 @@ ALWAYS = (
     "tests/test_affected_tests.py",
 )
 # Sweeps that scan the whole package by globbing it: run on every change under src/.
-SOURCE_SWEEPS = ("tests/test_become_environment_secrets.py", "tests/test_remote_shell_execution.py")
+SOURCE_SWEEPS = (
+    "tests/test_become_environment_secrets.py",
+    "tests/test_remote_shell_execution.py",
+    "tests/test_traefik_edge_headers.py",
+)
 # A change here selects the whole suite.
 CORE = tuple(f"src/{PACKAGE}/{name}/" for name in ("core", "ops", "helpers", "base", "testing"))
 FULL_SUITE_FILES = frozenset(

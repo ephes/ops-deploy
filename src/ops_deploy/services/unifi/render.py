@@ -7,6 +7,8 @@ from typing import Any
 
 import jinja2
 
+from ops_deploy.core.templates import template_loader
+
 from .config import UnifiConfig
 
 PACKAGE = "ops_deploy.services.unifi"
@@ -15,7 +17,7 @@ PACKAGE = "ops_deploy.services.unifi"
 @cache
 def templates() -> jinja2.Environment:
     return jinja2.Environment(
-        loader=jinja2.PackageLoader(PACKAGE, "templates"),
+        loader=template_loader(PACKAGE),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,

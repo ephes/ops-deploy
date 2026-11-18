@@ -9,6 +9,7 @@ from typing import Any
 import jinja2
 
 from ops_deploy.core.secrets import SecretContent
+from ops_deploy.core.templates import template_loader
 
 from .config import OperationsApiConfig, OperationsApiPins
 
@@ -16,7 +17,7 @@ from .config import OperationsApiConfig, OperationsApiPins
 @cache
 def templates() -> jinja2.Environment:
     env = jinja2.Environment(
-        loader=jinja2.PackageLoader(__package__, "templates"),
+        loader=template_loader(__package__),
         undefined=jinja2.StrictUndefined,
         trim_blocks=True,
         keep_trailing_newline=True,
