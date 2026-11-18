@@ -59,7 +59,8 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 CRATE = HERE.parent
-REPO = CRATE.parents[1]
+# The frozen copies of the ops-library files the harness reads (rust/HISTORY.md).
+REPO = CRATE.parent / "oracle"
 GUARD_PATH = REPO / "roles" / "echoport_remote_command_guard" / "files" / "echoport-remote-command-guard.py"
 FIXTURES = CRATE / "fixtures"
 POLICY_DIR = FIXTURES / "policies"

@@ -47,7 +47,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[3]
+# The frozen copy of the ops-library template (rust/HISTORY.md).
+ROOT = Path(__file__).resolve().parents[2] / "oracle"
 TEMPLATE = ROOT / "roles/static_site_deploy/templates/static-site-httpd.py.j2"
 COMPARED = (
     "Content-Type",

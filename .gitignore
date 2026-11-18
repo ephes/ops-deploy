@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 site/
 dist/
+
+# Rust workspace build output and release builds (rust/README.md)
+/rust/target/

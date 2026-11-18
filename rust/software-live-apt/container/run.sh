@@ -53,4 +53,4 @@ echo "stripped size: $(stat -c %s "$bin") bytes (budget 2 MiB, PLAN.md 10)"
 echo "== fake APT world and python-apt comparison"
 bash software-live-apt/container/setup-world.sh
 python3 -I software-live-apt/container/compare.py \
-    --helper "$bin" --oracle "$rust/../roles/software_live/files/software_live.py"
+    --helper "$bin" --oracle "$rust/oracle/roles/software_live/files/software_live.py"

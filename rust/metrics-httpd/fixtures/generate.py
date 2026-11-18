@@ -100,7 +100,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 FIXTURES = Path(__file__).resolve().parent
-ROOT = FIXTURES.parents[2]
+# The frozen copies of the ops-library templates (rust/HISTORY.md).
+ROOT = FIXTURES.parents[1] / "oracle"
 SEED = 20261021
 
 # User -> password of the committed fixtures/htpasswd (test-only).
@@ -2133,7 +2134,7 @@ def ops_control_checkout() -> Path | None:
         if not (root / TORRENT).is_file():
             raise SystemExit(f"{OPS_CONTROL_ENV}={configured}: {TORRENT} not found")
         return root
-    for root in (ROOT.parent / "ops-control", Path.home() / "projects" / "ops-control"):
+    for root in (FIXTURES.parents[3] / "ops-control", Path.home() / "projects" / "ops-control"):
         if (root / TORRENT).is_file():
             return root
     return None

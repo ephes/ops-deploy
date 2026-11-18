@@ -41,7 +41,9 @@ line-length = 120
 target-version = "py312"
 # Scripts run on the host with a service's own interpreter (some vendored from ops-library),
 # and the recorded renders of host scripts under tests/golden.
-extend-exclude = ["src/ops_deploy/services/*/files", "src/ops_deploy/infra/files", "tests/golden"]
+# rust/ is the Rust workspace with its own stdlib Python scripts and frozen
+# ops-library oracles (rust/README.md); `just rust-check` covers it.
+extend-exclude = ["src/ops_deploy/services/*/files", "src/ops_deploy/infra/files", "tests/golden", "rust"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PT", "TID"]

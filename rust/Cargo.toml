@@ -1,4 +1,5 @@
-# Cargo virtual workspace for the Rust binaries of ops-library
+# Cargo virtual workspace for the Rust binaries of ops-deploy (moved from
+# ops-library on 2026-11-18, rust/HISTORY.md)
 # (PLAN-foundation.md section 1). One crate per binary: directory name =
 # package name = binary name = release tag prefix. Each crate has its own
 # `version` so the binaries release independently. A stream appends its crate
@@ -12,7 +13,7 @@ members = ["echoport-command-guard", "metrics-httpd", "software-live", "software
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-repository = "https://github.com/ephes/ops-library"
+repository = "https://github.com/ephes/ops-deploy"
 publish = false
 
 # Members left out of the default CI job and `just rust-check` because they

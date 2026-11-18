@@ -1,6 +1,6 @@
 """Tests of release_checks.py (PLAN-foundation.md section 4).
 
-The script gates `.github/workflows/rust-release.yml`: the tag resolves to
+The script gates the local release build (`release.py`): the tag resolves to
 exactly one crate and its version, `release.json` (or its defaults) becomes
 the build matrix, every binary stays within its glibc ceiling and `NEEDED`
 allowlist and prints `<name> <version> (<commit>)`, and the archive is
@@ -29,7 +29,6 @@ SCRIPTS = Path(__file__).resolve().parent
 RUST = SCRIPTS.parent
 REPO = RUST.parent
 SCRIPT = SCRIPTS / "release_checks.py"
-WORKFLOW = REPO / ".github" / "workflows" / "rust-release.yml"
 TWO_VARIANTS = SCRIPTS / "testdata" / "release-two-variants.json"
 SOFTWARE_LIVE_RELEASE = RUST / "software-live" / "release.json"
 COMMIT = "27cf52e7bd2525d6f8ba4b2f9be42a880c2f6e1a"  # pragma: allowlist secret
@@ -1484,121 +1483,6 @@ class AptIsolationTest(unittest.TestCase):
                 checks.apt_paths(metadata_of("--all-features")),
                 [["software-live", "rust-apt"]],
             )
-
-
-class WorkflowTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.text = WORKFLOW.read_text(encoding="utf-8")
-
-    def section(self, start: str, end: str) -> str:
-        return self.text.split(start, 1)[1].split(end, 1)[0]
-
-    def test_triggers_are_the_three_tag_prefixes(self) -> None:
-        tags = re.findall(
-            r'^      - "([^"]+)"$',
-            self.section("    tags:\n", "  workflow_dispatch:"),
-            re.M,
-        )
-        self.assertEqual(tags, [f"{crate}-v*" for crate in RELEASE_CRATES])
-        options = re.findall(
-            r"^          - (\S+)$",
-            self.section("        options:\n", "\npermissions:"),
-            re.M,
-        )
-        self.assertEqual(options, list(RELEASE_CRATES))
-
-    def test_runs_every_check(self) -> None:
-        for needle in (
-            "runs-on: ubuntu-22.04",
-            f"TARGET: {TARGET}",
-            "release_checks.py tag",
-            "release_checks.py matrix",
-            "release_checks.py verify",
-            "release_checks.py pack",
-            "release_checks.py apt-isolation",
-            "cargo metadata --format-version 1 --locked --all-features",
-            "scripts/ci_excludes.py",
-            "cargo fmt --check",
-            'cargo clippy --workspace "${exclude_args[@]}" --all-targets --locked -- -D warnings',
-            'cargo test --workspace "${exclude_args[@]}" --locked',
-            'cargo build --release --locked --target "$TARGET" "${members[@]}"',
-            "container: ${{ matrix.image }}",
-            "matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}",
-            "git log -1 --format=%ct",
-            "sha256sum --check",
-            "--verify-tag",
-            "--latest=false",
-            "--prerelease",
-            'echo "${name}=${GITHUB_SHA}"',
-            "github.event_name == 'push' && github.ref_type == 'tag'",
-            "persist-credentials: false",
-        ):
-            self.assertIn(needle, self.text, needle)
-        self.assertNotIn("actions/cache", self.text)
-
-    def test_shared_binaries_are_built_once_and_checked_by_sha256(self) -> None:
-        """software-live PLAN.md 7.2: the same runner build in every archive."""
-        shared = self.section("\n  shared:\n", "\n  build:\n")
-        for needle in (
-            "if: needs.prepare.outputs.shared != ''",
-            "runs-on: ubuntu-22.04",
-            "release_checks.py verify",
-            "release_checks.py checksums",
-            'tee -a "$GITHUB_OUTPUT"',
-            "sha256: ${{ steps.checksums.outputs.sha256 }}",
-            "name: ${{ fromJSON(needs.prepare.outputs.shared).artifact }}",
-        ):
-            self.assertIn(needle, shared, needle)
-        self.assertNotIn("container:", shared)
-        build = self.section("\n  build:\n", "\n  publish:\n")
-        for needle in (
-            "needs: [prepare, shared]",
-            "needs.shared.result == 'success' || needs.shared.result == 'skipped'",
-            "SHARED_SHA256: ${{ needs.shared.outputs.sha256 }}",
-            "name: ${{ matrix.shared_artifact }}",
-            "if: matrix.build_args != ''",
-            '--shared-bin-dir "$GITHUB_WORKSPACE/release-shared" --shared-sha256 "$SHARED_SHA256"',
-        ):
-            self.assertIn(needle, build, needle)
-        self.assertEqual(build.count('"${shared_args[@]}"'), 2)
-        # A skipped shared job must not skip the release.
-        publish = self.text.split("\n  publish:\n", 1)[1]
-        self.assertIn(
-            "needs.prepare.result == 'success' && needs.build.result == 'success'",
-            publish,
-        )
-        # The shared artifact never matches the publish job's download pattern.
-        self.assertIn(
-            "pattern: ${{ needs.prepare.outputs.crate }}-${{ needs.prepare.outputs.version }}-*",
-            publish,
-        )
-        self.assertFalse(
-            checks.shared_artifact_name("software-live", "0.1.0").startswith(
-                "software-live-0.1.0-"
-            )
-        )
-
-    def test_only_the_publish_job_may_write(self) -> None:
-        code = "\n".join(
-            line for line in self.text.splitlines() if not line.lstrip().startswith("#")
-        )
-        self.assertEqual(code.count("contents: write"), 1)
-        self.assertIn("permissions:\n  contents: read\n", self.text)
-        publish = self.text.split("\n  publish:\n", 1)[1]
-        self.assertIn("    permissions:\n      contents: write\n", publish)
-
-    def test_actions_are_pinned_by_sha(self) -> None:
-        uses = re.findall(r"uses: (\S+)", self.text)
-        self.assertTrue(uses)
-        for ref in uses:
-            self.assertRegex(ref, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
-
-    def test_no_expression_is_interpolated_into_a_script(self) -> None:
-        """Values reach `run:` scripts through env, never as `${{ }}` text."""
-        for block in re.findall(r"run: \|\n((?:          .*\n|\n)+)", self.text):
-            self.assertNotIn("${{", block)
-        for line in re.findall(r"run: (?!\|)(.*)", self.text):
-            self.assertNotIn("${{", line)
 
 
 if __name__ == "__main__":

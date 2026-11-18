@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The Rust workspace moved here from the archived ops-library: `rust/` holds
+  `echoport-command-guard`, `metrics-httpd`, `software-live` and
+  `software-live-apt` with their full history (229 commits from
+  `git filter-repo`, merged with `--allow-unrelated-histories`) and, under
+  `rust/oracle/`, frozen copies of the 26 ops-library files (Python programs,
+  endpoint templates, role defaults) the harnesses compare against
+  (`rust/HISTORY.md`). No GitHub Actions: new recipes `just rust-check` and
+  `just rust-check-apt` run what ops-library's `rust.yml` ran, and `rust/scripts/release.py` (`just rust-release`,
+  `rust-release-publish`, `rust-release-import-old`) replaces
+  `rust-release.yml` with a local build in `linux/amd64` containers (no
+  network during the build) and an idempotent `gh release` publication that
+  never moves a tag or replaces an asset. `rust/releases.json` records the
+  eight ops-library releases with their assets and the rewritten commits.
+  New `tests/test_rust_workspace.py` (in `just check`): wheel and sdist hold
+  nothing from `rust/`, and the frozen Python guard must equal the installed
+  `echoport_remote_command_guard.py.txt`. Ruff skips `rust/`;
+  `/rust/target/` is ignored. Lock file: `rustix` 1.1.6 (RUSTSEC-2026-0486);
+  `deny.toml` ignores RUSTSEC-2026-0543 (chrono unmaintained). Nothing
+  installed changes: the release URLs still point at ops-library.
+
 - Traefik compatibility proof (`traefik_tx/proof.py`): an optional
   `candidate_config_base64` (the static config of an `alias` transaction)
   makes the candidate pair start that config instead of the live one; it must

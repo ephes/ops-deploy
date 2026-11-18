@@ -129,6 +129,13 @@ def dumps(value: Any) -> str:
 
 
 def _import_tests() -> Any:
+    # The recorded tests stayed in the archived ops-library; ops-deploy keeps
+    # only the frozen guard (rust/HISTORY.md), so the corpus is frozen too.
+    if not (TESTS / "test_echoport_remote_command_guard.py").is_file():
+        raise GeneratorError(
+            f"record needs {TESTS}/test_echoport_remote_command_guard.py, which stayed "
+            "in the archived ops-library (rust/HISTORY.md); the corpus is frozen"
+        )
     sys.path.insert(0, str(oracle.REPO))
     import importlib
 

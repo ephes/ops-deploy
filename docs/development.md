@@ -14,6 +14,8 @@ The project uses [uv](https://docs.astral.sh/uv/) and [just](https://just.system
 | `just size-cap` | code-line count of helpers + ops + core against the cap (see below) |
 | `just check` | lint, typecheck, test, size-cap and docs, as CI runs them |
 | `just smoke` | real deploys to the local lima VM ([smoke target](concepts/smoke.md)); `smoke-up`, `smoke-ssh`, `smoke-down` manage the VM |
+| `just rust-check`, `just rust-check-apt` | the Rust workspace under `rust/` (not part of `just check`; see [Rust binaries](rust.md)) |
+| `just rust-release <crate>`, `just rust-release-publish <crate>` | local release build of a Rust crate and its GitHub release ([Rust binaries](rust.md)) |
 
 CI (`.github/workflows/ci.yml`) runs `just check` steps on Python 3.12 and 3.13.
 

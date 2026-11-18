@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Release checks of the Rust workspace (PLAN-foundation.md section 4).
 
-Used by `.github/workflows/rust-release.yml`; stdlib only and Python 3.10
-compatible (the release jobs run the runner's or the variant image's
+Used by `release.py` (the local release build that replaced ops-library's
+`.github/workflows/rust-release.yml`); stdlib only and Python 3.10
+compatible (the release jobs run the ubuntu:22.04 or the variant image's
 python3). Tested in `test_release_checks.py`. Adapted from
 `mailgun-relay:rust/scripts/release_checks.py` for several crates with
 per-binary tags (`<crate>-v<semver>`) and per-crate release settings

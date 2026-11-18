@@ -16,7 +16,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 workspace=$(cd "$here/../../.." && pwd)
-guard="$(cd "$workspace/.." && pwd)/roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
+guard="$workspace/oracle/roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
 suffix=${ECHOPORT_E2E_SUFFIX:-}
 read -r -a extra <<< "${ECHOPORT_LEAN_ARGS:-}"
 distros=("$@")

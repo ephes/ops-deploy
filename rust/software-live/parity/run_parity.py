@@ -75,7 +75,8 @@ from typing import Any, Callable
 PARITY = Path(__file__).resolve().parent
 CRATE = PARITY.parent
 FIXTURES = CRATE / "fixtures"
-REPO = CRATE.parents[1]
+# The frozen copies of the ops-library programs (rust/HISTORY.md).
+REPO = CRATE.parent / "oracle"
 PROGRAM = REPO / "roles" / "software_live" / "files" / "software_live.py"
 READER = REPO / "roles" / "software_estate" / "files" / "collect.py"
 sys.path.insert(0, str(PARITY))

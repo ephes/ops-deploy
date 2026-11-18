@@ -18,7 +18,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 workspace=$(cd "$here/../../.." && pwd)
-guard="$(cd "$workspace/.." && pwd)/roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
+guard="$workspace/oracle/roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py"
 suffix=${ECHOPORT_E2E_SUFFIX:-}
 # (The `${extra[@]+...}` form below keeps an empty array safe under `set -u`
 # in macOS's Bash 3.2.)

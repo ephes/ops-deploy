@@ -1,7 +1,8 @@
-# Rust binaries of ops-library
+# Rust binaries of ops-deploy
 
 A Cargo workspace for small Rust binaries that replace long-running Python
-processes deployed by this collection. [`PLAN-foundation.md`](PLAN-foundation.md)
+processes deployed by ops-deploy. It moved here from the archived ops-library
+on 2026-11-18 with its history and its eight releases ([`HISTORY.md`](HISTORY.md)). [`PLAN-foundation.md`](PLAN-foundation.md)
 is the contract for the workspace, toolchain, dependency policy, CI, release
 pipeline and the shared install helpers; each crate has its own plan:
 
@@ -12,12 +13,15 @@ pipeline and the shared install helpers; each crate has its own plan:
 | `software-live` | [`software-live/PLAN.md`](software-live/PLAN.md) | crate skeleton (S2): `validate`, command line, policy hash, report types, fixtures from the Python program; the APT observation through its helper (S3d); see [`software-live/README.md`](software-live/README.md) |
 | `software-live-apt` (no tag of its own; ships in the `software-live` archives) | [`software-live/PLAN.md`](software-live/PLAN.md) 5.2 | APT helper (S3d), GPL-3.0-or-later, built and tested per distribution variant in containers; see [`software-live-apt/README.md`](software-live-apt/README.md) |
 
-Nothing in this directory is part of the Ansible collection: `galaxy.yml`
-`build_ignore` excludes `rust` and `.github`, and
-`tests/test_collection_build_ignore.py` (`just test-collection-build-ignore`,
-part of `just test`) builds the collection and checks that no archive member
-comes from either directory. No role installs a binary from here until its
-crate's switch slice; merging Rust code changes nothing on any host.
+Nothing in this directory is part of the ops-deploy package: the wheel and the
+sdist hold only `src/ops_deploy`, and `tests/test_rust_workspace.py` (part of
+`just check`) builds both and checks that no member comes from `rust/`. The
+plans name ops-library's Ansible roles and `.github/workflows`; they are the
+record of how the crates were built there. Today the Python originals the
+harnesses compare against are the frozen copies under `oracle/`
+([`HISTORY.md`](HISTORY.md)), and the checks and releases run locally (below).
+Merging Rust code changes nothing on any host: a host runs a release only
+after ops-control pins its version and sha256.
 
 ## Layout
 
@@ -28,7 +32,10 @@ rust/
   rust-toolchain.toml   pinned toolchain 1.99.1 (= MSRV, `rust-version`)
   deny.toml             cargo-deny policy for the whole workspace
   LICENSE               MIT, packed into every release archive
-  scripts/              stdlib Python helpers for CI (ci_excludes.py) and releases
+  HISTORY.md            the move from ops-library: history, commit ids, oracles
+  releases.json         the eight releases built in ops-library (written once, never edited)
+  oracle/               frozen ops-library files the harnesses compare against
+  scripts/              stdlib Python: check exclusions (ci_excludes.py), release checks and release.py
                         (release_checks.py), with tests and testdata/
   metrics-httpd/        crate + binary `metrics-httpd`, plan, TESTMAP, Python-generated fixtures
   echoport-command-guard/  crate + binary `echoport-command-guard`, plan, Python oracle and fixtures,
@@ -68,8 +75,8 @@ first `cargo` call (a non-rustup cargo of the same version works too). From
 the repository root of a worktree:
 
 ```bash
-just rust-check     # everything the CI job runs (below)
-just rust-test      # cargo test + the rust/scripts tests only
+just rust-check       # the workspace checks (below)
+just rust-check-apt   # software-live-apt and the software-live parity in containers
 ```
 
 `just rust-check` runs, from `rust/`:
@@ -82,20 +89,23 @@ cargo deny --locked check          # cargo-deny 0.20.2, policy in deny.toml
 python3 -I -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Neither recipe is a dependency of `just test`, so the Ansible test suite keeps
-working without a Rust toolchain. Run them in a worktree, not in a shared
+Neither recipe is part of `just check`, so ops-deploy's gate keeps working
+without a Rust toolchain; a change under `rust/` runs them before it is
+pushed. `just rust-check` refuses a `cargo` that is not the pinned toolchain
+(Homebrew's cargo ignores `rust-toolchain.toml`; put `~/.cargo/bin` first in
+`PATH`). Run them in a worktree, not in a shared
 checkout: they write `rust/target/`. The `cargo test` of
 echoport-command-guard runs its Python oracle with `python3` (or
-`$ECHOPORT_ORACLE_PYTHON`; CI uses 3.12), so a Python 3 must be on `PATH`.
+`$ECHOPORT_ORACLE_PYTHON`; `just rust-check` uses 3.12), so a Python 3 must be on `PATH`.
 
 `metrics-httpd --version` prints `metrics-httpd <version> (<commit>)`. The
 crate's `build.rs` embeds the commit: `METRICS_HTTPD_GIT_COMMIT` if set (the
-release workflow sets the full SHA; it must be 7 to 40 lowercase hex digits,
+release build sets the full SHA; it must be 7 to 40 lowercase hex digits,
 anything else fails the build), else `git rev-parse HEAD`, else `unknown`.
 
 ### Members left out of the default job
 
-A member that needs system build dependencies the CI runner image does not
+A member that needs system build dependencies the default checks do not
 have is listed in `rust/Cargo.toml`:
 
 ```toml
@@ -107,11 +117,11 @@ exclude = ["<crate>"]
 and prints the matching `--exclude <crate>` arguments (today
 `--exclude software-live-apt`); it
 rejects names that are not workspace members, duplicates, and a list that
-would exclude every member. The CI job and `just rust-check`/`just rust-test`
+would exclude every member. `just rust-check` and the release's `prepare` job
 pass them to `cargo clippy --workspace` and `cargo test --workspace`. The
 crate's stream adds its own job that builds, lints and tests it in a suitable
-container (PLAN-foundation.md sections 3 and 4): for `software-live-apt` the
-job `software-live-apt` in `rust.yml` (below).
+container (PLAN-foundation.md sections 3 and 4): for `software-live-apt`
+`just rust-check-apt` and the release's variant jobs (below).
 
 ## Dependency policy
 
@@ -128,124 +138,178 @@ job `software-live-apt` in `rust.yml` (below).
   that exception is scoped by crate, `scripts/release_checks.py
   apt-isolation` reads the full `cargo metadata --locked --all-features`
   graph and fails when any member other than `software-live-apt` can reach
-  `rust-apt` (normal, build or dev edges, also through the helper); the CI
-  job and the release job run it. While a license on the list is not used by any
+  `rust-apt` (normal, build or dev edges, also through the helper);
+  `just rust-check` and the release's `prepare` job run it. While a license on the list is not used by any
   crate, cargo-deny prints a `license-not-encountered` warning; that is not a
   failure.
 - Maintained crates instead of re-implemented libraries or hand-rolled
   protocols; each crate plan lists its crates with a reason.
 
-## CI
+## Local checks
 
-`.github/workflows/rust.yml` runs on pushes to `main` and on pull requests
-that touch `rust/**`, `.github/workflows/rust*.yml` or the Python endpoint
-scripts `roles/**/*httpd*` (metrics-httpd's parity harness runs them), and
-on `workflow_dispatch`. One job on `ubuntu-22.04` (`permissions: contents:
-read`, actions pinned by commit SHA): the pinned toolchain, a cargo cache
-keyed on `rust-toolchain.toml` and `Cargo.lock`, the CI exclusions, then
-`cargo fmt --check`, clippy with `-D warnings`, `cargo test`, cargo-deny
-0.20.2 (the release tarball, sha256-checked, as mailgun-relay) with
-`cargo deny --locked check`, and the `rust/scripts` tests with the runner's
-`python3` (3.10; the scripts are stdlib-only).
+There is no GitHub Actions job (owner rule since 2026-11-15); ops-library's
+`rust.yml` stayed behind in the archive. `just rust-check` runs what its
+`rust` job ran, from `rust/`:
 
-Crate steps in the same job (PLAN-foundation.md section 3 allows them):
-echoport-command-guard sets up uv with Python 3.12 for its oracle tests
-(`ECHOPORT_ORACLE_PYTHON`) and runs its fixture drift check
-(`echoport-command-guard/README.md`); metrics-httpd installs
-`apache2-utils` and runs its parity harness (the rendered Python endpoint
-scripts under CPython 3.12 against the debug binary) and the tests of its
-shadow comparer (`metrics-httpd/README.md`, `just
-rust-parity-metrics-httpd`).
+- `cargo fmt --check`, clippy with `-D warnings` and `cargo test` over the
+  workspace without the `[workspace.metadata.ci] exclude` members, with
+  `ECHOPORT_ORACLE_PYTHON` set to uv's Python 3.12 for the guard's oracle
+  tests;
+- `cargo deny --locked check` (cargo-deny 0.20.2) and the `rust-apt`
+  isolation check;
+- the `rust/scripts` tests (stdlib Python);
+- the software-live parity comparator tests under Python 3.12;
+- the fixture drift checks against the frozen oracles: the guard's
+  `parity/gen_fixtures.py check` under 3.12 and 3.13, metrics-httpd's
+  `fixtures/generate.py check` rendered under 3.14 (the Python of the
+  ops-library venv that wrote them; the 3.12 stdlib renders other error
+  pages) and `--stdlib-only` under 3.12 and 3.13, software-live's
+  `fixtures/generate.py --check` under 3.14;
+- `just rust-parity-metrics-httpd`: the rendered Python endpoint scripts
+  under CPython 3.12 against the debug binary (needs `htpasswd`), then the
+  tests of the shadow comparer.
 
-The `rust` job also runs the `rust-apt` isolation check (above). The job
-`software-live-apt` builds the helper per variant on `ubuntu-latest` inside
-`ubuntu:24.04` and `debian:13` (`software-live-apt/container/deps.sh`, then
-`run.sh`): clippy and tests, the release build with its GLIBC ceiling and
-`NEEDED` allowlist, and the comparison with python-apt on a fake APT world
-(`software-live-apt/README.md`). It also runs when
-`roles/software_live/files/software_live.py`, its oracle, changes.
+The guard's `gen_fixtures.py record` step imported ops-library's
+`tests/test_echoport_remote_command_guard.py`, which did not move: the
+recorded corpus is frozen with the oracle and `record` says so.
 
-If GitHub retires the `ubuntu-22.04` image, the same steps run in a
-`ubuntu:22.04` container on `ubuntu-latest` (PLAN-foundation.md section 2).
+`just rust-check-apt [ubuntu24.04] [debian13]` runs ops-library's
+`software-live-apt` job: per variant a throwaway container of the image with
+a copy of `rust/` (`software-live-apt/container/docker-check.sh`: clippy,
+tests, release build with its GLIBC ceiling and `NEEDED` allowlist, the
+python-apt comparison on a fake APT world), then the software-live parity
+harness (`software-live/parity/docker-parity.sh`). The containers run on the
+Docker engine's own platform (arm64 on a Mac);
+`SOFTWARE_LIVE_APT_PLATFORM=linux/amd64` runs the x86_64 images.
 
 ## Releases
 
-`.github/workflows/rust-release.yml` builds and publishes one binary crate
-per tag (PLAN-foundation.md section 4). Nothing installs a release on a host
-by itself; the roles pin a version and its sha256 (section 6).
+`scripts/release.py` builds and publishes one binary crate at a time, locally
+(PLAN-foundation.md section 4 described ops-library's workflow, which it
+replaces). Releases are GitHub releases of ops-deploy with tags
+`<crate>-v<version>`; `import-old` publishes the eight releases built in
+ops-library here again byte for byte ([`HISTORY.md`](HISTORY.md)). Nothing installs a
+release on a host by itself; ops-control pins a version and its sha256.
 
 ### Cutting a release
 
 1. Bump `version` in `rust/<crate>/Cargo.toml` (each crate has its own),
-   update `Cargo.lock` (`cargo metadata --format-version 1 >/dev/null`), merge
-   to `main`.
-2. Tag that commit `<crate>-v<version>` (e.g. `metrics-httpd-v0.1.0`) and
-   push the tag. The workflow runs for the prefixes `metrics-httpd-v*`,
-   `echoport-command-guard-v*` and `software-live-v*`; a crate that is not
-   yet a workspace member fails in the first step.
-3. The GitHub release `<crate> <version>` appears at
-   `https://github.com/ephes/ops-library/releases/tag/<crate>-v<version>`
-   with the archive(s) and `.sha256` files; the job summary prints each
-   sha256 and the member sizes (the stripped binary). The release is never
-   marked "latest" (`--latest=false`); a semver pre-release version
-   (`0.2.0-rc.1`) becomes a GitHub pre-release. While the repository has no
-   other release, GitHub still shows the newest binary release as "Latest"
-   and returns it from `/releases/latest` (seen with
-   `metrics-httpd-v0.1.0`): nothing may resolve a binary through "latest";
-   the roles pin a version and sha256.
+   update `Cargo.lock` (`cargo metadata --format-version 1 >/dev/null`), run
+   `just rust-check` (and `just rust-check-apt` for software-live), get the
+   change reviewed and push it to `main`.
+2. In a clean checkout of that commit: `just rust-release <crate>`. It
+   writes the archives, their `.sha256` files, `notes.md` and `build.json`
+   to `rust/target/release-dist/<crate>-<version>/` and prints each sha256
+   and the archive members. It publishes nothing.
+3. `just rust-release-publish <crate>` tags the build commit, pushes the tag
+   and creates the release `<crate> <version>` at
+   `https://github.com/ephes/ops-deploy/releases/tag/<crate>-v<version>`
+   (`gh release create --verify-tag --latest=false`; a semver pre-release
+   becomes a GitHub pre-release), then downloads every asset and compares it
+   with the local file. Nothing may resolve a binary through "latest".
+4. Add the release row to the crate README's table and, in ops-control, the
+   row of `tests/fixtures/ops_library_final/rust_releases.json` in the same
+   change as the pin.
 
-A dry run without tag or release: *Actions → Rust release → Run workflow*
-with a crate (or `gh workflow run rust-release.yml -f crate=metrics-httpd`);
-the archives are uploaded as workflow artifacts. Collection tags, if the
-collection ever gets any, are `v<semver>` or `<semver>` and never match a
-binary prefix.
+### Container engine
 
-### What the workflow checks
+The build needs `linux/amd64` containers. On an Apple silicon Mac with
+colima (`vmType: vz`, `rosetta: true`) the Rosetta binfmt handler must be
+registered in the VM; `release.py` checks first that `docker run --platform
+linux/amd64 ubuntu:22.04 uname -m` prints `x86_64` and stops otherwise. A
+`colima restart` registers it; without a restart, register it in the VM by
+hand:
 
-- `prepare` (ubuntu-22.04): `scripts/release_checks.py tag` resolves the
-  crate: the longest workspace member whose `<member>-v` prefixes the tag
-  (`software-live-v1.0.0` is `software-live`, never `software-live-apt`),
-  which must have a binary of its own name and exactly the tag's version
-  (semver without build metadata). Then `release_checks.py matrix` (below),
-  `cargo fmt --check`, clippy `-D warnings` and `cargo test` over the
-  workspace without the `[workspace.metadata.ci] exclude` members (as
-  `rust.yml`), and the `rust/scripts` tests. No cargo cache.
-- `shared` (only with a `shared` section in `release.json`, on
-  `ubuntu-22.04` itself): builds those members once, runs `release_checks.py
-  verify` on their binaries, prints their sizes and sha256 in the job
-  summary and hands them to the variant jobs as a workflow artifact
-  (`shared-<crate>-<version>`) with their sha256 (`release_checks.py
-  checksums`, a job output).
-- `build`, one job per variant: `cargo build --release --locked --target
-  x86_64-unknown-linux-gnu -p <member>...` with `<CRATE>_GIT_COMMIT` set to
-  the full commit for every built member's `build.rs` (skipped when the
-  variant builds nothing itself); with shared binaries, it downloads them and
-  `verify` and `pack` first require each one's sha256 to equal the `shared`
-  job's, so every archive holds that one build. Then
-  `release_checks.py verify` runs, for every binary of the variant (the
-  shared ones again, inside the variant's image), the glibc check (`objdump -T`/`-p`: no `GLIBC_*` symbol version above the binary's
-  ceiling, default 2.35, and no `NEEDED` library outside glibc, libgcc_s and
-  the binary's `extra_needed`) and the smoke test (`<binary> --version` must
-  print `<binary> <version> (<full commit>)`, then every `extra_smoke`
-  command must exit 0 with an empty environment in an empty directory).
-  `release_checks.py pack` writes the deterministic archive (exactly the
-  declared regular files at the archive root, binaries 0755, other files
-  0644, root-owned, the commit time as mtime, a gzip header without a name,
-  so a re-run on the same commit and image gives the same bytes) and its
-  `.sha256`; both are uploaded as a workflow artifact.
-- `publish` (tags only, the only job with `contents: write`): downloads the
-  artifacts, requires exactly the archives of the matrix, checks every
-  sha256 and creates the release with `gh release create --verify-tag`.
+```bash
+colima ssh -- sudo sh -c 'printf "%s" ":rosetta:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:/mnt/lima-rosetta/rosetta:OCF" > /proc/sys/fs/binfmt_misc/register'
+```
+
+### What `build` does
+
+1. Refuses a worktree with changes or untracked files, a commit that is not
+   on `origin/main`, a non-empty output directory, and a *taken* version: its
+   tag is on `origin` or it is listed in `releases.json`.
+   `--compare-released` builds a taken version as a dry run (and refuses an
+   untaken one); `build.json` records that, and `publish` refuses such a
+   build.
+2. Preflight of the `linux/amd64` engine (above).
+3. Image phase, the only one with network: one builder image per image of
+   the matrix, `ubuntu:22.04` for `prepare` and `shared` (and a variant
+   without `image`; glibc 2.35 as the old runner) plus each variant image.
+   Every image that builds, checks or packs a release binary is
+   `linux/amd64`. `prepare` runs in an `ubuntu:22.04` image of the Docker
+   engine's own platform (arm64 on a Mac): under Rosetta the emulator's own
+   open file descriptors fail the guard's descriptor-inheritance tests, an
+   artefact of the emulation, not of the code; the amd64 binaries are still
+   checked and smoke-tested under amd64.
+   Each starts from its base image pinned by the digest pulled at the start
+   of the build, installs `binutils ca-certificates curl gcc git libc6-dev
+   python3` and the variant's packages, rustup 1.29.1 (sha256-checked per
+   platform), the
+   source as `git archive` of the build commit (only `rust/`), the pinned
+   toolchain and `cargo fetch --locked`. No code of the crates or their
+   dependencies runs.
+4. Build phase: every job is a container with `--network none`, no mount,
+   and memory, process and time limits; files go in and come back with
+   `docker cp`. `<CRATE>_GIT_COMMIT` is set to the full commit for every
+   member's `build.rs`.
+   - `prepare`: `cargo fmt --check`, clippy `-D warnings` and `cargo test`
+     without the CI-excluded members, the `rust/scripts` tests and the
+     `rust-apt` isolation check.
+   - `shared` (only with a `shared` section in `release.json`): builds those
+     members once, `release_checks.py verify` on their binaries, and hands
+     them with their sha256 (`release_checks.py checksums`) to the variants.
+   - one job per variant: clippy and tests of its CI-excluded members,
+     `cargo build --release --locked --offline --target
+     x86_64-unknown-linux-gnu -p <member>...` (skipped when the variant builds
+     nothing itself), then `release_checks.py verify` for every binary (the
+     shared ones again, inside the variant's image, after their sha256): the
+     glibc check (`objdump -T`/`-p`: no `GLIBC_*` symbol version above the
+     binary's ceiling, default 2.35, and no `NEEDED` library outside glibc,
+     libgcc_s and the binary's `extra_needed`) and the smoke test
+     (`<binary> --version` must print `<binary> <version> (<full commit>)`,
+     then every `extra_smoke` command must exit 0 with an empty environment
+     in an empty directory). `release_checks.py pack` writes the
+     deterministic archive (exactly the declared regular files at the
+     archive root, binaries 0755, other files 0644, root-owned, the commit
+     time as mtime, a gzip header without a name) and its `.sha256`.
+5. `notes.md` records the commit, each archive's sha256, the base image
+   digests, the installed versions of the apt packages, the `rustc`
+   version and the sha256 of `Cargo.lock` (the apt packages are not pinned
+   by version, as in the workflow).
+
+### What `publish` and `import-old` guarantee
+
+`publish` works towards one end state and can be repeated: the tag on
+`origin` points at the build commit, and the release holds exactly the
+built archives and `.sha256` files, each equal to the local file. It never
+moves or deletes a tag (a tag on another commit stops it), never replaces an
+asset (`gh release upload` without `--clobber`), and stops on an asset with
+other bytes or one it does not expect; such a case is settled by hand. If
+the output directory is lost after the tag was pushed and before the
+release is complete, the version is abandoned: the tag stays, an unfinished
+release is deleted by hand, and the fix ships as the next patch version
+(nothing can have installed it, because ops-control never recorded its
+sha256).
+
+`import-old [--tag <tag>]` publishes the releases of `releases.json` again:
+it downloads each ops-library release, requires every asset's sha256 to equal
+the record and each `.sha256` file to name its archive's checksum, tags the
+recorded ops-deploy commit (it must be on `origin/main`; an existing tag
+must point at it), creates the release and compares the downloaded assets
+with the originals. It builds nothing and accepts no version outside the
+file. `scripts/test_release.py` covers the job scripts and the refusals of
+all three commands with a fake `docker` and `gh` and real git repositories.
 
 ### Archive names and `release.json`
 
-Without `rust/<crate>/release.json` a crate has one unnamed variant built on
-the `ubuntu-22.04` runner (glibc 2.35, runs on every Linux host):
+Without `rust/<crate>/release.json` a crate has one unnamed variant built in
+the `ubuntu:22.04` image (glibc 2.35, runs on every Linux host):
 `<crate>-<version>-x86_64-unknown-linux-gnu.tar.gz` with `<crate>` and
 `LICENSE` (`rust/LICENSE`). A crate that needs more declares variants; each
 one becomes its own build job and archive
 `<crate>-<version>-x86_64-unknown-linux-gnu-<variant>.tar.gz`. Binaries that
-every variant shares go into `shared`: they are built once on the runner and
+every variant shares go into `shared`: they are built once in `ubuntu:22.04` and
 packed into every variant's archive. `software-live/release.json` (one
 `software-live` build with the glibc floor 2.35 in both archives, the helper
 per distribution; software-live PLAN.md 7.1, 7.2):
@@ -310,13 +374,10 @@ valid matrix.
 
 ## Installing a release on a host
 
-Roles install a pinned release with the internal helper role
-[`rust_release_binary`](../roles/rust_release_binary/README.md) (slice F3,
-PLAN-foundation.md section 6): `install` puts the archive's files into
-`/opt/<crate>/<version>/` (checksum-verified, never modified in place),
-`pin` records which version each consumer runs (`.pins/<consumer>`) and the
-version it ran before (`.pins/<consumer>.previous`, the rollback target),
-and `prune` removes old versions except the newest few, every pinned
-version and every version the consumer's live state still uses (`protect`),
-deleting nothing when that live state is unknown. No role uses it yet; each
-crate's switch slice does.
+ops-deploy installs a pinned release with `ops_deploy.helpers.rust_release`
+(its host script `helpers/templates/rust_release_host.py.txt`): the archive's
+files go into `/opt/<crate>/<version>/` (checksum-verified, never modified in
+place, downloaded only when that directory is missing), a pin records which
+version each consumer runs and the version it ran before (the rollback
+target), and pruning keeps every pinned and live version. ops-control's
+inventory pins each version and sha256.

@@ -16,7 +16,12 @@ all-features = false
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # chrono is unmaintained (no vulnerability; advisory published after the
+    # move). metrics-httpd and software-live use it for date formatting; the
+    # move to jiff or time is a change of its own.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, no known vulnerability; replacement tracked separately" },
+]
 
 [licenses]
 version = 2

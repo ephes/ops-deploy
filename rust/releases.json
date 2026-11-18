@@ -1,0 +1,196 @@
+{
+  "comment": "The eight releases built in ops-library before the move (rust/HISTORY.md). Written once; no tool edits it.",
+  "source_repository": "ephes/ops-library",
+  "releases": [
+    {
+      "crate": "echoport-command-guard",
+      "version": "0.1.0",
+      "tag": "echoport-command-guard-v0.1.0",
+      "title": "echoport-command-guard 0.1.0",
+      "ops_library_commit": "5b734af536a7d07c134ebb9a255461be9c218e73",
+      "commit": "81cb0616d93296514db800b8cc1952e424efe403",
+      "assets": [
+        {
+          "name": "echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+          "size": 313612,
+          "sha256": "300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9"
+        },
+        {
+          "name": "echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256",
+          "size": 127,
+          "sha256": "82ac06ec3ce945f33c6ffbeebd35c731e8b03521e063357aec373c3f5a64abce"
+        }
+      ]
+    },
+    {
+      "crate": "echoport-command-guard",
+      "version": "0.2.0",
+      "tag": "echoport-command-guard-v0.2.0",
+      "title": "echoport-command-guard 0.2.0",
+      "ops_library_commit": "966d178e1a0defc05ecab4083f105299af2a85f6",
+      "commit": "dc340e0109dd0cd80877def4245a4043c01159e7",
+      "assets": [
+        {
+          "name": "echoport-command-guard-0.2.0-x86_64-unknown-linux-gnu.tar.gz",
+          "size": 327705,
+          "sha256": "24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f"
+        },
+        {
+          "name": "echoport-command-guard-0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256",
+          "size": 127,
+          "sha256": "9138ae7515fe83acc375ebc8a66ddb363b8e3fd3daef51e992825ee61e3afbf5"
+        }
+      ]
+    },
+    {
+      "crate": "echoport-command-guard",
+      "version": "0.3.0",
+      "tag": "echoport-command-guard-v0.3.0",
+      "title": "echoport-command-guard 0.3.0",
+      "ops_library_commit": "49e67ffefba5f0ddbc52f95c60bc636b46bc24f3",
+      "commit": "589a9f2f7e162533cc7a326c017f3b4a9cfd8f38",
+      "assets": [
+        {
+          "name": "echoport-command-guard-0.3.0-x86_64-unknown-linux-gnu.tar.gz",
+          "size": 328027,
+          "sha256": "15f86397373de6b07517413d92934cbb3cfcfc4d978d63d90023eadb8026de2e"
+        },
+        {
+          "name": "echoport-command-guard-0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256",
+          "size": 127,
+          "sha256": "2321a1d8301f5999f0bad719bc08d308ae364582daab0a5e3a763600f120bfa0"
+        }
+      ]
+    },
+    {
+      "crate": "metrics-httpd",
+      "version": "0.1.0",
+      "tag": "metrics-httpd-v0.1.0",
+      "title": "metrics-httpd 0.1.0",
+      "ops_library_commit": "20d566c46251df7d3efa7a4c0c414be111ebc97f",
+      "commit": "deb6f08ac4e3e24560008499747582f8367d7bb5",
+      "assets": [
+        {
+          "name": "metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+          "size": 955475,
+          "sha256": "7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27"
+        },
+        {
+          "name": "metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256",
+          "size": 118,
+          "sha256": "234b05753e89ca9dd5c7fccd11beb59be358d2fa2ed53cf380fcb6a5ba7a2c78"
+        }
+      ]
+    },
+    {
+      "crate": "metrics-httpd",
+      "version": "0.1.1",
+      "tag": "metrics-httpd-v0.1.1",
+      "title": "metrics-httpd 0.1.1",
+      "ops_library_commit": "e317ef13855cdbea325cf3eb08d89d0459de92b8",
+      "commit": "82bc78ec386ca0e3ad3d5da75e015a86cda349d8",
+      "assets": [
+        {
+          "name": "metrics-httpd-0.1.1-x86_64-unknown-linux-gnu.tar.gz",
+          "size": 956122,
+          "sha256": "d04ac44bb349ae667cca069f325525e630fa188bbbe4d9c7cd4341fa570dfb2e"
+        },
+        {
+          "name": "metrics-httpd-0.1.1-x86_64-unknown-linux-gnu.tar.gz.sha256",
+          "size": 118,
+          "sha256": "eb68c2dde31470e9171efb66c385a012c97777eef28539d3f3c7a933af90c9aa"
+        }
+      ]
+    },
+    {
+      "crate": "software-live",
+      "version": "0.1.0",
+      "tag": "software-live-v0.1.0",
+      "title": "software-live 0.1.0",
+      "ops_library_commit": "98c680019c6c6e8a63b8d89ea1e8f0087172683d",
+      "commit": "52f8c0669a249e966efb28ca2be42b736599f403",
+      "assets": [
+        {
+          "name": "software-live-0.1.0-x86_64-unknown-linux-gnu-debian13.tar.gz",
+          "size": 1860314,
+          "sha256": "9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3"
+        },
+        {
+          "name": "software-live-0.1.0-x86_64-unknown-linux-gnu-debian13.tar.gz.sha256",
+          "size": 127,
+          "sha256": "8b3ff8686ddcca0ea9e3e525d201af94c6b12e956df0e9e4287949c8a6a94240"
+        },
+        {
+          "name": "software-live-0.1.0-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz",
+          "size": 1860898,
+          "sha256": "89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765"
+        },
+        {
+          "name": "software-live-0.1.0-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz.sha256",
+          "size": 130,
+          "sha256": "2c6544e5ce9a1a6d2e6c3d11d49a364734bfe4c452cd436620bf8830a3b672a0"
+        }
+      ]
+    },
+    {
+      "crate": "software-live",
+      "version": "0.1.1",
+      "tag": "software-live-v0.1.1",
+      "title": "software-live 0.1.1",
+      "ops_library_commit": "2f6091e98e64f73986c9110daf2ca7a14bb659cd",
+      "commit": "75b0124cee05ccb6147c0445068f0390e721a6e5",
+      "assets": [
+        {
+          "name": "software-live-0.1.1-x86_64-unknown-linux-gnu-debian13.tar.gz",
+          "size": 1853355,
+          "sha256": "502663e0d25bdb750996801c28bc6dfc8d5e5b5e7bc0910c89d2cb62d889aec4"
+        },
+        {
+          "name": "software-live-0.1.1-x86_64-unknown-linux-gnu-debian13.tar.gz.sha256",
+          "size": 127,
+          "sha256": "18760d4f568361db93a2e457427b5e4d2901846061e508ece3bb8abd0e084e08"
+        },
+        {
+          "name": "software-live-0.1.1-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz",
+          "size": 1853941,
+          "sha256": "65be5aa98574b73f87e385610d4fa9ffebad99d4ecf64238991abeef5662fc10"
+        },
+        {
+          "name": "software-live-0.1.1-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz.sha256",
+          "size": 130,
+          "sha256": "a2c6f50cae562f3b6f21d17c39b016b2114de6f0a2f4001e6074463a22f4f465"
+        }
+      ]
+    },
+    {
+      "crate": "software-live",
+      "version": "0.1.2",
+      "tag": "software-live-v0.1.2",
+      "title": "software-live 0.1.2",
+      "ops_library_commit": "e317ef13855cdbea325cf3eb08d89d0459de92b8",
+      "commit": "82bc78ec386ca0e3ad3d5da75e015a86cda349d8",
+      "assets": [
+        {
+          "name": "software-live-0.1.2-x86_64-unknown-linux-gnu-debian13.tar.gz",
+          "size": 1853612,
+          "sha256": "5414228170380ef924fb5f8d0b8f239a63308fa8bb9c401d141986158cc0be9d"
+        },
+        {
+          "name": "software-live-0.1.2-x86_64-unknown-linux-gnu-debian13.tar.gz.sha256",
+          "size": 127,
+          "sha256": "b9d413cc95c691dd95b01cffecd43238996ce73a584884ed8f87c51be13f0779"
+        },
+        {
+          "name": "software-live-0.1.2-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz",
+          "size": 1854245,
+          "sha256": "eeb142bafaf85f014b81bb4d3d906279aa2613e15323ef349bcfc084b3f6502b"
+        },
+        {
+          "name": "software-live-0.1.2-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz.sha256",
+          "size": 130,
+          "sha256": "0d23e66bd8e8374dffdc50edd971c77625a1446b32eedddd6a0ca085a7c1efc6"
+        }
+      ]
+    }
+  ]
+}

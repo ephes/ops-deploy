@@ -54,7 +54,8 @@ from typing import Any, Self
 from unittest import mock
 
 FIXTURES_DIR = Path(__file__).resolve().parent
-REPO = FIXTURES_DIR.parents[2]
+# The frozen copy of the ops-library program (rust/HISTORY.md).
+REPO = FIXTURES_DIR.parents[1] / "oracle"
 PROGRAM = REPO / "roles" / "software_live" / "files" / "software_live.py"
 
 

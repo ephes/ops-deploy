@@ -13,6 +13,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Development: development.md
+  - Rust binaries: rust.md
   - Concepts:
       - Service configuration: concepts/config.md
       - Secrets: concepts/secrets.md
