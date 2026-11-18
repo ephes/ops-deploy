@@ -24,6 +24,7 @@ from ops_deploy.helpers import http_check, mark_read_only, systemd_unit
 from ops_deploy.helpers.python import _as_user
 from ops_deploy.infra.postgres_install import DatabaseSpec, deploy_postgres_install
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 from .config import OperationsApiConfig, OperationsApiPins
 from .git import checkout as git_checkout
@@ -213,6 +214,8 @@ def deploy_daybook_operations_api(
         secret_stdin(
             name=f"Operations API {action}", command=management_command(), content=management_payload(cfg, action)
         )
+    # The api unit passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     units = [
         systemd_unit("daybook-operations" + ("-reconcile" if kind == "reconcile" else ""), render_unit(cfg, kind))
         for kind in ("api", "reconcile")

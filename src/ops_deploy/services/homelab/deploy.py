@@ -55,6 +55,7 @@ from ops_deploy.helpers.probes import last_line, migrations_state, probe, uv_syn
 from ops_deploy.helpers.python import DEFAULT_UV, _as_user
 from ops_deploy.helpers.traefik import DEFAULT_INTERNAL_IP_RANGES, Hostname
 from ops_deploy.ops import secret_file, sync_tree
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 TEMPLATE_PACKAGE = "ops_deploy.services.homelab"
 FILES = Path(__file__).parent / "files"
@@ -577,6 +578,8 @@ def deploy_homelab(cfg: HomelabConfig, secrets: SecretValues, rsync: RsyncRunner
 
     # service.yml; the restart also follows migrate (a retry after a failed
     # run must not leave the old code running on the new schema).
+    # The unit passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     unit = systemd_unit(cfg.service_name, render_unit(cfg))
     restart = [op for op in (code, *copies, venv, deps, env, migrate) if op is not None]
     service_rollout(cfg.service_name, units=[unit], restart_when=restart)

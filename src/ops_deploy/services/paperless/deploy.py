@@ -24,6 +24,7 @@ from ops_deploy.helpers.python_security import verify_trust
 from ops_deploy.infra.postgres_install import PostgresInstallConfig, deploy_postgres_install, missing_packages
 from ops_deploy.infra.redis_install import RedisInstallConfig, deploy_redis_install
 from ops_deploy.ops import secret_file
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 from . import assets, django, layout, operations, python_runtime, scanner
 from .config import RELEASE_SHA256, PaperlessConfig, PaperlessCredentials, PaperlessUvConfig, validate_credentials
@@ -254,6 +255,9 @@ def deploy_paperless(
         name="Converge Paperless static program assets", cfg=cfg, changes=[*python_changes, env], deferred=deferred
     )
     assets.apparmor(cfg)
+    # paperless.service.j2 passes --forwarder-headers=: whatever the runtime
+    # check repaired, stop before the unit unless gunicorn 23 or newer is installed.
+    require_gunicorn_forwarder_headers(f"{cfg.site_root}/.venv")
     units = [
         systemd_unit(unit, render(template, cfg, credentials))
         for unit, template in zip(

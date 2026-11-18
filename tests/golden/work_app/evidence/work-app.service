@@ -14,7 +14,7 @@ User=work
 Group=work
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/work/site/.env
-ExecStart=/home/work/site/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10011 --access-logfile - src.config.wsgi:application
+ExecStart=/home/work/site/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10011 --access-logfile - --forwarder-headers= src.config.wsgi:application
 
 # Security hardening
 NoNewPrivileges=true

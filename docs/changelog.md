@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- gunicorn ignores client-set forwarder headers in every role that starts it
+  with a fixed command line: archive, daybook_operations_api, homelab,
+  opaq_app, paperless, weeknotes_home and work_app pass
+  `--forwarder-headers=` in their unit's `ExecStart` (django_site keeps its
+  per-site switch `app.accept_forwarder_headers`, default `true`). gunicorn
+  otherwise accepts the `SCRIPT_NAME` and `PATH_INFO` headers from a loopback
+  peer (Traefik), and `SCRIPT_NAME` becomes the mount prefix stripped from the
+  request path; with the empty list it drops both. Second layer behind the
+  route macro `_edge.j2`, which deletes them at the edge (`docs/traefik.md`,
+  "Second layer: gunicorn ignores forwarder headers"). The option needs
+  gunicorn 23 or newer (22.0 refuses it): the new read-only check
+  `require_gunicorn_forwarder_headers` (`services/_gunicorn`) stops the deploy
+  of those seven roles, and of a django_site site with the switch off, before
+  the unit is written or restarted unless the venv holds exactly one gunicorn
+  23 or newer (it reads the dist-info name and runs nothing). It runs after
+  the role's in-place dependency sync: a failed check leaves the synced venv,
+  the running process and the old unit in place. homelab's unit now runs
+  `uv run --no-sync gunicorn`, so systemd starts the checked venv instead of
+  resolving again. paperless's runtime check counts a gunicorn older than 23,
+  or one without readable version metadata, as missing and installs
+  `gunicorn>=23`; for missing or malformed version metadata it first runs a targeted
+  `--reinstall-package gunicorn` (new runtime key `gunicorn_repair`). The django_site
+  docs, config comment and changelog entry said 22 and now say 23. The new
+  drift test `tests/test_gunicorn_forwarder_headers.py` (a source sweep) fails
+  any gunicorn launch in a service template (nested templates, a bare
+  `ExecStart=gunicorn`, `python -m gunicorn` and `uv run [options] gunicorn`
+  included) without the flag, and
+  a role that writes its unit before the version check. The unit goldens
+  change; each service's next deploy rewrites its unit and restarts it once.
+- `docs/changelog.md`: removed an orphaned merge marker line.
+
 - software-live 0.1.3 (`rust/software-live`, `software-live-apt` follows):
   a newer Traefik patch inside the patch window of ops-control's Traefik
   patch policy is a notice, not a warning. New optional policy keys
@@ -64,7 +95,8 @@
   launcher unchanged). `false` adds `--forwarder-headers ''` to
   `gunicorn.sh`, so gunicorn drops a client-sent `SCRIPT_NAME` request header
   instead of taking it as the mount prefix (which shortened the path the app
-  sees past any path-scoped edge rule). Needs gunicorn 22 or newer; a site
+  sees past any path-scoped edge rule). Needs gunicorn 23 or newer (22.0
+  refuses the option; corrected from 22 in a later entry); a site
   that turns it on gets its launcher rewritten and restarts once.
 
 - Traefik routes: every route ops-deploy renders deletes the client-sent
@@ -132,7 +164,6 @@
   putting the stderr into the HTTP status line (audit E2: multi-line or
   non-latin-1 stderr broke the response and leaked internal paths).
 
-||||||| parent of fc9f830 (recorder: bound the unit's memory and expose the upload buffer budget)
 - UniFi: the unit sets `SuccessExitStatus=143` (template, golden file and a
   unit test). The JVM exits 143 (128 + SIGTERM) when systemd stops it, so
   every restart on macmini logged `Failed with result 'exit-code'`. ops-library

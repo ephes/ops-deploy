@@ -53,6 +53,7 @@ from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import target_shell
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 FILES = Path(__file__).parent / "files"
 MEDIA_MIGRATE = (FILES / "media_migrate.sh").read_text()
@@ -562,6 +563,8 @@ def deploy_archive(cfg: ArchiveConfig, secrets: SecretValues, rsync: RsyncRunner
         )
     _admin(cfg, secrets)
 
+    # archive.service.j2 passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     for name, template in (
         (cfg.service_name, "archive.service.j2"),
         (cfg.worker_service_name, "archive-metadata-worker.service.j2"),

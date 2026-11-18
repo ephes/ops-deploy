@@ -163,7 +163,7 @@ class AppSpec(Part):
     # False: gunicorn runs with ``--forwarder-headers ''`` and so drops a
     # client-sent ``SCRIPT_NAME`` request header instead of taking it as the
     # mount prefix when the peer (the local Traefik) is in forwarded_allow_ips.
-    # Needs gunicorn 22 or newer. True keeps gunicorn's default.
+    # Needs gunicorn 23 or newer (22.0 refuses the option). True keeps gunicorn's default.
     accept_forwarder_headers: bool = True
 
 

@@ -85,7 +85,7 @@ def package_state(cfg: PaperlessConfig) -> dict[str, bool]:
         value = json.loads(answer or "")
         if (
             not isinstance(value, dict)
-            or set(value) != {"python", "application", "supporting"}
+            or set(value) != {"python", "application", "supporting", "gunicorn_repair"}
             or any(type(item) is not bool for item in value.values())
             or value["python"] is not True
         ):
@@ -111,23 +111,31 @@ def dependencies_current(cfg: PaperlessConfig) -> bool:
     return result == "current"
 
 
-def install_commands(cfg: PaperlessConfig, *, application: bool, supporting: bool) -> tuple[str, ...]:
+def install_commands(
+    cfg: PaperlessConfig, *, application: bool, supporting: bool, gunicorn_repair: bool = False
+) -> tuple[str, ...]:
     base = [cfg.uv_binary, "pip", "install", "--python", f"{cfg.site_root}/.venv"]
     if cfg.python_security_floor_enabled:
         base += ["--constraint", f"{cfg.site_root}/.python-security-constraints.txt"]
     commands = []
+    if gunicorn_repair:
+        # A gunicorn without readable version metadata: a plain install cannot
+        # replace it, and the installs below would inspect it first.
+        commands.append(as_service(cfg, shlex.join([*base, "--reinstall-package", "gunicorn", "gunicorn>=23"])))
     if application:
         commands.append(
             as_service(cfg, shlex.join([*base, "-e", f"{cfg.site_root}/paperless-ngx-v{cfg.version}[postgres]"]))
         )
     if supporting:
-        commands.append(as_service(cfg, shlex.join([*base, "gunicorn", "whitenoise", "setproctitle"])))
+        # gunicorn>=23: the unit's --forwarder-headers= (runtime_state.GUNICORN_MIN_MAJOR).
+        commands.append(as_service(cfg, shlex.join([*base, "gunicorn>=23", "whitenoise", "setproctitle"])))
         commands.append(as_service(cfg, shlex.join([*base, "--force-reinstall", "fido2==1.1.3"])))
     return tuple(commands)
 
 
 @operation()
 def install_packages(cfg: PaperlessConfig, deferred: bool = False) -> Generator[StringCommand, None, None]:
+    gunicorn_repair = False
     if deferred and not state.is_executing:
         application = supporting = True
     else:
@@ -136,5 +144,8 @@ def install_packages(cfg: PaperlessConfig, deferred: bool = False) -> Generator[
         # Editable dependency resolution can replace fido2; the original
         # supporting/pinned install follows every application installation.
         supporting = application or not actual["supporting"]
-    for command in install_commands(cfg, application=application, supporting=supporting):
+        gunicorn_repair = actual["gunicorn_repair"]
+    for command in install_commands(
+        cfg, application=application, supporting=supporting, gunicorn_repair=gunicorn_repair
+    ):
         yield StringCommand(command)

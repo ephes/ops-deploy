@@ -146,6 +146,25 @@ def test_launcher_can_refuse_client_script_name(cfg: DjangoSiteConfig) -> None:
     assert subprocess.run(["bash", "-n"], input=launcher, text=True, check=False).returncode == 0
 
 
+@pytest.mark.parametrize("accept", [True, False])
+def test_switch_off_checks_the_gunicorn_version_before_the_launcher(
+    cfg: DjangoSiteConfig, secrets: SecretValues, accept: bool
+) -> None:
+    # --forwarder-headers needs gunicorn 23 (22.0 refuses it): the read-only
+    # check runs before gunicorn.sh is written, only when the launcher uses it.
+    app = AppSpec.model_validate({**cfg.app.model_dump(), "accept_forwarder_headers": accept})
+    run = deploy(cfg.model_copy(update={"app": app}), secrets, rsync=changed())
+
+    names = [op.name for op in run.ops]
+    checks = [n for n in names if "Require gunicorn 23 or newer in /home/marina/site/.venv" in n]
+    if accept:
+        assert checks == []
+    else:
+        (check,) = checks
+        assert run.op(check).read_only
+        assert names.index(check) < next(i for i, n in enumerate(names) if n.endswith("Write gunicorn.sh"))
+
+
 def test_unit_runs_the_launcher_with_a_restart_delay(cfg: DjangoSiteConfig) -> None:
     unit = render("unit.service.j2", cfg)
 

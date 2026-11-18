@@ -9,7 +9,7 @@ User=archive
 Group=archive
 WorkingDirectory=/home/archive/site/src/django
 EnvironmentFile=/home/archive/site/.env
-ExecStart=/home/archive/site/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:10041 --workers 2
+ExecStart=/home/archive/site/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:10041 --workers 2 --forwarder-headers=
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

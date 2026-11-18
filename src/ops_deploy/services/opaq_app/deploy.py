@@ -54,6 +54,7 @@ from ops_deploy.helpers.python import _as_user, _gate
 from ops_deploy.helpers.traefik import Hostname
 from ops_deploy.ops import secret_file, sync_tree
 from ops_deploy.services._echoport import target_code
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 TEMPLATE_PACKAGE = "ops_deploy.services.opaq_app"
 FILES = Path(__file__).parent / "files"
@@ -600,6 +601,8 @@ def deploy_opaq_app(
         mode="0600",
     )
 
+    # The unit passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     unit = systemd_unit(cfg.service_name, render(TEMPLATE_PACKAGE, "opaq-app.service.j2", cfg=cfg))
     if cfg.traefik_enabled:
         # The role writes the file and relies on the file provider's watch.

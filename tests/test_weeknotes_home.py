@@ -48,6 +48,7 @@ _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy weeknotes-home | Port preflight tcp/10062",
     "Deploy weeknotes-home | Verify weeknotes_home certifi/pip trust",
+    "Deploy weeknotes-home | Require gunicorn 23 or newer in /home/weeknotes-home/site/.venv-weeknotes-home",
     "Deploy weeknotes-home | Check http://127.0.0.1:10062/healthz",
 ]
 WIRING_READ_ONLY = [

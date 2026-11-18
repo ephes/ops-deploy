@@ -15,6 +15,7 @@ ExecStart=/home/weeknotes-home/site/.venv-weeknotes-home/bin/gunicorn \
   --workers 2 \
   --timeout 120 \
   --bind 127.0.0.1:10062 \
+  --forwarder-headers= \
   weeknotes_home.wsgi:application
 Restart=always
 RestartSec=10

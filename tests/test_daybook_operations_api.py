@@ -52,9 +52,11 @@ def test_original_private_public_units_and_router_hashes() -> None:
         domain="operations.home.xn--wersdrfer-47a.de",
         allowed_networks=("100.64.0.0/10", "fd7a:115c:a1e0::/48", "192.168.178.94/32"),
     )
+    # The original unit plus --forwarder-headers= (tests/test_gunicorn_forwarder_headers.py).
+    assert " --forwarder-headers= operations_api.wsgi:application\n" in render_unit(cfg, "api")
     assert (
         hashlib.sha256(render_unit(cfg, "api").encode()).hexdigest()
-        == "00ac35bb1dfb3d36d14c19ef4d9809990277fbac3bb4ab11c2589f7e50a2c8c0"
+        == "fdff17f43c9175862e78efa3ce98679db5d7aedd82d9e18229ac625566a4d53a"
     )
     assert (
         hashlib.sha256(render_unit(cfg, "reconcile").encode()).hexdigest()

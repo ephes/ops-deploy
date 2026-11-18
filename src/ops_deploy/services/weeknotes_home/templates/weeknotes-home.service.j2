@@ -15,6 +15,7 @@ ExecStart={{ cfg.venv_bin }}/gunicorn \
   --workers {{ cfg.workers }} \
   --timeout {{ cfg.timeout }} \
   --bind {{ cfg.app_host }}:{{ cfg.app_port }} \
+  --forwarder-headers= \
   {{ cfg.wsgi_module }}
 Restart=always
 RestartSec=10

@@ -559,6 +559,49 @@ HTTP routers whose first middleware is a `redirectScheme`, and routers to
 `web-secure`, and those routers answer before any backend. A new route
 template fails the first check until the test names a sample for it.
 
+### Second layer: gunicorn ignores forwarder headers
+
+Scope: the seven roles archive, daybook_operations_api, homelab, opaq_app,
+paperless, weeknotes_home and work_app always pass `--forwarder-headers=` in
+their unit's `ExecStart`. A django_site site passes `--forwarder-headers ''`
+only when its config sets `app.accept_forwarder_headers: false` (default
+`true`, see [django_site](services/django_site.md)); ops-control decides that
+per site.
+
+gunicorn passes the `SCRIPT_NAME` and `PATH_INFO` request headers of a peer
+in `forwarded_allow_ips` (default loopback, which is Traefik) into the WSGI
+environ (`forwarder_headers`). `SCRIPT_NAME` becomes the app's mount prefix:
+gunicorn strips it from the request path and derives `PATH_INFO` from the
+rest (`GET /x/foo/` with `SCRIPT_NAME: /x` reaches the app as `/foo/`), so a
+header that got past the edge would move a request past path-scoped rules.
+With the empty list gunicorn trusts no forwarder header and drops a request
+header with an underscore (`header_map=drop`).
+
+The option needs gunicorn 23 or newer (22.0 refuses it as an unknown
+argument). Before it writes or restarts the unit, each of the seven roles
+and django_site with the switch off run the read-only check
+`require_gunicorn_forwarder_headers` (`services/_gunicorn`): it reads the
+`gunicorn-<version>.dist-info` name in the venv and stops the deploy unless
+exactly one gunicorn of major version 23 or newer is installed, so a source
+whose lock pins an older gunicorn fails the deploy instead of leaving a unit
+that cannot start. The check reads the venv the role's in-place dependency
+sync just built: a failed check leaves that venv in place and the running
+process and the unit untouched, so redeploy a source whose lock has gunicorn
+23 or newer before the service restarts. homelab's unit runs `uv run
+--no-sync gunicorn`, so systemd starts the checked venv rather than resolving
+again. paperless installs gunicorn outside a lock: its runtime check counts a
+gunicorn older than 23 (or one without a readable version) as missing and
+installs `gunicorn>=23` before it writes the unit; a gunicorn with missing
+or malformed version metadata first gets a targeted `--reinstall-package
+gunicorn`. A gunicorn with a version epoch (`1!22.0.0`)
+satisfies `gunicorn>=23` for the installer but not the check, which refuses
+every epoch: paperless has no lock to fix, so uninstall that distribution from
+the venv by hand before the next deploy.
+`tests/test_gunicorn_forwarder_headers.py` sweeps every service template and
+fails a gunicorn `ExecStart` or `exec` without the flag, and checks that each
+role runs the version check before its unit. The next deploy of each service
+rewrites its unit and restarts it once.
+
 The deletion reaches a host with the next deploy of each service that writes a
 route there (the file changes; Traefik's file watcher picks it up, no restart).
 

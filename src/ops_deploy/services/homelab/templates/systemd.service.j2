@@ -13,7 +13,7 @@ User={{ homelab_user }}
 Group={{ homelab_group }}
 Environment="DJANGO_SETTINGS_MODULE={{ homelab_django_settings_module }}"
 EnvironmentFile={{ homelab_site_path }}/.env
-ExecStart={{ homelab_uv_path }} run gunicorn --workers {{ homelab_workers }} --bind {{ homelab_app_host }}:{{ homelab_app_port }} --access-logfile - src.config.wsgi:application
+ExecStart={{ homelab_uv_path }} run --no-sync gunicorn --workers {{ homelab_workers }} --bind {{ homelab_app_host }}:{{ homelab_app_port }} --access-logfile - --forwarder-headers= src.config.wsgi:application
 
 # Security hardening
 NoNewPrivileges=true

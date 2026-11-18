@@ -14,7 +14,7 @@ Environment="PATH=/home/paperless/site/.venv/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/home/paperless/site/.venv/lib/python3.14/site-packages"
 Environment="PAPERLESS_NLTK_DIR=/usr/share/nltk_data"
 
-ExecStart=/home/paperless/site/.venv/bin/gunicorn -c /home/paperless/site/gunicorn.conf.py --bind 0.0.0.0:10030 --workers 2 --worker-class gthread --threads 2 --worker-tmp-dir /dev/shm --timeout 120 paperless.wsgi:application
+ExecStart=/home/paperless/site/.venv/bin/gunicorn -c /home/paperless/site/gunicorn.conf.py --bind 0.0.0.0:10030 --workers 2 --worker-class gthread --threads 2 --worker-tmp-dir /dev/shm --timeout 120 --forwarder-headers= paperless.wsgi:application
 
 Restart=on-failure
 RestartSec=10

@@ -32,6 +32,7 @@ _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy work_app | Port preflight tcp/10011",
     "Deploy work_app | Verify work_app certifi/pip trust",
+    "Deploy work_app | Require gunicorn 23 or newer in /home/work/site/.venv",
     "Deploy work_app | Check http://127.0.0.1:10011/accounts/login/",
 ]
 ECHOPORT_PROBE = "if test -e /home/echoport/site/manage.py; then"

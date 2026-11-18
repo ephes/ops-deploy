@@ -12,7 +12,7 @@ Group=opaq-app
 WorkingDirectory=/home/opaq-app/site/services/opaq_app
 EnvironmentFile=/home/opaq-app/opaq-app.env
 UMask=0077
-ExecStart=/home/opaq-app/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10065 --forwarded-allow-ips 127.0.0.1 --access-logfile - opaq_app.wsgi:application
+ExecStart=/home/opaq-app/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10065 --forwarded-allow-ips 127.0.0.1 --forwarder-headers= --access-logfile - opaq_app.wsgi:application
 
 NoNewPrivileges=true
 PrivateTmp=true

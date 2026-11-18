@@ -2,7 +2,9 @@
 
 Port of the `homelab_deploy` Ansible role (with the `homelab_shared` defaults
 it reads) as a playbook runs it with the rsync method: the home dashboard, a
-Django app on one SQLite database served by gunicorn (`uv run gunicorn`),
+Django app on one SQLite database served by gunicorn (`uv run --no-sync
+gunicorn`: the unit starts the venv the deploy's frozen sync built and
+checked, without resolving again),
 behind Traefik with basic auth outside the internal networks. Backup,
 restore ([below](#backup-and-restore)) and removal ([Removal](#removal)) are
 ported too.

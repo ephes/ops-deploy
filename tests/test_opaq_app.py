@@ -43,6 +43,7 @@ ECHOPORT_PROBE = re.compile(r'manage\.py shell -c .*"mode": "check"')
 NYXMON_PROBE = re.compile(r'OPAQ_NYXMON=.*"apply":false')
 READ_ONLY = [
     "Deploy opaq_app service | Port preflight tcp/10065",
+    "Deploy opaq_app service | Require gunicorn 23 or newer in /home/opaq-app/venv",
     "Deploy opaq_app service | Wait for port 127.0.0.1:10065",
     "Deploy opaq_app service | Check http://127.0.0.1:10065/healthz",
 ]

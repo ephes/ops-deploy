@@ -3,8 +3,33 @@
 import importlib.metadata
 import json
 from pathlib import Path
+import re
 import sys
 from urllib.parse import unquote, urlsplit
+
+
+GUNICORN_MIN_MAJOR = 23
+
+
+# A PEP 440 version (packaging's VERSION_PATTERN, without importing packaging).
+_PEP440 = re.compile(
+    r"v?(?:(?P<epoch>[0-9]+)!)?(?P<major>[0-9]+)(?:\.[0-9]+)*"
+    r"(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview)[-_.]?[0-9]*)?"
+    r"(?:-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"
+    r"(?:[-_.]?dev[-_.]?[0-9]*)?"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?",
+    re.IGNORECASE | re.ASCII,
+)
+
+
+def _valid_version(version):
+    # Missing Version metadata reads as None (Python 3.14).
+    return _PEP440.fullmatch(version.strip()) if isinstance(version, str) else None
+
+
+def _major_at_least(version, minimum):
+    match = _valid_version(version)
+    return bool(match) and int(match["epoch"] or 0) == 0 and int(match["major"]) >= minimum
 
 
 def inspect_runtime(release_dir):
@@ -42,6 +67,7 @@ def inspect_runtime(release_dir):
                 application = False
         except importlib.metadata.PackageNotFoundError:
             application = False
+    gunicorn_repair = False
     for name in ("gunicorn", "whitenoise", "setproctitle", "fido2"):
         try:
             installed = importlib.metadata.version(name)
@@ -50,7 +76,19 @@ def inspect_runtime(release_dir):
             continue
         if name == "fido2" and installed != "1.1.3":
             supporting = False
-    return {"python": sys.version_info[:2] == (3, 14), "application": application, "supporting": supporting}
+        # The unit passes --forwarder-headers=, which gunicorn 22 and older refuse.
+        if name == "gunicorn" and not _major_at_least(installed, GUNICORN_MIN_MAJOR):
+            supporting = False
+            # Missing or malformed (not PEP 440) version metadata: only a
+            # targeted reinstall replaces it (python_runtime.install_commands);
+            # a valid older release takes the normal upgrade.
+            gunicorn_repair = _valid_version(installed) is None
+    return {
+        "python": sys.version_info[:2] == (3, 14),
+        "application": application,
+        "supporting": supporting,
+        "gunicorn_repair": gunicorn_repair,
+    }
 
 
 def main():

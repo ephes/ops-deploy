@@ -54,6 +54,7 @@ from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import DYNAMIC_DIR
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import upsert_target
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 from ops_deploy.services._traefik_routes import route_put
 from ops_deploy.services.django_site import frontend
 from ops_deploy.services.django_site.config import (
@@ -519,6 +520,9 @@ def _deploy(cfg: DjangoSiteConfig, secrets: SecretValues, rsync: RsyncRunner) ->
         bootstrap_superuser(cfg, cfg.admin, secrets)
     built = _frontend(cfg, front, source_changed, next_marker) if front else None
 
+    if not cfg.app.accept_forwarder_headers:
+        # gunicorn.sh then passes --forwarder-headers ''.
+        require_gunicorn_forwarder_headers(cfg.venv_path)
     launcher = files.put(
         name="Write gunicorn.sh",
         src=StringIO(launcher_text),

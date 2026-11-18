@@ -108,7 +108,9 @@ The set is the classic one (marina/heis) with these choices:
   the peer is in `forwarded_allow_ips` (default loopback, which is the local
   Traefik): `GET /x/foo/` with `SCRIPT_NAME: /x` reaches the app as `/foo/`,
   past any path-scoped Traefik rule on `/x/`. With the flag off the launcher
-  adds `--forwarder-headers ''` (gunicorn 22 or newer): the list of trusted
+  adds `--forwarder-headers ''` (gunicorn 23 or newer; 22.0 refuses it, and
+  the deploy stops before it writes `gunicorn.sh` unless the venv holds
+  gunicorn 23 or newer, `require_gunicorn_forwarder_headers`): the list of trusted
   forwarder headers is empty and gunicorn drops the header
   (`header_map=drop`). Traefik's `aliasHeadersStrategy = "delete"` removes it
   at the edge as well; this is the second layer for a proxy without that

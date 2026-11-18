@@ -68,6 +68,7 @@ SOURCE_SWEEPS = (
     "tests/test_become_environment_secrets.py",
     "tests/test_remote_shell_execution.py",
     "tests/test_traefik_edge_headers.py",
+    "tests/test_gunicorn_forwarder_headers.py",
 )
 # A change here selects the whole suite.
 CORE = tuple(f"src/{PACKAGE}/{name}/" for name in ("core", "ops", "helpers", "base", "testing"))

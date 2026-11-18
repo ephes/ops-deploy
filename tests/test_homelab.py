@@ -38,7 +38,7 @@ UV_SYNC = f"{AS_HOMELAB} VIRTUAL_ENV={SITE}/.venv /usr/local/bin/uv sync --froze
 ITEMIZED_CHANGE = [">f.st...... src/config/urls.py"]
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 P = "Deploy homelab | "
-READ_ONLY = [f"{P}Require /usr/local/bin/uv"]
+READ_ONLY = [f"{P}Require /usr/local/bin/uv", f"{P}Require gunicorn 23 or newer in /home/homelab/site/.venv"]
 # Probe commands (substrings of the fact commands).
 VENV_VERSION = f"{SITE}/.venv/bin/python --version"
 VENV_LINK = f"[ -e {SITE}/venv ]"

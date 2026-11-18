@@ -13,7 +13,7 @@ User=homelab
 Group=homelab
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
 EnvironmentFile=/home/homelab/site/.env
-ExecStart=/usr/local/bin/uv run gunicorn --workers 4 --bind 127.0.0.1:10010 --access-logfile - src.config.wsgi:application
+ExecStart=/usr/local/bin/uv run --no-sync gunicorn --workers 4 --bind 127.0.0.1:10010 --access-logfile - --forwarder-headers= src.config.wsgi:application
 
 # Security hardening
 NoNewPrivileges=true

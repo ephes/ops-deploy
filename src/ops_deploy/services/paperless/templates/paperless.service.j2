@@ -14,7 +14,7 @@ Environment="PATH={{ paperless_virtualenv }}/bin:/usr/bin:/bin"
 Environment="PYTHONPATH={{ paperless_virtualenv }}/lib/python{{ paperless_python_version }}/site-packages"
 Environment="PAPERLESS_NLTK_DIR={{ paperless_nltk_data_path }}"
 
-ExecStart={{ paperless_virtualenv }}/bin/gunicorn -c {{ paperless_site_root }}/gunicorn.conf.py --bind {{ paperless_bind_address }}:{{ paperless_app_port }} --workers {{ paperless_task_workers }} --worker-class gthread --threads {{ paperless_threads_per_worker }} --worker-tmp-dir /dev/shm --timeout 120 paperless.wsgi:application
+ExecStart={{ paperless_virtualenv }}/bin/gunicorn -c {{ paperless_site_root }}/gunicorn.conf.py --bind {{ paperless_bind_address }}:{{ paperless_app_port }} --workers {{ paperless_task_workers }} --worker-class gthread --threads {{ paperless_threads_per_worker }} --worker-tmp-dir /dev/shm --timeout 120 --forwarder-headers= paperless.wsgi:application
 
 Restart=on-failure
 RestartSec=10

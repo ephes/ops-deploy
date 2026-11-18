@@ -14,7 +14,7 @@ User={{ cfg.user }}
 Group={{ cfg.group }}
 Environment="DJANGO_SETTINGS_MODULE={{ cfg.django_settings_module }}"
 EnvironmentFile={{ cfg.env_path }}
-ExecStart={{ cfg.venv_bin }}/gunicorn --workers {{ cfg.workers }} --bind {{ cfg.app_host }}:{{ cfg.app_port }} --access-logfile - {{ cfg.wsgi_module }}
+ExecStart={{ cfg.venv_bin }}/gunicorn --workers {{ cfg.workers }} --bind {{ cfg.app_host }}:{{ cfg.app_port }} --access-logfile - --forwarder-headers= {{ cfg.wsgi_module }}
 
 # Security hardening
 NoNewPrivileges=true

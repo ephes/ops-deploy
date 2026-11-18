@@ -32,6 +32,7 @@ from ops_deploy.helpers import (
 )
 from ops_deploy.helpers.systemd import unit_name
 from ops_deploy.helpers.traefik import existing_hash, hash_password, render_route, resolve_hash
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -129,11 +130,48 @@ def test_wait_port_script_against_a_real_listener(http_server: int) -> None:
         lambda: http_check("http://x/", status=99),
         lambda: http_check("http://x/", host_header="a b"),
         lambda: http_check("http://x/", delay=-1),
+        lambda: require_gunicorn_forwarder_headers("relative/venv"),
+        lambda: require_gunicorn_forwarder_headers("/srv/a\nb"),
     ],
 )
 def test_check_arguments_are_validated(call: Any) -> None:
     with pytest.raises(ValueError, match="must"):
         call()
+
+
+@pytest.mark.parametrize(
+    ("installed", "ok", "message"),
+    [
+        (("22.0.0",), False, "gunicorn 22.0.0 refuses --forwarder-headers, needs 23 or newer"),
+        (("21.2.0",), False, "gunicorn 21.2.0 refuses"),
+        (("23.0.0",), True, ""),
+        (("26.2.0",), True, ""),
+        (("x1",), False, "unreadable gunicorn version x1"),
+        (("1!22.0.0",), False, "unreadable gunicorn version 1!22.0.0"),
+        (("23+local",), True, ""),
+        (("23.0.0rc1",), True, ""),
+        (("v23.0.0",), False, "unreadable gunicorn version v23.0.0"),
+        (("23garbage.0",), False, "unreadable gunicorn version 23garbage.0"),
+        (("23!\n23.0.0",), False, "unreadable gunicorn version 23!\n23.0.0"),
+        (("23.0.1.post1+local.1",), True, ""),
+        (("23.0.0.dev2",), True, ""),
+        ((), False, "expected exactly one installed gunicorn"),
+        (("23.0.0", "26.2.0"), False, "expected exactly one installed gunicorn"),
+    ],
+)
+def test_require_gunicorn_forwarder_headers_reads_the_installed_version(
+    tmp_path: Any, installed: tuple[str, ...], ok: bool, message: str
+) -> None:
+    site = tmp_path / "v+e n'v/lib/python3.14/site-packages"
+    site.mkdir(parents=True)
+    for version in installed:
+        (site / f"gunicorn-{version}.dist-info").mkdir()
+    venv = tmp_path / "v+e n'v"
+    result = run(lambda: require_gunicorn_forwarder_headers(PurePosixPath(venv)))
+    assert result.ops[0].read_only
+    done = _run_locally(lambda: require_gunicorn_forwarder_headers(str(venv)))
+    assert (done.returncode == 0) is ok
+    assert message in done.stderr
 
 
 def test_plain_ops_are_not_read_only() -> None:

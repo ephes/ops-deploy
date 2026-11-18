@@ -36,7 +36,13 @@ def installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     (tmp_path / "src/manage.py").write_text("raise RuntimeError('application execution forbidden')\n")
     direct = {"url": tmp_path.as_uri(), "dir_info": {"editable": True}}
     monkeypatch.setattr(MODULE.importlib.metadata, "distribution", lambda name: Package(direct))
-    versions = {"fido2": "1.1.3", "psycopg": "3.3.4", "psycopg-c": "3.3.4", "psycopg-pool": "3.3.3"}
+    versions = {
+        "fido2": "1.1.3",
+        "gunicorn": "23.0.0",
+        "psycopg": "3.3.4",
+        "psycopg-c": "3.3.4",
+        "psycopg-pool": "3.3.3",
+    }
     monkeypatch.setattr(MODULE.importlib.metadata, "version", lambda name: versions.get(name, "synthetic"))
     monkeypatch.setattr(MODULE.sys, "version_info", (3, 14, 8))
     return direct
@@ -44,7 +50,12 @@ def installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
 
 def test_healthy_metadata_avoids_application_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     installed(tmp_path, monkeypatch)
-    assert MODULE.inspect_runtime(str(tmp_path)) == {"python": True, "application": True, "supporting": True}
+    assert MODULE.inspect_runtime(str(tmp_path)) == {
+        "python": True,
+        "application": True,
+        "supporting": True,
+        "gunicorn_repair": False,
+    }
 
 
 @pytest.mark.parametrize("broken", ["wrong-source", "noneditable", "missing-source", "wrong-python", "missing-support"])
@@ -83,3 +94,36 @@ def test_postgres_extra_is_required_without_import_or_connection(
 
     monkeypatch.setattr(MODULE.importlib.metadata, "version", version)
     assert MODULE.inspect_runtime(str(tmp_path))["application"] is False
+
+
+@pytest.mark.parametrize(
+    ("version", "supporting"),
+    [
+        ("22.0.0", False),
+        ("21.2", False),
+        ("22.0.0rc1", False),
+        ("23.0.0", True),
+        ("26.2.0", True),
+        ("23.0.1.post1+local.1", True),
+        ("x1", False),
+        ("23.invalid", False),
+        ("23+f\u0131x", False),
+        ("1!22.0.0", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_gunicorn_older_than_23_is_reinstalled(
+    version: str | None, supporting: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The unit passes --forwarder-headers=, which gunicorn 22 refuses as an unknown argument.
+    # None: a distribution without Version metadata (importlib.metadata on Python 3.14).
+    installed(tmp_path, monkeypatch)
+    original = MODULE.importlib.metadata.version
+    monkeypatch.setattr(
+        MODULE.importlib.metadata, "version", lambda name: version if name == "gunicorn" else str(original(name))
+    )
+    result = MODULE.inspect_runtime(str(tmp_path))
+    assert result["supporting"] is supporting
+    assert result["application"] is True
+    assert result["gunicorn_repair"] is (version in (None, "x1", "23.invalid", "", "23+f\u0131x"))

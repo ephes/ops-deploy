@@ -9,7 +9,7 @@ Group={{ daybook_operations_api_user }}
 WorkingDirectory={{ daybook_operations_api_site }}/services/operations_api
 EnvironmentFile={{ daybook_operations_api_config_dir }}/environment
 {% if item == 'api' %}
-ExecStart={{ daybook_operations_api_venv }}/bin/gunicorn --bind 127.0.0.1:{{ daybook_operations_api_port }} --workers 2 --timeout 30 --limit-request-line 2048 --limit-request-field_size 2048 operations_api.wsgi:application
+ExecStart={{ daybook_operations_api_venv }}/bin/gunicorn --bind 127.0.0.1:{{ daybook_operations_api_port }} --workers 2 --timeout 30 --limit-request-line 2048 --limit-request-field_size 2048 --forwarder-headers= operations_api.wsgi:application
 {% else %}
 ExecStart={{ daybook_operations_api_venv }}/bin/python {{ daybook_operations_api_site }}/services/operations_api/manage.py reconcile_operations --loop
 {% endif %}

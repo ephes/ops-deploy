@@ -57,6 +57,7 @@ from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, secret_stdin, sync_tree
 from ops_deploy.services._echoport import target_shell
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 TEMPLATE_PACKAGE = "ops_deploy.services.weeknotes_home"
 FILES = Path(__file__).parent / "files"
@@ -726,6 +727,8 @@ def deploy_weeknotes_home(
     )
     migrated = _django(cfg, [code, deps, env])
 
+    # The unit passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     unit = systemd_unit(cfg.service_name, render("weeknotes-home.service.j2", cfg=cfg))
     service_rollout(cfg.service_name, units=[unit], restart_when=[code, deps, env, *migrated])
     traefik_route(route, renderer=lambda r, auth_hash: render_route(cfg, r, auth_hash))

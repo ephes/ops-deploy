@@ -47,6 +47,7 @@ from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
 from ops_deploy.ops import secret_file, sync_tree
 from ops_deploy.services._echoport import TARGET_SCRIPT
+from ops_deploy.services._gunicorn import require_gunicorn_forwarder_headers
 
 TEMPLATE_PACKAGE = "ops_deploy.services.work_app"
 FILES = Path(__file__).parent / "files"
@@ -492,6 +493,8 @@ def deploy_work_app(cfg: WorkAppConfig, secrets: SecretValues, rsync: RsyncRunne
         _if=lambda: no_static or any(meta.did_change() for meta in code_changed),
     )
 
+    # The unit passes --forwarder-headers=.
+    require_gunicorn_forwarder_headers(cfg.venv_path)
     unit = systemd_unit(cfg.unit, render("work-app.service.j2", cfg=cfg))
     # A failed earlier run may have written files without restarting the service.
     behind = _code_newer_than_service(cfg)

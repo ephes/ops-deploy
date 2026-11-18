@@ -38,7 +38,8 @@ def test_original_install_commands_keep_all_constraints_and_fido_order() -> None
         assert script.startswith("cd /home/paperless/site && ")
         assert "--constraint /home/paperless/site/.python-security-constraints.txt" in script
     assert "-e '/home/paperless/site/paperless-ngx-v3.4.2[postgres]'" in scripts[0]
-    assert scripts[1].endswith("gunicorn whitenoise setproctitle")
+    assert scripts[1].endswith(" 'gunicorn>=23' whitenoise setproctitle")
+    assert "--reinstall-package" not in scripts[1]
     assert scripts[2].endswith("--force-reinstall fido2==1.1.3")
 
 
@@ -46,7 +47,7 @@ def test_healthy_packages_skip_and_app_change_reapplies_fido_after_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(python_runtime, "state", SimpleNamespace(is_executing=True))
-    actual = {"python": True, "application": True, "supporting": True}
+    actual = {"python": True, "application": True, "supporting": True, "gunicorn_repair": False}
     monkeypatch.setattr(python_runtime, "package_state", lambda cfg: actual)
     cfg = PaperlessConfig(traefik_domain="home.example.test")
     operation = inspect.unwrap(python_runtime.install_packages)
@@ -56,12 +57,20 @@ def test_healthy_packages_skip_and_app_change_reapplies_fido_after_dependencies(
     actual["application"] = True
     actual["supporting"] = False
     assert len(list(operation(cfg))) == 2
+    # gunicorn without readable version metadata: a targeted reinstall first.
+    actual["gunicorn_repair"] = True
+    first, *rest = list(operation(cfg))
+    assert shlex.split(str(first))[-1].endswith("--reinstall-package gunicorn 'gunicorn>=23'")
+    assert len(rest) == 2
+    assert not any("--reinstall-package" in str(command) for command in rest)
 
 
 def test_constraints_alone_never_force_package_install(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(python_runtime, "state", SimpleNamespace(is_executing=True))
     monkeypatch.setattr(
-        python_runtime, "package_state", lambda cfg: {"python": True, "application": True, "supporting": True}
+        python_runtime,
+        "package_state",
+        lambda cfg: {"python": True, "application": True, "supporting": True, "gunicorn_repair": False},
     )
     cfg = PaperlessConfig(traefik_domain="home.example.test")
     assert python_runtime.constraints_text() == "certifi>=2026.10.19\npip>=26.2.2\n"
@@ -87,13 +96,16 @@ def test_dependency_inspection_error_cannot_trigger_package_repair(
 
 def test_missing_dependency_invalidates_otherwise_current_application(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        python_runtime, "probe", lambda *args, **kwargs: '{"python":true,"application":true,"supporting":true}'
+        python_runtime,
+        "probe",
+        lambda *args, **kwargs: '{"python":true,"application":true,"supporting":true,"gunicorn_repair":false}',
     )
     monkeypatch.setattr(python_runtime, "dependencies_current", lambda cfg: False)
     assert python_runtime.package_state(PaperlessConfig(traefik_domain="home.example.test")) == {
         "python": True,
         "application": False,
         "supporting": True,
+        "gunicorn_repair": False,
     }
 
 

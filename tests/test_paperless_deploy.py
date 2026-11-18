@@ -158,6 +158,7 @@ def test_original_restart_dependencies_through_deploy_caller(change: str, monkey
     monkeypatch.setattr(MODULE.django, "collect_static", lambda *a, **k: selected("static"))
     monkeypatch.setattr(MODULE.django, "ensure_admin", lambda *a, **k: current)
     monkeypatch.setattr(MODULE.assets, "apparmor", lambda *a, **k: current)
+    monkeypatch.setattr(MODULE, "require_gunicorn_forwarder_headers", lambda *a, **k: current)
     monkeypatch.setattr(MODULE, "systemd_unit", lambda *a, **k: selected("unit"))
     monkeypatch.setattr(MODULE.systemd, "daemon_reload", lambda *a, **k: current)
     monkeypatch.setattr(MODULE.operations, "rebuild_index", lambda *a, **k: current)

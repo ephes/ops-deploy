@@ -53,6 +53,7 @@ ECHOPORT_PROBE = '"mode": "check"'
 RETIRED_PROBE = "ls /etc/systemd/system/archive-quote-classifier.timer"
 READ_ONLY = [
     "Deploy archive | Verify archive certifi/pip trust",
+    "Deploy archive | Require gunicorn 23 or newer in /home/archive/site/.venv",
     "Deploy archive | Wait for port 127.0.0.1:10041",
     "Deploy archive | Check http://127.0.0.1:10041/",
 ]
