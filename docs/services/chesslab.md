@@ -41,6 +41,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `app_host`, `app_port`, `workers` | `127.0.0.1`, `10019`, `2` | granian, `wsgi_module` `chesslab.djangoapp.wsgi:application` |
 | `django_settings_module`, `django_debug`, `secure_cookies`, `limit` | role defaults | `.env` |
 | `django_allowed_hosts`, `django_csrf_trusted_origins` | `127.0.0.1, localhost` / none | |
+| `trusted_proxy_hops` | `0` (not rendered) | `1` renders `CHESSLAB_TRUSTED_PROXY_HOPS="1"` into `.env`: the app then takes the client address for its login address window from Traefik's right-most `X-Forwarded-For` entry when the peer is loopback. Opt in only where Traefik is the only path in, trusts no incoming forwarded headers and drops header-name aliases (`aliasHeadersStrategy = "delete"`, see `docs/traefik.md`); the per-host opt-in belongs in ops-control's `chesslab_config` (`pyinfra_support/services.py`), and until a host has it, its clients share one loopback address window |
 | `run_migrations` | `true` | |
 | `traefik_host`, `traefik_cert_resolver`, `traefik_middlewares`, `basic_auth_user` | role defaults | |
 | `internal_ip_ranges` | the role's list (`127.0.0.1/32`, RFC1918, `100.64.0.0/10`) | clients that skip basic auth |
@@ -99,12 +100,17 @@ Defaults follow the role's `defaults/main.yml`.
 
 ## Parity with the role and playbook
 
-The `.env`, unit and Traefik route are **byte-identical** to the retired
-role's output (which is why the route still says "Managed by Ansible"), so
-hosts the role set up were taken over without rewriting files or restarting
-chesslab or Traefik. `tests/test_chesslab_golden.py` keeps them so: it
-compares the renders with goldens recorded while they equalled the role's
-(`tests/golden/chesslab`).
+The unit is **byte-identical** to the retired role's output, and the Traefik
+route was too (which is why it still says "Managed by Ansible"), so hosts the
+role set up were taken over without rewriting files or restarting chesslab or
+Traefik. Since then two renders differ from the role on purpose: the route's
+headers middleware deletes client-sent identity, address and path-prefix
+headers (`fa7fcc52`, `_edge.j2`; the first deploy after it rewrites the route
+and restarts Traefik), and `.env` gains `CHESSLAB_TRUSTED_PROXY_HOPS` when
+`trusted_proxy_hops` is `1` (rewrites `.env` and restarts chesslab once).
+`tests/test_chesslab_golden.py` pins the renders: it compares them with the
+goldens in `tests/golden/chesslab`, recorded from the role and updated only for
+the route difference above (the golden cases keep `trusted_proxy_hops` at `0`).
 
 Differences:
 

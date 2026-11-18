@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- chesslab: new `trusted_proxy_hops` (`0` default, not rendered; `1` renders
+  `CHESSLAB_TRUSTED_PROXY_HOPS="1"` into `.env`). With `1` Chesslab keys its
+  login address window on Traefik's right-most `X-Forwarded-For` entry instead
+  of `127.0.0.1` for every client, so one client can no longer lock all logins
+  (chess also adds a global ceiling of 200 attempts per 5 minutes). Opt in only
+  where Traefik trusts no incoming forwarded headers and deletes header-name
+  aliases; enabling it rewrites `.env` and restarts chesslab once.
+
 - llama_server: optional `source_build` (`LlamaSourceBuild`: tag, full commit,
   repository). The detector's pinned llama.cpp build is built from source as the
   non-root service user and published root-owned under

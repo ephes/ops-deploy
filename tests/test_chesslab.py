@@ -399,3 +399,30 @@ def test_stale_lock_fails_before_any_operation(cfg: ChesslabConfig, secrets: Sec
     (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
     with pytest.raises(ValueError, match="security floor"):
         deploy(cfg, secrets, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
+
+
+def test_env_omits_proxy_hops_by_default(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    # Off unless a host opts in after its proxy prerequisites are verified.
+    assert cfg.trusted_proxy_hops == 0
+    assert "CHESSLAB_TRUSTED_PROXY_HOPS" not in render_env(cfg, secrets).reveal().decode()
+
+
+def test_env_renders_opted_in_proxy_hop(tmp_path: Path) -> None:
+    cfg = ChesslabConfig(
+        source_path=make_source(tmp_path),
+        secrets=SecretRef("secrets/prod/chesslab.yml"),
+        trusted_proxy_hops=1,
+    )
+    env = render_env(cfg, values(cfg)).reveal().decode().splitlines()
+    assert 'CHESSLAB_TRUSTED_PROXY_HOPS="1"' in env
+    assert env.index('CHESSLAB_TRUSTED_PROXY_HOPS="1"') == env.index('CHESSLAB_SECURE_COOKIES="true"') + 1
+
+
+@pytest.mark.parametrize("hops", [-1, 2, True])
+def test_proxy_hops_accepts_only_zero_or_one(tmp_path: Path, hops: Any) -> None:
+    with pytest.raises((ConfigValidationError, ValueError)):
+        ChesslabConfig(
+            source_path=make_source(tmp_path),
+            secrets=SecretRef("secrets/prod/chesslab.yml"),
+            trusted_proxy_hops=hops,
+        )

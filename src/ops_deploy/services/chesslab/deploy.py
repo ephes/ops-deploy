@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, ClassVar
 
 import jinja2
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictInt, field_validator
 from pyinfra import host
 from pyinfra.api import deploy
 from pyinfra.api.operation import OperationMeta
@@ -117,6 +117,12 @@ class ChesslabConfig(BaseServiceConfig):
     django_allowed_hosts: tuple[PlainValue, ...] = ("127.0.0.1", "localhost")
     django_csrf_trusted_origins: tuple[PlainValue, ...] = ()
     secure_cookies: bool = True
+    # Reverse proxies whose X-Forwarded-For entry the app trusts for its login
+    # address window (CHESSLAB_TRUSTED_PROXY_HOPS): 0 = REMOTE_ADDR only
+    # (default, not rendered); 1 = one local Traefik that trusts no incoming
+    # forwarded headers and deletes header-name aliases (aliasHeadersStrategy
+    # "delete"). Opt in per host only where that is verified.
+    trusted_proxy_hops: Annotated[StrictInt, Field(ge=0, le=1)] = 0
     run_migrations: bool = True
     traefik_host: Hostname = "chess.example.com"
     traefik_cert_resolver: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]*$")] = ""
@@ -226,6 +232,8 @@ def django_environment(cfg: ChesslabConfig, secrets: SecretValues) -> dict[str, 
         "CHESSLAB_CSRF_TRUSTED_ORIGINS": ",".join(cfg.django_csrf_trusted_origins),
         "CHESSLAB_SECURE_COOKIES": str(cfg.secure_cookies).lower(),
     }
+    if cfg.trusted_proxy_hops:
+        env["CHESSLAB_TRUSTED_PROXY_HOPS"] = str(cfg.trusted_proxy_hops)
     if cfg.limit:
         env["CHESSLAB_TRAINER_LIMIT"] = cfg.limit
     return env
