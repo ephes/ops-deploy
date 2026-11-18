@@ -15,6 +15,9 @@ vendored ``rust_release.py.txt`` lost its Ansible import and filter adapters.
 On 2026-11-17 only the upload hash of ``thermal_metrics_httpd.py`` changed when
 the Python endpoints got the bounded-httpd block (thread per connection, cap,
 header deadline); operations, commands and the other uploads remained identical.
+On 2026-11-18 the same eight stdin hashes were refreshed when the host script's
+``DEFAULT_URL`` moved from the ops-library to the ops-deploy releases;
+operations, commands and uploads remained identical.
 """
 
 from __future__ import annotations

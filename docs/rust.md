@@ -48,7 +48,10 @@ just rust-release-publish software-live   # tag, GitHub release, verify the uplo
 
 `build` refuses a dirty checkout, a commit that is not on `origin/main` and a
 version that is already released; `publish` never moves a tag or replaces an
-asset. The install helper `ops_deploy.helpers.rust_release` downloads a
-pinned release (still from ops-library's release URLs until the eight old
-releases are published on ops-deploy) and checks the sha256 that ops-control
-pins.
+asset. The install helper `ops_deploy.helpers.rust_release` (and the
+software-live switch for its variant archives) downloads
+`https://github.com/ephes/ops-deploy/releases/download/<crate>-v<version>/…`
+and checks the sha256 that ops-control pins. The eight releases built in
+ops-library were published here again byte for byte on 2026-11-18, so the
+same pins download the same bytes; an installed version is never downloaded
+again.

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Rust release downloads come from ops-deploy: the install helper's
+  `DEFAULT_URL` (`helpers/templates/rust_release_host.py.txt`), the
+  software-live switch's variant URL (new `default_release_url`) and the DNS
+  integration harness point at
+  `github.com/ephes/ops-deploy/releases/download/<crate>-v<version>/`. The
+  eight ops-library releases were published there again byte for byte
+  (`just rust-release-import-old`), so every pinned sha256 still matches; an
+  installed version is never downloaded again, so no host changes. New test:
+  every release in `rust/releases.json` resolves to one of its assets on
+  ops-deploy.
+  `tests/golden/thermal_monitoring_plans.json`: only the eight stdin hashes
+  of the shared Rust host script changed.
+
 - The Rust workspace moved here from the archived ops-library: `rust/` holds
   `echoport-command-guard`, `metrics-httpd`, `software-live` and
   `software-live-apt` with their full history (229 commits from

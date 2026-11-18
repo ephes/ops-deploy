@@ -187,8 +187,9 @@ Docker engine's own platform (arm64 on a Mac);
 `scripts/release.py` builds and publishes one binary crate at a time, locally
 (PLAN-foundation.md section 4 described ops-library's workflow, which it
 replaces). Releases are GitHub releases of ops-deploy with tags
-`<crate>-v<version>`; `import-old` publishes the eight releases built in
-ops-library here again byte for byte ([`HISTORY.md`](HISTORY.md)). Nothing installs a
+`<crate>-v<version>`; `import-old` published the eight releases built in
+ops-library here again byte for byte on 2026-11-18
+([`HISTORY.md`](HISTORY.md)). Nothing installs a
 release on a host by itself; ops-control pins a version and its sha256.
 
 ### Cutting a release

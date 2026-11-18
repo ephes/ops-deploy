@@ -31,7 +31,7 @@ workflows (`rust.yml`, `rust-release.yml`) were dropped: the checks are
 filter-repo rewrote every commit. The released binaries print the ops-library
 commit they were built from (`software-live 0.1.2 (e317ef13…)`), and
 ops-control's frozen release table records those commits. In ops-deploy the
-tags of the eight releases go on the rewritten commits with the same tree
+tags of the eight releases point at the rewritten commits with the same tree
 under `rust/`:
 
 | Tag | ops-library commit (printed by the binary) | ops-deploy commit |
@@ -49,11 +49,11 @@ under `rust/`:
 releases (name, size, sha256). It was written once, from the ops-library
 releases and checked against ops-control's
 `tests/fixtures/ops_library_final/rust_releases.json` and filter-repo's
-commit map; no tool edits it. `scripts/release.py import-old` publishes the
-eight releases again as releases of ops-deploy, byte for byte, with their
-tags on the rewritten commits; once it has run and the install URLs point at
-ops-deploy, one URL scheme serves old and new releases and nothing depends on
-the archived repository. Old commits are never rebuilt: their harnesses point at paths the
+commit map; no tool edits it. On 2026-11-18 `scripts/release.py import-old`
+published the eight releases again as releases of ops-deploy, byte for byte,
+with their tags on the rewritten commits, and the install URLs moved to
+ops-deploy: one URL scheme serves old and new releases, and nothing depends
+on the archived repository. Old commits are never rebuilt: their harnesses point at paths the
 rewritten history does not have.
 
 ## The oracles

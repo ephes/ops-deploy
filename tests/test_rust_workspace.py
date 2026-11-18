@@ -117,3 +117,28 @@ def test_oracle_holds_the_26_frozen_ops_library_files() -> None:
     assert all(name.startswith("roles/") for name in files)
     assert "roles/software_live/files/software_live.py" in files
     assert "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py" in files
+
+
+def _default_url() -> str:
+    text = (ROOT / "src/ops_deploy/helpers/templates/rust_release_host.py.txt").read_text(encoding="utf-8")
+    urls: list[str] = re.findall(r'^DEFAULT_URL = "([^"]+)"$', text, re.M)
+    assert len(urls) == 1
+    return urls[0]
+
+
+def test_install_urls_point_at_the_ops_deploy_releases() -> None:
+    """Every release recorded in rust/releases.json downloads from ops-deploy
+    under the URL the install helper and the software-live switch build."""
+    from ops_deploy.services.software_live.switch import default_release_url
+
+    base = "https://github.com/ephes/ops-deploy/releases/download/"
+    data = json.loads((RUST / "releases.json").read_text(encoding="utf-8"))
+    for entry in data["releases"]:
+        names = {asset["name"] for asset in entry["assets"]}
+        if entry["crate"] == "software-live":
+            urls = [default_release_url(entry["version"], variant) for variant in ("ubuntu24.04", "debian13")]
+        else:
+            urls = [_default_url().format(n=entry["crate"], v=entry["version"])]
+        for url in urls:
+            assert url.startswith(f"{base}{entry['tag']}/")
+            assert url.rsplit("/", 1)[1] in names

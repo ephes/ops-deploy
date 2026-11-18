@@ -84,11 +84,16 @@ def release_inputs(cfg: SoftwareLiveConfig) -> tuple[str, str, str]:
         raise DeployError("Rust software-live requires the variant archive checksum or local archive")
     if cfg.rust_local_archive is not None and not cfg.rust_local_archive.is_file():
         raise DeployError("software-live controller archive unavailable")
-    url = cfg.rust_release_url or (
-        f"https://github.com/ephes/ops-library/releases/download/software-live-v{cfg.rust_version}/"
-        f"software-live-{cfg.rust_version}-x86_64-unknown-linux-gnu-{variant}.tar.gz"
-    )
+    url = cfg.rust_release_url or default_release_url(cfg.rust_version, variant)
     return variant, checksum, url
+
+
+def default_release_url(version: str, variant: str) -> str:
+    """The variant archive of a software-live release of ops-deploy (rust/README.md)."""
+    return (
+        f"https://github.com/ephes/ops-deploy/releases/download/software-live-v{version}/"
+        f"software-live-{version}-x86_64-unknown-linux-gnu-{variant}.tar.gz"
+    )
 
 
 def _shadow(cfg: SoftwareLiveConfig) -> list[OperationMeta]:

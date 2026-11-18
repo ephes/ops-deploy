@@ -47,7 +47,7 @@ import tempfile
 import urllib.request
 
 PIN_DIR = ".pins"
-DEFAULT_URL = "https://github.com/ephes/ops-library/releases/download/{n}-v{v}/{n}-{v}-x86_64-unknown-linux-gnu.tar.gz"
+DEFAULT_URL = "https://github.com/ephes/ops-deploy/releases/download/{n}-v{v}/{n}-{v}-x86_64-unknown-linux-gnu.tar.gz"
 
 
 class Refused(Exception):

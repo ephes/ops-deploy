@@ -117,13 +117,15 @@ passwords are in `generate.py`), created once with `htpasswd -nbB -C 4`.
 
 ## Release
 
-The binary is released by the tag `metrics-httpd-v<version>` through
-`.github/workflows/rust-release.yml` (`rust/README.md` "Releases",
-PLAN-foundation.md section 4). The crate has no `release.json`: one archive
+The binary is released as `metrics-httpd-v<version>` by the local release build
+(`just rust-release metrics-httpd`, then `just rust-release-publish metrics-httpd`;
+`rust/README.md` "Releases"). Releases up to the move were built by
+ops-library's `rust-release.yml` and published here again byte for byte
+(`rust/HISTORY.md`). The crate has no `release.json`: one archive
 `metrics-httpd-<version>-x86_64-unknown-linux-gnu.tar.gz` with
-`metrics-httpd` and `LICENSE`, built on `ubuntu-22.04` (glibc floor 2.35),
-plus its `.sha256`, attached to
-`https://github.com/ephes/ops-library/releases/tag/metrics-httpd-v<version>`.
+`metrics-httpd` and `LICENSE`, built in `ubuntu:22.04` (glibc floor
+2.35), plus its `.sha256`, attached to
+`https://github.com/ephes/ops-deploy/releases/tag/metrics-httpd-v<version>`.
 The roles pin a version and that sha256 (`metrics_httpd_rust_version`,
 `metrics_httpd_rust_sha256`, PLAN.md 7.1); no release installs itself.
 

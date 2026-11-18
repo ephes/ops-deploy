@@ -68,7 +68,9 @@ private playbook's literal port 9110 even if the role endpoint port is overridde
 ## Rust release, rollback and shadow
 
 Set `rust_version` and `rust_sha256` keyed by `ubuntu24.04` and/or `debian13`. The released archive contains `software-live`, `software-live-apt`, `LICENSE`
-and `LICENSE.GPL-3.0`. A controller-local archive is also supported. Release installation,
+and `LICENSE.GPL-3.0`; it is downloaded from the ops-deploy release
+`software-live-v<version>` (`rust_release_url` overrides the URL; the source and
+release build are in `rust/`, see [Rust binaries](../rust.md)). A controller-local archive is also supported. Release installation,
 validation, pinning and pruning reuse the existing Rust release helper. Production
 ownership remains root; the Ansible role's unprivileged owner/group fixture knobs are
 not exposed as production configuration.

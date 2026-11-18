@@ -97,8 +97,8 @@ def install_release(
     Like the role's ``tasks_from: install``: an installed version is only
     validated (read-only when its owned layout is current; a different archive
     for it is refused). Actual root-metadata/staging repairs count as mutations. A new one
-    is downloaded from ``release_url`` (default: the ops-library GitHub
-    release) or uploaded from ``local_archive``, checked against ``sha256``,
+    is downloaded from ``release_url`` (default: the ops-deploy GitHub
+    release, rust/README.md) or uploaded from ``local_archive``, checked against ``sha256``,
     required to hold exactly ``members`` (default ``[name, "LICENSE"]``) as
     regular files and moved into place. A failure removes the fresh install
     and fails the deploy, or with ``fail_hard=False`` warns and lets it go on

@@ -174,13 +174,15 @@ resident process). S9 measures `--check-policy` again on both hosts.
 
 ## Release
 
-The binary is released by the tag `echoport-command-guard-v<version>`
-through `.github/workflows/rust-release.yml` (`rust/README.md` "Releases",
-PLAN-foundation.md section 4). The crate has no `release.json`: one archive
+The binary is released as `echoport-command-guard-v<version>` by the local release build
+(`just rust-release echoport-command-guard`, then `just rust-release-publish echoport-command-guard`;
+`rust/README.md` "Releases"). Releases up to the move were built by
+ops-library's `rust-release.yml` and published here again byte for byte
+(`rust/HISTORY.md`). The crate has no `release.json`: one archive
 `echoport-command-guard-<version>-x86_64-unknown-linux-gnu.tar.gz` with
-`echoport-command-guard` and `LICENSE`, built on `ubuntu-22.04` (glibc floor
+`echoport-command-guard` and `LICENSE`, built in `ubuntu:22.04` (glibc floor
 2.35), plus its `.sha256`, attached to
-`https://github.com/ephes/ops-library/releases/tag/echoport-command-guard-v<version>`.
+`https://github.com/ephes/ops-deploy/releases/tag/echoport-command-guard-v<version>`.
 The role pins a version and that sha256
 (`echoport_remote_command_guard_rust_version`,
 `echoport_remote_command_guard_rust_sha256`); no release installs itself.

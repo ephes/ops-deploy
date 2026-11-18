@@ -184,9 +184,10 @@ Slice S3f (`collect`, `src/collect.rs`, `src/usage.rs`):
 
 ## Release
 
-The tag `software-live-v<version>` (the version of this crate and of
-`software-live-apt`, which must be equal) makes `.github/workflows/rust-release.yml`
-publish two archives (PLAN.md 7.1, 7.2; settings in
+The release `software-live-v<version>` (the version of this crate and of
+`software-live-apt`, which must be equal; `just rust-release software-live`,
+then `just rust-release-publish software-live`) publishes two archives on
+`https://github.com/ephes/ops-deploy/releases` (PLAN.md 7.1, 7.2; settings in
 [`release.json`](release.json), the format in `../README.md` "Releases"):
 
 ```text
@@ -195,13 +196,15 @@ software-live-<version>-x86_64-unknown-linux-gnu-debian13.tar.gz     (+ .sha256)
 ```
 
 each with exactly `software-live`, `software-live-apt`, `LICENSE` (MIT)
-and `LICENSE.GPL-3.0`. `software-live` is one build on the `ubuntu-22.04`
-runner (glibc ceiling 2.35), the same file in both archives (the variant
+and `LICENSE.GPL-3.0`. `software-live` is one build in the `ubuntu:22.04`
+image (glibc ceiling 2.35), the same file in both archives (the variant
 jobs check its sha256 before packing it); `software-live-apt` is built and
 tested inside `ubuntu:24.04` (glibc ≤ 2.39, `libapt-pkg.so.6.0`) or
 `debian:13` (glibc ≤ 2.41, `libapt-pkg.so.7.0`). Every binary's `--version`
 must name the tag's version and commit; the helper also runs `observe` in
-its image. The role pins a version and the sha256 of each variant's archive
+its image. Releases up to 0.1.2 were built by ops-library's
+`rust-release.yml` and published here again byte for byte (`rust/HISTORY.md`).
+The role pins a version and the sha256 of each variant's archive
 (`software_live_rust_version`, `software_live_rust_sha256`, PLAN.md 7.3);
 no release installs itself.
 

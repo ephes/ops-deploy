@@ -244,7 +244,7 @@ def preserve_runner_upstream() -> None:
             break
     else:
         raise AssertionError("No original non-loopback runner DNS upstream; refuse fixture mutation")
-    release_url = "https://github.com/ephes/ops-library/releases/download/metrics-httpd-v0.1.0/metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+    release_url = "https://github.com/ephes/ops-deploy/releases/download/metrics-httpd-v0.1.0/metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
     redirect = urlsplit(
         command(
             "curl",
