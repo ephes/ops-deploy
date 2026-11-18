@@ -46,7 +46,8 @@ so a running server never has its executable overwritten.
   the OTLP exporter are switched off explicitly; RustFS enables the console and
   the update check by default.
 - `scanner_cycle_seconds` (default unset) writes `RUSTFS_SCANNER_CYCLE`, the
-  seconds between the starts of two background scanner cycles (60 to 604800).
+  pause in seconds between the end of one background scanner cycle and the
+  start of the next (60 to 604800; RustFS adds ±10 % jitter).
   Unset, RustFS uses its speed preset: 60 s at the default speed, so on a large
   bucket a full scan (about 50 minutes for 124,000 objects on the macmini, with
   its usage cache of about 90 MB rewritten every 20 s) starts again a minute
