@@ -13,6 +13,7 @@ import pytest
 from ops_deploy.core import ConfigValidationError, SecretValues
 from ops_deploy.core.secrets import MissingSecretKeysError
 from ops_deploy.services.django_site import (
+    AppSpec,
     DjangoSiteConfig,
     EnvEntry,
     EnvSpec,
@@ -127,6 +128,22 @@ def test_launcher_sources_env_and_execs_gunicorn(cfg: DjangoSiteConfig) -> None:
     for arg in ("-w 4", "-t 3600", "-b 127.0.0.1:10019", "--access-logfile -", "--error-logfile -"):
         assert f"  {arg} \\\n" in launcher
     assert launcher.endswith("  config.wsgi\n")
+    # gunicorn's default: SCRIPT_NAME/PATH_INFO request headers from a trusted peer are honored.
+    assert "--forwarder-headers" not in launcher
+
+
+def test_launcher_can_refuse_client_script_name(cfg: DjangoSiteConfig) -> None:
+    # gunicorn takes SCRIPT_NAME from a request header when the peer is in
+    # forwarded_allow_ips (loopback, i.e. the local Traefik). An empty
+    # --forwarder-headers list makes it drop that header (header_map=drop).
+    app = AppSpec.model_validate({**cfg.app.model_dump(), "accept_forwarder_headers": False})
+    site = cfg.model_copy(update={"app": app})
+
+    launcher = render("gunicorn.sh.j2", site)
+
+    assert "  --forwarder-headers '' \\\n" in launcher
+    assert launcher.index("--forwarder-headers") < launcher.index("  config.wsgi\n")
+    assert subprocess.run(["bash", "-n"], input=launcher, text=True, check=False).returncode == 0
 
 
 def test_unit_runs_the_launcher_with_a_restart_delay(cfg: DjangoSiteConfig) -> None:

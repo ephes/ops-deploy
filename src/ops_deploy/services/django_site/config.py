@@ -160,6 +160,11 @@ class AppSpec(Part):
     uv_args: tuple[Annotated[str, Field(pattern=r"^--[a-z-]+$")], ...] = DEFAULT_UV_ARGS
     uv_env: tuple[EnvLiteral, ...] = ()
     assert_python_version: bool = False
+    # False: gunicorn runs with ``--forwarder-headers ''`` and so drops a
+    # client-sent ``SCRIPT_NAME`` request header instead of taking it as the
+    # mount prefix when the peer (the local Traefik) is in forwarded_allow_ips.
+    # Needs gunicorn 22 or newer. True keeps gunicorn's default.
+    accept_forwarder_headers: bool = True
 
 
 class SqliteDb(Part):

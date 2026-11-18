@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- django_site: new `AppSpec.accept_forwarder_headers` (default `true`, the
+  launcher unchanged). `false` adds `--forwarder-headers ''` to
+  `gunicorn.sh`, so gunicorn drops a client-sent `SCRIPT_NAME` request header
+  instead of taking it as the mount prefix (which shortened the path the app
+  sees past any path-scoped edge rule). Needs gunicorn 22 or newer; a site
+  that turns it on gets its launcher rewritten and restarts once.
+
 - native_app routes (Navidrome, Ollama proxy): Traefik deletes the client's
   `Remote-User` and `True-Client-IP` request headers. Navidrome trusted
   `Remote-User` from its loopback peer, which is Traefik, so anyone reaching

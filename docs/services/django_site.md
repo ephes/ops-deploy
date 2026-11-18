@@ -103,6 +103,16 @@ The set is the classic one (marina/heis) with these choices:
   gunicorn becomes the unit's main process (signals and `MainPID` reach it
   directly). The gunicorn arguments are the classic ones; the `%` access-log
   format stays in the launcher, out of systemd's specifier expansion.
+- **`app.accept_forwarder_headers: false` drops a client's `SCRIPT_NAME`.**
+  gunicorn takes the `SCRIPT_NAME` request header as the mount prefix when
+  the peer is in `forwarded_allow_ips` (default loopback, which is the local
+  Traefik): `GET /x/foo/` with `SCRIPT_NAME: /x` reaches the app as `/foo/`,
+  past any path-scoped Traefik rule on `/x/`. With the flag off the launcher
+  adds `--forwarder-headers ''` (gunicorn 22 or newer): the list of trusted
+  forwarder headers is empty and gunicorn drops the header
+  (`header_map=drop`). Traefik's `aliasHeadersStrategy = "delete"` removes it
+  at the edge as well; this is the second layer for a proxy without that
+  setting. Turning it on or off rewrites `gunicorn.sh` and restarts the site.
 - **The classic unit**, plus `Group=` and `RestartSec=5`: a crashing app is
   retried every 5 s instead of every 100 ms, which would hit systemd's start
   limit (5 starts in 10 s) and leave the unit failed. `DJANGO_SETTINGS_MODULE`
@@ -241,7 +251,7 @@ reach the host only through `secret_file` (`.env`, the stamp) or stdin.
 | `apt_packages` | `()` | Debian packages installed first, before the user (heis: `fish`, `rsync`, `sqlite3`; no cache update) |
 | `fish` | `false` | fish config and the `<app>/venv` link to `.venv` (excluded from the sync) |
 | `source` | required | `SourceSpec`: `path`, `commit` ([git source](../concepts/git-source.md)), `excludes`, `delete` (default `false`), `required_files` (checked in the app directory), `repair_ownership` (default `true`). The sync always also excludes, anchored at the site root, `.env`, the cache, `staticfiles`, the SQLite database with everything SQLite keeps next to it (`<db>*`: `-wal`, `-shm`, `-journal`), the media root and `media.private_root`, the bootstrap admin's marker, the launchers (including worker launchers), the `venv` link and the frontend's installed middleware, purged public directories, `node_modules` (anywhere) and `<app_dir>/.next` when they are inside the site: rsync neither overwrites nor deletes them |
-| `app` | required | `AppSpec`: `app_dir`, `env_dir` (`.env` and the cache, relative to the site; default the app directory), `settings_module`, `wsgi_app` (`config.wsgi`), `port`, `workers` (4), `timeout` (3600), `python` (`uv sync --python`), `uv_args` (`--frozen --no-dev`), `uv_env` (empty), `assert_python_version` (false) |
+| `app` | required | `AppSpec`: `app_dir`, `env_dir` (`.env` and the cache, relative to the site; default the app directory), `settings_module`, `wsgi_app` (`config.wsgi`), `port`, `workers` (4), `timeout` (3600), `python` (`uv sync --python`), `uv_args` (`--frozen --no-dev`), `uv_env` (empty), `assert_python_version` (false), `accept_forwarder_headers` (true; false adds `--forwarder-headers ''`, below) |
 | `database` | `SqliteDb()` | `path` (default `<app>/db.sqlite3`) |
 | `media` | `LocalMedia()` | `root` (default `<app>/media`), `private_root` (optional) |
 | `env` | `EnvSpec()` | `secret_key` (`Secret("django_secret_key")`), `admin_url` (literal or `Secret`), `allowed_hosts` (default `<fqdn>,localhost`), `extra` (ordered `EnvEntry(key, value)`), `url_paths` (`PathSecrets`, below) |
