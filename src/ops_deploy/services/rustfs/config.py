@@ -272,6 +272,11 @@ class RustfsConfig(RoleConfig):
     systemd_limit_nofile: Annotated[StrictInt, Field(ge=1)] = 65536
     systemd_tasks_max: Annotated[str, Field(pattern=r"^([0-9]+|infinity)$")] = "infinity"
     healthcheck_timeout: Annotated[StrictInt, Field(ge=1)] = 30
+    # RUSTFS_SCANNER_CYCLE: seconds between the starts of two background
+    # scanner cycles. None keeps RustFS's speed preset (60 s at the default
+    # speed, so a long full scan restarts almost at once); a replica can wait
+    # hours, since its scanner only expires noncurrent versions and counts usage.
+    scanner_cycle_seconds: Annotated[StrictInt, Field(ge=60, le=7 * 24 * 3600)] | None = None
     # A controller copy of the extracted executable (owned fixtures, offline
     # installs); it must match the pinned binary digest of the host's arch.
     local_binary: Path | None = None

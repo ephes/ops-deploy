@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- rustfs: optional `scanner_cycle_seconds` (60 to 604800) writes
+  `RUSTFS_SCANNER_CYCLE` to `/etc/default/rustfs`. RustFS 1.0.4 starts a new
+  background scanner cycle 60 s after the last one at its default speed; on the
+  macmini replica one cycle takes about 50 minutes, so the scanner ran almost
+  without pause (about 0.9 CPU cores, about 480 MiB of usage-cache writes a
+  minute). Unset leaves the environment file byte for byte as before
+  (`docs/services/rustfs.md`, "What runs").
+
 - chesslab: new `trusted_proxy_hops` (`0` default, not rendered; `1` renders
   `CHESSLAB_TRUSTED_PROXY_HOPS="1"` into `.env`). With `1` Chesslab keys its
   login address window on Traefik's right-most `X-Forwarded-For` entry instead

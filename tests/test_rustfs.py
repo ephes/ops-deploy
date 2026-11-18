@@ -184,6 +184,19 @@ def test_wrong_local_binary_fails_before_operations(tmp_path: Path) -> None:
         execute(RustfsConfig(local_binary=local), facts(RustfsConfig()))
 
 
+def test_scanner_cycle_is_rendered_only_when_set() -> None:
+    default = render("rustfs.env.j2", RustfsConfig(), CREDS)
+    # Unset leaves the environment file as before (no restart of existing servers).
+    assert "SCANNER" not in default
+    assert default.endswith('RUSTFS_OBS_ENDPOINT=""\n')
+    slow = render("rustfs.env.j2", RustfsConfig(scanner_cycle_seconds=21600), CREDS)
+    assert 'RUSTFS_SCANNER_CYCLE="21600"' in slow.splitlines()
+    assert slow.startswith(default)
+    for bad in (59, 7 * 24 * 3600 + 1, True, "21600"):
+        with pytest.raises(ValidationError, match="scanner_cycle_seconds"):
+            RustfsConfig(scanner_cycle_seconds=bad)
+
+
 def test_templates_disable_console_alternate_protocols_and_update_checks() -> None:
     env = render("rustfs.env.j2", RustfsConfig(), CREDS)
     for line in (

@@ -45,6 +45,14 @@ so a running server never has its executable overwritten.
   host, for a replica that its source reaches over a private network. The console, FTP/FTPS/SFTP/WebDAV listeners, the update check and
   the OTLP exporter are switched off explicitly; RustFS enables the console and
   the update check by default.
+- `scanner_cycle_seconds` (default unset) writes `RUSTFS_SCANNER_CYCLE`, the
+  seconds between the starts of two background scanner cycles (60 to 604800).
+  Unset, RustFS uses its speed preset: 60 s at the default speed, so on a large
+  bucket a full scan (about 50 minutes for 124,000 objects on the macmini, with
+  its usage cache of about 90 MB rewritten every 20 s) starts again a minute
+  after the last one ended and the scanner never rests. A longer cycle delays
+  only scanner work: noncurrent-version expiry, usage counts and the scanner's
+  heal checks. Changing it rewrites the environment file and restarts RustFS.
 - A port preflight refuses when anything but `rustfs.service` holds the port.
   After rollout the deploy waits for the port and for `GET /health/ready`.
 - With `expose_via_traefik`, `/etc/traefik/dynamic/rustfs.yml` routes
