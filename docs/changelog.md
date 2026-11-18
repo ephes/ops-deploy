@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- delve: new `storekit_allowed_environments` (`None` by default, not rendered),
+  rendered as `DELVE_STOREKIT_ALLOWED_ENVIRONMENTS` into `delve.env`: the App
+  Store environments whose transactions may unlock Pro (delved from podcast
+  `04c410da`; unset means Production only). Validated: known names, non-empty,
+  no duplicates, StoreKit enabled.
+
 - rustfs: optional `scanner_cycle_seconds` (60 to 604800) writes
   `RUSTFS_SCANNER_CYCLE` to `/etc/default/rustfs`. RustFS 1.0.4 starts a new
   background scanner cycle 60 s after the last one at its default speed; on the

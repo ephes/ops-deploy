@@ -647,3 +647,42 @@ def test_admin_allowlist_errors_do_not_echo_the_entry(tmp_path: Path, network: s
         DelveConfig(binary_path=binary, secrets=REF, traefik_admin_ip_allowlist=(network,))
     assert network not in str(excinfo.value)
     assert network not in repr(excinfo.value.errors)
+
+
+def test_storekit_allowed_environments_render_only_when_set(cfg: DelveConfig) -> None:
+    from ops_deploy.services.delve.deploy import render_env
+
+    # Unset: no line, delved then accepts Production only.
+    assert "DELVE_STOREKIT_ALLOWED_ENVIRONMENTS" not in render_env(cfg, values()).reveal().decode()
+    both = cfg.model_copy(update={"storekit_allowed_environments": ("Production", "Sandbox")})
+    both = DelveConfig.model_validate(both.model_dump())
+    env = render_env(both, values()).reveal().decode().splitlines()
+    assert 'DELVE_STOREKIT_ALLOWED_ENVIRONMENTS="Production,Sandbox"' in env
+    assert env.index('DELVE_STOREKIT_ALLOWED_ENVIRONMENTS="Production,Sandbox"') == (
+        env.index('DELVE_STOREKIT_PRODUCT_IDS="org.example.player.pro"') + 1
+    )
+
+
+@pytest.mark.parametrize(
+    "envs",
+    [(), ("Production", "Production"), ("production",), ("Staging",), "Production,Sandbox"],
+)
+def test_storekit_allowed_environments_validation(tmp_path: Path, envs: Any) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    with pytest.raises(ConfigValidationError):
+        DelveConfig(
+            binary_path=binary,
+            secrets=REF,
+            storekit_root_certs_path=PEM,
+            storekit_bundle_id="org.example.player",
+            storekit_product_ids="org.example.player.pro",
+            storekit_allowed_environments=envs,
+        )
+
+
+def test_storekit_allowed_environments_need_storekit(tmp_path: Path) -> None:
+    binary = tmp_path / "delved"
+    binary.write_text(BINARY)
+    with pytest.raises(ConfigValidationError):
+        DelveConfig(binary_path=binary, secrets=REF, storekit_allowed_environments=("Production",))

@@ -61,6 +61,7 @@ The role's variables without the `delve_` prefix; defaults follow its
 | `admin_emails`, `apple_client_id`, `env` | `""` | left out of the env file when empty |
 | `apple_server_notifications`, `profile_legacy_reregister`, `apple_signin_legacy_no_nonce` | `None` | `None` leaves the variable out (the role's empty string); notifications need `apple_client_id` |
 | `storekit_root_certs_path` | `None` | a host path enables StoreKit; then `storekit_bundle_id` and `storekit_product_ids` are required |
+| `storekit_allowed_environments` | `None` (not rendered: delved accepts `Production` only) | App Store environments that may unlock Pro, rendered as `DELVE_STOREKIT_ALLOWED_ENVIRONMENTS` (comma-joined): `Production`, `Sandbox`, `Xcode`, `LocalTesting`; non-empty, no duplicates, needs StoreKit. Honoured by delved from podcast `04c410da`; older delved ignores the line and accepts every environment |
 | `storekit_root_certs_src` | bundled Apple Root CA - G3 PEM | |
 | `discovery_collector_timer_enabled`, `discovery_collector_timer_state` | `false`, `started` | |
 | `discovery_collector_calendar`, `discovery_collector_randomized_delay_sec` | `*-*-* 03,15:17:00`, `3600` | |

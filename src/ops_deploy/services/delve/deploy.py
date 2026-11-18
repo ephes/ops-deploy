@@ -106,6 +106,10 @@ class DelveConfig(BaseServiceConfig):
     storekit_root_certs_src: Path = STOREKIT_ROOT_CERTS
     storekit_bundle_id: Plain = ""
     storekit_product_ids: Plain = ""
+    # App Store environments whose transactions may unlock Pro
+    # (DELVE_STOREKIT_ALLOWED_ENVIRONMENTS, delved >= podcast 04c410da). None
+    # leaves the variable out: delved then accepts Production only.
+    storekit_allowed_environments: tuple[Literal["Production", "Sandbox", "Xcode", "LocalTesting"], ...] | None = None
 
     env: Plain = ""  # DELVE_ENV; empty = production behaviour
 
@@ -202,6 +206,12 @@ class DelveConfig(BaseServiceConfig):
 
     @model_validator(mode="after")
     def _role_rules(self) -> Self:
+        if self.storekit_allowed_environments is not None:
+            envs = self.storekit_allowed_environments
+            if not envs or len(set(envs)) != len(envs):
+                raise ValueError("storekit_allowed_environments must be non-empty without duplicates")
+            if self.storekit_root_certs_path is None:
+                raise ValueError("storekit_allowed_environments needs StoreKit (storekit_root_certs_path)")
         if self.storekit_root_certs_path is not None:
             if not (self.storekit_bundle_id and self.storekit_product_ids):
                 raise ValueError("StoreKit needs storekit_bundle_id and storekit_product_ids")
