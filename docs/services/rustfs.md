@@ -48,12 +48,17 @@ so a running server never has its executable overwritten.
 - `scanner_cycle_seconds` (default unset) writes `RUSTFS_SCANNER_CYCLE`, the
   pause in seconds between the end of one background scanner cycle and the
   start of the next (60 to 604800; RustFS adds ±10 % jitter).
-  Unset, RustFS uses its speed preset: 60 s at the default speed, so on a large
-  bucket a full scan (about 50 minutes for 124,000 objects on the macmini, with
-  its usage cache of about 90 MB rewritten every 20 s) starts again a minute
-  after the last one ended and the scanner never rests. A longer cycle delays
-  only scanner work: noncurrent-version expiry, usage counts and the scanner's
-  heal checks. Changing it rewrites the environment file and restarts RustFS.
+  Unset, RustFS uses its speed preset: 60 s at the default speed. On a large
+  replica (the macmini: 124,000 objects in `backups`, a usage cache of about
+  90 MB rewritten every 10-20 s) every cycle ran into the 1800 s cycle runtime
+  budget, ended partial and the next one started about a minute later, so the
+  scanner never rested. A longer pause delays only scanner work:
+  noncurrent-version expiry, usage counts and the scanner's heal checks.
+  RustFS 1.0.4 skips the pause while it still rebuilds a usage snapshot it did
+  not find at startup (admin `GET /rustfs/admin/v3/scanner/status`,
+  `cycle_schedule.usage_bootstrap_rebuild_pending`); check that flag and
+  `runtime_config.cycle_interval_seconds` (source `env`) after a change.
+  Changing it rewrites the environment file and restarts RustFS.
 - `tier_free_version_recovery` (default true) set to false writes
   `RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED="false"`. RustFS 1.0.4 walks every
   bucket up to every 10 minutes for tier free versions even when no remote tier

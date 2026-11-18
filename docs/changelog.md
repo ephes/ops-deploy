@@ -5,7 +5,8 @@
 - rustfs: optional `scanner_cycle_seconds` (60 to 604800) writes
   `RUSTFS_SCANNER_CYCLE` to `/etc/default/rustfs`. RustFS 1.0.4 starts a new
   background scanner cycle 60 s after the last one at its default speed; on the
-  macmini replica one cycle takes about 50 minutes, so the scanner ran almost
+  macmini replica every cycle ran into the 1800 s cycle runtime budget and the
+  next started a minute later, so the scanner ran almost
   without pause (about 0.9 CPU cores, about 480 MiB of usage-cache writes a
   minute). Unset leaves the environment file byte for byte as before
   (`docs/services/rustfs.md`, "What runs").

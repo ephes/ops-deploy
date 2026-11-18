@@ -273,8 +273,9 @@ class RustfsConfig(RoleConfig):
     systemd_tasks_max: Annotated[str, Field(pattern=r"^([0-9]+|infinity)$")] = "infinity"
     healthcheck_timeout: Annotated[StrictInt, Field(ge=1)] = 30
     # RUSTFS_SCANNER_CYCLE: pause in seconds between the end of one background
-    # scanner cycle and the start of the next (RustFS adds ±10 % jitter). None keeps RustFS's speed preset (60 s at the default
-    # speed, so a long full scan restarts almost at once); a replica can wait
+    # scanner cycle and the start of the next (RustFS adds ±10 % jitter). None
+    # keeps RustFS's speed preset (60 s at the default speed, so a long scan
+    # restarts almost at once); a replica can wait
     # hours, since its scanner only expires noncurrent versions and counts usage.
     scanner_cycle_seconds: Annotated[StrictInt, Field(ge=60, le=7 * 24 * 3600)] | None = None
     # RUSTFS_TIER_FREE_VERSION_RECOVERY_ENABLED: RustFS 1.0.4 walks every bucket
