@@ -80,6 +80,10 @@ class MailBackendConfig(BaseServiceConfig):
     dovecot_protocols: str = "imap lmtp sieve"
     dovecot_auth_mechanisms: str = "plain login"
     dovecot_disable_plaintext_auth: str = "yes"
+    # At start, Dovecot waits up to this long for the kernel clock to be
+    # synchronised (systemd-time-wait-sync), then starts anyway; 0 removes the
+    # drop-in. Dovecot kills its processes when the clock jumps backwards.
+    dovecot_time_sync_wait_seconds: StrictInt = Field(default=60, ge=0, le=80)
     sieve_enabled: StrictBool = True
     spam_to_junk_enabled: StrictBool = False
     spam_junk_mailbox: str = "Junk"

@@ -67,6 +67,72 @@ def _password(secrets: SecretValues, name: str) -> str:
     return value
 
 
+DOVECOT_TIME_SYNC_DROPIN = "/etc/systemd/system/dovecot.service.d/10-time-sync.conf"
+TIME_WAIT_SYNC = "/usr/lib/systemd/systemd-time-wait-sync"
+
+
+def render_dovecot_time_sync(seconds: int) -> str:
+    """The drop-in: wait for the synchronised clock, at most ``seconds``, then start.
+
+    ``-`` ignores the wait's exit status, so a clock that never synchronises
+    delays Dovecot by ``seconds`` and does not keep it down; the bound stays
+    below the unit's default 90 s start timeout (the config allows 80 s).
+    """
+
+    return (
+        "# Managed by ops-deploy (mail_backend): Dovecot kills its processes when the\n"
+        "# clock jumps backwards, so at start it waits for the synchronised clock.\n"
+        "[Service]\n"
+        f"ExecStartPre=-/usr/bin/timeout {seconds} {TIME_WAIT_SYNC}\n"
+    )
+
+
+LOADED_PRE = "systemctl show -p DropInPaths -p ExecStartPre dovecot.service"
+
+
+def loaded_wait_current(loaded: str | None, seconds: int) -> bool:
+    """Whether systemd's loaded Dovecot unit (``systemctl show``) has the wanted wait.
+
+    A failed probe (``None``) counts as not current: the reload is harmless.
+    """
+
+    if loaded is None:
+        return False
+    dropins = next((line for line in loaded.splitlines() if line.startswith("DropInPaths=")), "").split()
+    ours = DOVECOT_TIME_SYNC_DROPIN in (path.removeprefix("DropInPaths=") for path in dropins)
+    if not seconds:
+        return not ours
+    return ours and f"argv[]=/usr/bin/timeout {seconds} {TIME_WAIT_SYNC} ; ignore_errors=yes" in loaded
+
+
+def dovecot_time_sync(cfg: MailBackendConfig) -> None:
+    """Install or remove the drop-in and reload systemd; Dovecot is not restarted for it."""
+
+    # What systemd has loaded, not only what is on disk: an earlier deploy may
+    # have changed the file and failed or stopped before its reload (mtimes
+    # cannot tell after a clock jump), so compare the loaded ExecStartPre.
+    loaded = probe(LOADED_PRE, name="Dovecot's loaded drop-ins and ExecStartPre")
+    stale = not loaded_wait_current(loaded, cfg.dovecot_time_sync_wait_seconds)
+    if cfg.dovecot_time_sync_wait_seconds:
+        binary = host.get_fact(File, path=TIME_WAIT_SYNC)
+        # File is a dict for a regular file (False for a directory, None if absent).
+        if not isinstance(binary, dict) or not int(str(binary.get("mode", 0)), 8) & 0o111:
+            raise DeployError(
+                f"mail_backend: {TIME_WAIT_SYNC} is not an executable file; set dovecot_time_sync_wait_seconds: 0"
+            )
+        dropin = files.put(
+            name="Dovecot waits for the synchronised clock at start",
+            src=StringIO(render_dovecot_time_sync(cfg.dovecot_time_sync_wait_seconds)),
+            dest=DOVECOT_TIME_SYNC_DROPIN,
+            user="root",
+            group="root",
+            mode="0644",
+        )
+    else:
+        dropin = files.file(name="Remove the Dovecot clock wait", path=DOVECOT_TIME_SYNC_DROPIN, present=False)
+    systemd.daemon_reload(name="Reload systemd for the Dovecot clock wait", _if=lambda: stale or dropin.did_change())
+
+
 @deploy("Deploy native mail backend")
 def deploy_mail_backend(cfg: MailBackendConfig, secrets: SecretValues) -> None:
     postgres_password = _password(secrets, "postgres_password")
@@ -283,6 +349,7 @@ def deploy_mail_backend(cfg: MailBackendConfig, secrets: SecretValues) -> None:
             restart_when=[*dkim_inputs, dkim.operation],
             always_restart=dkim.owed or "opendkim" not in installed,
         )
+    dovecot_time_sync(cfg)
     service_rollout(
         "dovecot",
         restart_when=[*dovecot_inputs, dovecot.operation],

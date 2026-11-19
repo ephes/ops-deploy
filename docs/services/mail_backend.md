@@ -72,6 +72,27 @@ by their existing services. Plaintext credentials use protected stdin, never arg
 or environment; fixed diagnostics do not disclose secrets or stored verifiers.
 
 
+## Dovecot and the clock at boot
+
+Dovecot kills its processes and restarts when the clock jumps backwards
+(macmini, 2026-11-16: two boots with a backwards jump while
+`systemd-timesyncd` could not reach its server). The deploy writes
+`/etc/systemd/system/dovecot.service.d/10-time-sync.conf` with
+`ExecStartPre=-/usr/bin/timeout <dovecot_time_sync_wait_seconds>
+/usr/lib/systemd/systemd-time-wait-sync`: at each start Dovecot waits until the
+kernel clock is synchronised, at most that long, and then starts anyway (the
+`-` ignores the timeout). `systemd-time-wait-sync.service` itself has no start
+timeout, so the drop-in does not order Dovecot after it. On a synchronised
+host the wait returns at once. A changed drop-in only reloads systemd: whenever the deploy
+writes or removes the file, and whenever systemd's loaded unit is not the
+wanted one (`systemctl show -p DropInPaths -p
+ExecStartPre dovecot.service` must list this drop-in and, with the wait on,
+the wanted `timeout` line; without the wait it must not list the drop-in; a
+failed probe also reloads). So a reload an earlier run owed is done too; with
+the wait off, a wait an administrator configured in another drop-in does not
+count as this one; it takes effect at Dovecot's next start. The deploy stops
+if the wait binary is not an executable regular file. Tests: `tests/test_mail_backend_dovecot_time_sync.py`.
+
 ## Example
 
 ```python
@@ -146,6 +167,7 @@ role prefix is omitted). `null` keeps the corresponding optional role behavior.
 | `dovecot_protocols` | `"imap lmtp sieve"` |
 | `dovecot_auth_mechanisms` | `"plain login"` |
 | `dovecot_disable_plaintext_auth` | `"yes"` |
+| `dovecot_time_sync_wait_seconds` | `60` (0 to 80; 0 removes the drop-in) |
 | `sieve_enabled` | `true` |
 | `spam_to_junk_enabled` | `false` |
 | `spam_junk_mailbox` | `"Junk"` |

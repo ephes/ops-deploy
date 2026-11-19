@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- mail_backend: Dovecot waits at start, at most
+  `dovecot_time_sync_wait_seconds` (new, default 60, 0 removes it), for the
+  synchronised clock through a drop-in `ExecStartPre=-/usr/bin/timeout 60
+  /usr/lib/systemd/systemd-time-wait-sync`, then starts anyway. On macmini
+  Dovecot had killed its processes after a backwards clock jump at boot
+  (2026-11-16). The next `mail_backend` deploy writes the drop-in and reloads
+  systemd (when it changed the file, and whenever systemd's loaded unit,
+  by `DropInPaths` and `ExecStartPre`, is not the wanted one or the probe
+  fails);
+  Dovecot is not restarted for it. With the wait enabled the deploy stops
+  unless `/usr/lib/systemd/systemd-time-wait-sync` is an executable regular
+  file (set 0 to opt out).
+
 - ssh_guard: new `sshd_remove_cloud_init_dropin` (default `false`). With
   `password_authentication: "no"` and the timed revert it removes cloud-init's
   `/etc/ssh/sshd_config.d/50-cloud-init.conf` (`PasswordAuthentication yes`,
