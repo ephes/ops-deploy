@@ -18,6 +18,13 @@
   updated `ssh-guard-tx` installed on their next ssh_guard run that has a
   change to apply.
 
+- echoport: the cron jobs' logs under `<home>/logs` are rotated by
+  `/etc/logrotate.d/echoport` (weekly or from 50M, 12 compressed copies, as
+  the service user; new `logrotate_enabled`,
+  `logrotate_keep`, `logrotate_max_size`; the path is fixed). Nothing rotated them before; on
+  macmini `scheduler.log` had reached 263 MB and `cleanup.log` 111 MB. The
+  next `echoport` deploy writes the file; no restart.
+
 - logyard vector: the remap takes `level` from the application's own output
   when it carries one (OpenThread's `[W]` for `otbr-agent`, gunicorn's
   `[ERROR]` tag, JSON `level` including pino's numbers or else `severity`,

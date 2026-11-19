@@ -266,6 +266,13 @@ class EchoportConfig(BaseServiceConfig):
     staging_db_refresh_minute: Annotated[str, Field(pattern=r"^[0-9*/,-]+$")] = "20"
     staging_db_refresh_targets: tuple[TargetName, ...] = ()
     staging_db_refresh_triggered_by: Plain = "staging-refresh-scheduler"
+    # logrotate for the cron jobs' logs under ``logs_dir`` (they only append):
+    # weekly or from ``logrotate_max_size``, ``logrotate_keep`` compressed copies.
+    # The file is always LOGROTATE_PATH, so a deploy only ever writes or
+    # removes its own rule.
+    logrotate_enabled: bool = True
+    logrotate_keep: int = Field(default=12, ge=1, le=520)
+    logrotate_max_size: Annotated[str, Field(pattern=r"^[1-9][0-9]{0,5}[kMG]$")] = "50M"
 
     # The playbook's loopback check and Nyxmon wiring; off by default (the role has neither).
     nyxmon: NyxmonCheck | None = None
@@ -280,6 +287,9 @@ class EchoportConfig(BaseServiceConfig):
 
     @model_validator(mode="after")
     def _role_rules(self) -> EchoportConfig:
+        if self.logrotate_enabled and not re.fullmatch(r"/[A-Za-z0-9/._-]+", str(self.home)):
+            # logrotate's file list has no escaping for braces, quotes, globs or spaces.
+            raise ValueError("logrotate_enabled needs a home path of letters, digits, '/', '.', '_' and '-'")
         if not self.site_path.is_relative_to(self.home) or self.site_path == self.home:
             raise ValueError("site_path must be below home")
         if self.cleanup_enabled and not (self.minio_alias and self.minio_url):
@@ -891,6 +901,60 @@ def _mc_alias(cfg: EchoportConfig, secrets: SecretValues, store: _Store) -> None
         )
 
 
+LOGROTATE_PATH = "/etc/logrotate.d/echoport"
+
+
+def cron_logs(cfg: EchoportConfig) -> list[str]:
+    """The log files the enabled cron jobs append to."""
+
+    names = [
+        ("scheduler.log", cfg.scheduler_enabled),
+        ("cleanup.log", cfg.cleanup_enabled),
+        ("staging-db-refresh.log", cfg.staging_refresh_active),
+    ]
+    return [str(cfg.logs_dir / name) for name, enabled in names if enabled]
+
+
+def render_logrotate(cfg: EchoportConfig) -> str:
+    """``/etc/logrotate.d/echoport``: the cron logs, rotated as the echoport user.
+
+    The cron jobs reopen their log on every run (``>>``), so a plain rename plus
+    ``create`` is enough; no ``copytruncate``. ``su`` is required because
+    ``logs_dir`` belongs to the service user, not root.
+    """
+
+    return (
+        "# Managed by ops-deploy (echoport): the cron jobs' logs.\n"
+        + " ".join(cron_logs(cfg))
+        + " {\n"
+        + f"    su {cfg.user} {cfg.group}\n"
+        + "    weekly\n"
+        + f"    maxsize {cfg.logrotate_max_size}\n"
+        + f"    rotate {cfg.logrotate_keep}\n"
+        + "    compress\n"
+        + "    delaycompress\n"
+        + "    missingok\n"
+        + "    notifempty\n"
+        + f"    create 0640 {cfg.user} {cfg.group}\n"
+        + "}\n"
+    )
+
+
+def _logrotate(cfg: EchoportConfig) -> None:
+    wanted = cfg.logrotate_enabled and bool(cron_logs(cfg))
+    if wanted:
+        files.put(
+            name="Rotate the Echoport cron logs",
+            src=StringIO(render_logrotate(cfg)),
+            dest=LOGROTATE_PATH,
+            user="root",
+            group="root",
+            mode="0644",
+        )
+    else:
+        files.file(name="Remove the Echoport logrotate config", path=LOGROTATE_PATH, present=False)
+
+
 def _scheduler(cfg: EchoportConfig, secrets: SecretValues) -> None:
     run = f"cd {cfg.site_path} && DJANGO_SETTINGS_MODULE={cfg.django_settings_module} {cfg.venv_bin}/python manage.py"
     cron_job(
@@ -935,6 +999,7 @@ def _scheduler(cfg: EchoportConfig, secrets: SecretValues) -> None:
     )
     if cfg.staging_refresh_active:
         _log_file(cfg, "staging-db-refresh.log")
+    _logrotate(cfg)
 
 
 # -- the playbook's post tasks ---------------------------------------------------

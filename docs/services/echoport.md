@@ -70,6 +70,7 @@ Defaults follow the role's `defaults/main.yml`.
 | `minio_account` | `None` | `MinioAccount(name, bucket, allow_put, allow_delete, policy_dir, provisioner, rustfs_env_file)`, defaults `echoport-retention`, `backups`, `false`, `true`, `/etc/minio/policies`, `rustfs_admin` (the only value), `/etc/default/rustfs`: the alias's own account (see below); needs `cleanup_enabled` |
 | `store_aliases` | `()` | `StoreAlias(alias, url, verify_bucket, account)`: one more alias of the cleanup user per other object store, each with its own account there (see "One alias per store"); needs `minio_account` |
 | `staging_db_refresh_*` | off | `enabled`, `hour` (`2`), `minute` (`20`), `targets`, `triggered_by` |
+| `logrotate_enabled`, `logrotate_keep`, `logrotate_max_size` | `true`, `12`, `50M` | logrotate for the enabled cron jobs' logs in `/etc/logrotate.d/echoport` (fixed path; see step 11); needs a `home` of letters, digits, `/`, `.`, `_`, `-` |
 | `nyxmon` | `None` | `NyxmonCheck(...)`: the playbook's Nyxmon check (see below) |
 
 Not ported: the pip/venv branch (`echoport_use_uv: false`), a pyproject other
@@ -163,6 +164,13 @@ for another single-file release.
     changes only the job's two lines (a header-less identical job line is
     adopted, as Ansible does) and writes it back only if something differs, so
     other entries survive and neither tool adds a second copy.
+    `/etc/logrotate.d/echoport` (`root:root 0644`) rotates the enabled jobs'
+    logs weekly or from `logrotate_max_size`, as the service user (`su`: the
+    log directory is not root's), keeping `logrotate_keep` compressed copies;
+    `create` is enough because each cron run reopens its log. Without
+    `logrotate_enabled` or without any job the file is removed. Before
+    2026-11-19 nothing rotated them (macmini: `scheduler.log` 263 MB,
+    `cleanup.log` 111 MB).
 12. With `cleanup_enabled`: the service user's `mc` alias (with
     `minio_account`: its user and `minio_secret_key`). A read-only probe
     prints a digest of the stored URL and credentials; if it differs from the
@@ -264,7 +272,7 @@ Differences, all on the "change only what differs" side:
 - `tests/test_echoport.py` (fake connector): first run, converged second run,
   code change, package source change, lockfile change, secret rotation, admin
   password rotation, unit and route drift, basic auth rotation, each cron job,
-  disabled jobs, missing log files and staging script, `mc` alias drift and an
+  disabled jobs, missing log files and staging script, the logrotate file, `mc` alias drift and an
   unreachable bucket, the scoped account on RustFS (each probe state, policy
   file drift, a secret the store refuses, secret rotation, missing RustFS
   admin access, a failed verification, the derived user name and secret

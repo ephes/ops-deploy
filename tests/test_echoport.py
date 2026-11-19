@@ -22,6 +22,7 @@ from ops_deploy.services.echoport.deploy import (
     check_secrets,
     nyxmon_checks,
     render_env,
+    render_logrotate,
     render_policy,
     render_role,
     render_route,
@@ -37,6 +38,7 @@ SITE = f"{HOME}/site"
 UNIT = "/etc/systemd/system/echoport.service"
 ROUTE = "/etc/traefik/dynamic/echoport.yml"
 REFRESH = f"{SITE}/staging-db-refresh.sh"
+LOGROTATE = "/etc/logrotate.d/echoport"
 DOMAIN = "echoport.example.invalid"
 SECRET_VALUES = {
     "django_secret_key": "echoport-fixture-django-key-0123456789",
@@ -141,6 +143,7 @@ def converged(cfg: EchoportConfig, secrets: SecretValues, **drift: str) -> dict[
         REFRESH: render_role("staging-db-refresh.sh.j2", cfg, secrets),
         f"{SITE}/pyproject.toml": (cfg.source_path / "pyproject.toml").read_text(),
         f"{SITE}/uv.lock": (cfg.source_path / "uv.lock").read_text(),
+        LOGROTATE: render_logrotate(cfg),
     }
     if cfg.minio_account is not None:
         content[POLICY_FILE] = render_policy(cfg.minio_account)
@@ -152,7 +155,7 @@ def converged(cfg: EchoportConfig, secrets: SecretValues, **drift: str) -> dict[
     }
     for path in (HOME, SITE, f"{SITE}/cache", f"{HOME}/logs", f"{SITE}/src", f"{SITE}/src/backups"):
         responses.update(fakehost.directory(path, user="echoport"))
-    for path in ("/etc/systemd/system", "/etc/traefik/dynamic"):
+    for path in ("/etc/systemd/system", "/etc/traefik/dynamic", "/etc/logrotate.d"):
         responses.update(fakehost.directory(path))
     responses.update(fakehost.directory("/etc/minio/policies", mode="drwxr-x---"))
     for path, text in content.items():
@@ -1022,3 +1025,91 @@ def test_stale_lock_fails_before_any_operation(cfg: EchoportConfig) -> None:
     (cfg.source_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n')
     with pytest.raises(ValueError, match="security floor"):
         deploy(cfg, values(cfg), rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
+
+
+def test_cron_logs_are_rotated_as_the_service_user(cfg: EchoportConfig) -> None:
+    secrets = values(cfg)
+    responses = {k: v for k, v in converged(cfg, secrets).items() if LOGROTATE not in k}
+    run = deploy(cfg, secrets, responses)
+
+    assert changed_names(run) == {"Rotate the Echoport cron logs"}
+    assert run.upload(LOGROTATE).decode() == (
+        "# Managed by ops-deploy (echoport): the cron jobs' logs.\n"
+        f"{HOME}/logs/scheduler.log {HOME}/logs/cleanup.log {HOME}/logs/staging-db-refresh.log {{\n"
+        "    su echoport echoport\n"
+        "    weekly\n"
+        "    maxsize 50M\n"
+        "    rotate 12\n"
+        "    compress\n"
+        "    delaycompress\n"
+        "    missingok\n"
+        "    notifempty\n"
+        "    create 0640 echoport echoport\n"
+        "}\n"
+    )
+    assert "chown root:root /etc/logrotate.d/echoport" in run.executed_commands
+
+
+def test_logrotate_follows_the_enabled_jobs(tmp_path: Path) -> None:
+    cfg = make_cfg(tmp_path, cleanup_enabled=False, minio_url="", minio_account=None, staging_db_refresh_enabled=False)
+
+    text = render_logrotate(cfg)
+
+    assert f"{HOME}/logs/scheduler.log {{" in text
+    assert "cleanup.log" not in text
+    assert "staging-db-refresh.log" not in text
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"logrotate_enabled": False},
+        {
+            "scheduler_enabled": False,
+            "cleanup_enabled": False,
+            "minio_url": "",
+            "staging_db_refresh_enabled": False,
+            "minio_account": None,
+        },
+    ],
+)
+def test_logrotate_config_is_removed_when_off_or_without_jobs(tmp_path: Path, changes: dict[str, Any]) -> None:
+    cfg = make_cfg(tmp_path, **changes)
+    secrets = values(cfg)
+    responses = converged(cfg, secrets)
+    for name in CRONS.values():
+        responses[f'"name":"{name}"'] = ["unchanged" if cfg.scheduler_enabled else "pending"]
+    run = deploy(cfg, secrets, responses)
+
+    assert "Remove the Echoport logrotate config" in changed_names(run)
+    assert LOGROTATE not in run.uploaded_paths
+
+
+@pytest.mark.parametrize("size", ["0M", "50", "50T", "-1M"])
+def test_logrotate_max_size_is_a_logrotate_size(tmp_path: Path, size: str) -> None:
+    with pytest.raises(ValueError, match="logrotate_max_size"):
+        make_cfg(tmp_path, logrotate_max_size=size)
+
+
+@pytest.mark.parametrize("home", ["/home/echo port", "/home/echo{port", "/home/echo*", "/home/e'p"])
+def test_logrotate_refuses_homes_its_syntax_cannot_hold(tmp_path: Path, home: str) -> None:
+    with pytest.raises(ValueError, match="logrotate_enabled needs a home path"):
+        make_cfg(tmp_path, home=home, site_path=f"{home}/site")
+
+
+def test_logrotate_off_accepts_any_home(tmp_path: Path) -> None:
+    cfg = make_cfg(tmp_path, home="/home/echo port", site_path="/home/echo port/site", logrotate_enabled=False)
+
+    assert cfg.home.name == "echo port"
+
+
+def test_logrotate_default_survives_json_validation(tmp_path: Path) -> None:
+    cfg = make_cfg(tmp_path)
+
+    data = json.loads(cfg.model_dump_json())
+    for key in [k for k in data if k.startswith("logrotate_")]:
+        del data[key]
+
+    again = EchoportConfig.model_validate_json(json.dumps(data))
+
+    assert (again.logrotate_enabled, again.logrotate_keep, again.logrotate_max_size) == (True, 12, "50M")
