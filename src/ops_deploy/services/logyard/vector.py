@@ -43,6 +43,12 @@ from ops_deploy.helpers import mark_read_only
 from ops_deploy.infra import VectorAptInstallConfig, vector_apt_steps
 from ops_deploy.services.logyard._common import Part, Url, Word, probe, render_role
 
+Level = Literal["emerg", "alert", "critical", "error", "warning", "notice", "info", "debug"]
+# Loki's own query/table-manager logs reach journald through Docker's journald
+# driver and would be shipped back into Loki (each query writes more of them);
+# OTBR logs ~200,000 [I] lines a day of mesh chatter on macmini.
+DEFAULT_MIN_LEVELS: dict[str, Level] = {"logyard-loki": "warning", "otbr-agent": "notice"}
+
 VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 CONFINEMENT_SINCE = (0, 57, 0)
 CONFIG_PATTERNS = ("*.yaml", "*.yml", "*.toml", "*.json")
@@ -74,6 +80,12 @@ class LogyardVectorConfig(RoleConfig):
     exclude_units: tuple[str, ...] = ()
     include_matches: tuple[Match, ...] = ()
     current_boot_only: bool = False
+    # Per service label: lines less severe than the level are not shipped.
+    # The map replaces DEFAULT_MIN_LEVELS; merge them to keep both floors.
+    # Keys are service label values (systemd escapes such as \x2d included).
+    min_levels: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9@._:\\-]+$")], Level] = Field(
+        default_factory=lambda: dict(DEFAULT_MIN_LEVELS)
+    )
 
     http_timeout_secs: int = Field(default=15, ge=1)
     request_concurrency: int = Field(default=1, ge=1)
@@ -116,6 +128,7 @@ def role_vars(cfg: LogyardVectorConfig, supports_confinement: bool | None = None
             for m in cfg.include_matches
         ],
         "logyard_vector_current_boot_only": cfg.current_boot_only,
+        "logyard_vector_min_levels": dict(sorted(cfg.min_levels.items())),
         "logyard_vector_http_timeout_secs": cfg.http_timeout_secs,
         "logyard_vector_request_concurrency": cfg.request_concurrency,
         "logyard_vector_retry_initial_backoff_secs": cfg.retry_initial_backoff_secs,

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- logyard vector: the remap takes `level` from the application's own output
+  when it carries one (OpenThread's `[W]` for `otbr-agent`, gunicorn's
+  `[ERROR]` tag, JSON `level` including pino's numbers or else `severity`,
+  the top-level logfmt `level=` or else `lvl=`) and from journald's PRIORITY otherwise; entries of Docker's
+  journald log driver get the container name as `service` (Loki's own logs:
+  `logyard-loki`, was `docker`); `session-<n>` units and systemd's generated
+  transient units (`run-u<n>`, `run-r<32 hex>`, `run-p<n>-i<n>`) collapse to
+  `session` and `run`. New `min_levels` (default `logyard-loki: warning`,
+  `otbr-agent: notice`; a configured map replaces it) keeps lines below a
+  per-service level out of Loki.
+  Before: about 175,000 Loki info lines a day came back into Loki as
+  `level=error` (99 % of all errors), RustFS's ~180,000 JSON `ERROR`/`WARN`
+  lines and GoToSocial's ~31,000 `level=ERROR`/`WARN` lines arrived as info,
+  OTBR shipped ~195,000 info lines a day (28 % of macmini's volume) and
+  `service` had ~1,400 `session-<n>` values a day. The next
+  `logyard_vector` deploy rewrites the fragment and restarts Vector on each
+  host.
+
 - RustFS replica monitor: a non-empty replication queue alone (object count
   and size within tolerance) no longer makes a job critical at once. Its level
   follows how long parity has been missing (`parity.marker`): `ok` below the

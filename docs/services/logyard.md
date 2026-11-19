@@ -129,13 +129,48 @@ files and is counted as a mutating operation; a fully converged repeat uses
 only the live-directory check.
 
 `host_id` (required), `ingest_endpoint`, `environment`, unit and match
-filters, `current_boot_only`, sink tuning. Installs Vector from apt, writes the
+filters, `current_boot_only`, `min_levels`, sink tuning. Installs Vector from apt, writes the
 shared `00-global.yaml` (`data_dir`; a different `data_dir` already on the host
 stops the deploy) and the Logyard fragment, points `/etc/default/vector` at the
 config directory, removes the legacy `/etc/vector/vector.yaml`, validates the
 staged directory with `vector validate --skip-healthchecks` before replacing
 either file (before the defaults file or the legacy config are touched), and restarts Vector when a file changed (also on the install
 run: the package may have started it with the stock config).
+
+### What the producer ships
+
+The remap turns each journald entry into one Loki line with the labels
+`host`, `source_type`, `environment`, `service` and `level`:
+
+- `service` is the systemd unit without its suffix (`SYSLOG_IDENTIFIER` when
+  there is no unit). Login sessions (`session-<n>`, `session-c<n>`) become
+  `session` and systemd's generated transient units (`run-u<n>`,
+  `run-r<32 hex digits>`, `run-p<n>-i<n>`) become `run`; other `run-*` units keep their
+  name, and the full unit name stays in the line's `unit` field. Entries
+  Docker's journald log driver writes under `docker.service` take the
+  container name (`CONTAINER_NAME`) verbatim, so Loki's own container is
+  `service="logyard-loki"`.
+- `level` is the application's own level when the message carries one, and
+  journald's `PRIORITY` otherwise. Read in this order, first match wins:
+  OpenThread's `[C]`/`[W]`/`[N]`/`[I]`/`[D]` prefix (`otbr-agent` only),
+  gunicorn's `[ERROR]`-style tag, a JSON body's `level` (pino's numbers 10-60
+  too; other numbers do not count) or else its `severity`, and for lines
+  that start like logfmt (`key=`), the top-level `level=` or `lvl=` field
+  (words inside a quoted value do not count). Words outside the known level
+  names are ignored. Programs that log everything to stderr (PRIORITY 3)
+  therefore no longer show up as errors, and errors written to stdout no
+  longer show up as info.
+- `min_levels` maps a `service` value to the least severe level that is still
+  shipped (default `DEFAULT_MIN_LEVELS`: `logyard-loki` from `warning`,
+  `otbr-agent` from `notice`). Loki's own query logs would otherwise come
+  back into Loki as errors with every query, and OTBR writes about 200,000
+  `[I]` lines a day of mesh chatter. A configured map replaces the defaults:
+  to add a floor and keep them, pass
+  `{**vector.DEFAULT_MIN_LEVELS, "<service>": "<level>"}`. The journal on the
+  host keeps everything.
+
+`tests/test_logyard_vector_remap.py` runs the rendered remap through
+`vector test` with journald-shaped events (skipped without a local `vector`).
 
 The template-confinement opt-out is chosen from `vector --version` while
 planning. On a host without Vector the configured default
@@ -145,7 +180,7 @@ guess before it reaches the running service, and the next run corrects it.
 ## Tests
 
 `tests/test_logyard_golden.py`, `tests/test_logyard.py`,
-`tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
+`tests/test_logyard_vector_remap.py`, `tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
 (fake connector: first runs, converged no-ops, each kind of change and what it
 restarts, secret handling, config validation). The Ansible/pyinfra coexistence
 smoke lives in ops-control (`just smoke-logyard-coexistence`).

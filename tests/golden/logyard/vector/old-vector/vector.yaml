@@ -16,6 +16,7 @@ transforms:
 
       unit = to_string(."_SYSTEMD_UNIT") ?? to_string(journal._SYSTEMD_UNIT) ?? ""
       identifier = to_string(.SYSLOG_IDENTIFIER) ?? to_string(journal.SYSLOG_IDENTIFIER) ?? ""
+      container = to_string(.CONTAINER_NAME) ?? to_string(journal.CONTAINER_NAME) ?? ""
       service = unit
       if service == "" {
         service = identifier
@@ -44,6 +45,18 @@ transforms:
       if ends_with(service, ".target") {
         service = replace(service, ".target", "")
       }
+      # One label value per login session or transient unit would create a
+      # new stream for every SSH/cron session; the unit field keeps the name.
+      if match(service, r'^session-c?[0-9]+$') {
+        service = "session"
+      } else if match(service, r'^run-(?:u[0-9]+|r[0-9a-f]{32}|p[0-9]+-i[0-9]+)$') {
+        service = "run"
+      }
+      # Docker's journald log driver writes every container's output under
+      # docker.service; the container, by its exact name, is the service.
+      if container != "" && unit == "docker.service" {
+        service = container
+      }
 
       priority = to_string(.PRIORITY) ?? to_string(journal.PRIORITY) ?? ""
       level = "info"
@@ -63,6 +76,74 @@ transforms:
         level = "info"
       } else if priority == "7" {
         level = "debug"
+      }
+
+      # The application's own level wins over PRIORITY: programs that log
+      # everything to stderr arrive as PRIORITY 3, and programs that log to
+      # stdout arrive as PRIORITY 6 whatever they report. Line formats with a
+      # fixed prefix are read first; a word the table below does not know
+      # leaves PRIORITY's level.
+      names = {
+        "emerg": "emerg", "emergency": "emerg", "panic": "emerg",
+        "alert": "alert",
+        "crit": "critical", "critical": "critical", "fatal": "critical",
+        "err": "error", "error": "error",
+        "warn": "warning", "warning": "warning",
+        "notice": "notice",
+        "info": "info", "information": "info", "informational": "info",
+        "debug": "debug", "trace": "debug"
+      }
+      body_level = null
+      if identifier == "otbr-agent" {
+        # OpenThread: "2d.16:49:00.639 [I] DataPollHandlr: ..."
+        found = parse_regex(message, r'^\S+ \[(?P<level>[CWNID])\] ') ?? {}
+        letter = string(found.level) ?? ""
+        body_level = get({"C": "critical", "W": "warning", "N": "notice", "I": "info", "D": "debug"}, [letter]) ?? null
+      }
+      if body_level == null {
+        # gunicorn: "[2026-11-19 05:15:13 +0100] [353435] [ERROR] ..."
+        found = parse_regex(message, r'^\[[^\]]+\] \[[0-9]+\] \[(?P<level>[A-Z]+)\] ') ?? {}
+        body_level = get(names, [downcase(string(found.level) ?? "")]) ?? null
+      }
+      if body_level == null && starts_with(strip_whitespace(message), "{") {
+        body = object(parse_json(message) ?? {}) ?? {}
+        if is_integer(body.level) {
+          # pino's numeric levels; other numbers are not pino's
+          pino = {"10": "debug", "20": "debug", "30": "info", "40": "warning", "50": "error", "60": "critical"}
+          body_level = get(pino, [to_string(body.level) ?? ""]) ?? null
+        } else {
+          body_level = get(names, [downcase(string(body.level) ?? "")]) ?? null
+        }
+        if body_level == null {
+          body_level = get(names, [downcase(string(body.severity) ?? "")]) ?? null
+        }
+      }
+      if body_level == null && match(message, r'^[^\s="]+=') {
+        # logfmt (Loki, GoToSocial): only top-level keys count, not words
+        # inside a quoted msg="...".
+        # Tabs as separators make parse_logfmt split inside quoted values.
+        fields, logfmt_error = parse_logfmt(replace(message, "\t", " "))
+        if logfmt_error != null {
+          fields = {}
+        }
+        body_level = get(names, [downcase(string(fields.level) ?? "")]) ?? null
+        if body_level == null {
+          body_level = get(names, [downcase(string(fields.lvl) ?? "")]) ?? null
+        }
+      }
+      if is_string(body_level) {
+        level = string(body_level) ?? level
+      }
+
+      # Per-service floor: lines below it are not shipped (Loki's own query
+      # logs, which would otherwise loop back into Loki; OTBR's chatter).
+      severity = {"emerg": 0, "alert": 1, "critical": 2, "error": 3, "warning": 4, "notice": 5, "info": 6, "debug": 7}
+      min_levels = {"logyard-loki": "warning", "otbr-agent": "notice"}
+      floor = get(min_levels, [service]) ?? null
+      if is_string(floor) {
+        if (to_int(get(severity, [level]) ?? 6) ?? 6) > (to_int(get(severity, [floor]) ?? 7) ?? 7) {
+          abort
+        }
       }
 
       pid = to_string(."_PID") ?? to_string(journal._PID) ?? null
