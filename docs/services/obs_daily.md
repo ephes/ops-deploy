@@ -57,7 +57,7 @@ reach journald as stderr and come back into Loki as errors.
 | (log hosts) | Loki's host labels of eight days plus the configured `log_hosts` | no host at all is a pack error: the configured hosts are listed as silent, the other log sections are skipped and no day enters the baseline |
 | `logs.volume` | for today and each of the 7 days before, per host: `sum by (unit)` over lines whose parsed JSON has a unit (trusted), and `sum by (service)` over the other lines (caller-named, shown as `ident:<name>`) | services whose lines changed by a factor of 3 (or fell to a fifth) with at least 500 lines, services that appeared (none on the 7 days before, at least 20 today) or vanished (at least 5 of 7 days with a median of 50 or more, none today), totals per host, hosts without a line in the last hour (`sleeping_hosts` excepted). Login sessions and transient `run-u*` units are left out (thousands of streams would break Loki's series limit) |
 | `logs.samples` | per host and `service` label (login sessions and transient `run-u*` units left out), the newest `sample_lines_per_window` (100) lines of each 6-hour window of the last day, at any level, four at a time | per service: lines in 24 h, lines sampled, template groups, and per group (the 6 most frequent and up to 3 that occurred once) `time n=<count in sample> <level> <raw message>` (400 characters); the detail shrinks in steps (down to one group of 120 characters) until the section fits `sample_budget_bytes` (500,000). A service whose query fails is marked and is a pack error |
-| `logs.signatures` | problem-like lines (error, fail, fatal, panic, exception, traceback, denied, refused, timeout, segfault, oom, killed, corrupt, unable to, cannot, invalid, critical, abort, crash, warn, unreachable, unhealthy, degraded) per host in four 6-hour windows; a window that hits the 5,000-line limit is halved up to five times (about 11 minutes); one still at the limit is sampled, and its day stays out of the baseline | templates per source with up to two raw `examples` (400 characters): `new` (never seen in the baseline, at least `new_signature_min` lines) and `surging` (known, at least 50 lines and ten times the daily average) |
+| `logs.signatures` | problem-like lines (error, fail, fatal, panic, exception, traceback, denied, refused, timeout, segfault, oom, killed, corrupt, unable to, cannot, invalid, critical, abort, crash, warn, unreachable, unhealthy, degraded) per host in four 6-hour windows; a window that hits the 2,000-line limit is halved up to five times (about 11 minutes); one still at the limit is sampled, and its day stays out of the baseline | templates per source with up to two raw `examples` (400 characters): `new` (never seen in the baseline, at least `new_signature_min` lines) and `surging` (known, at least 50 lines and ten times the daily average) |
 | `logs.unit_restarts` | PID 1's `Scheduled restart job`, `Start request repeated too quickly`, `Failed with result` per host and unit (transient `run-*`, `session-*`, `user@*` units ignored) | counts per unit |
 | `metrics` | InfluxDB `graphyard_metrics`, 15 days up to the pack's own clock (`ctx.now`, not InfluxDB's `now()`); the daily baselines are 24-hour windows ending at the pack's time of day; no series at all, or none updated within 2 hours, is a pack error | `deviations` (gauge series, not `*_total`, whose last-24-hour mean or maximum has a robust z-score of at least `deviation_z` and a relative change of at least `deviation_relative` against their own daily values), `silent` (series quiet for over 2 hours, 2 days for `sleeping_hosts` and Home Assistant sensors, grouped by host and subject), `appeared` (first point in the last day), `filesystems` (at least 85 % used or full within 30 days at the least-squares trend; the sealed macOS system snapshot mounted at `/` is skipped, it mirrors its Data volume) |
 | `tls` | every enabled Nyxmon check with an `https://` URL (its `url` and, for JSON metrics checks, the `data.url` it really fetches), plus `tls_hosts`, all of them (eight at a time) | certificates expiring within 21 days, and hosts whose handshake fails |
@@ -88,7 +88,17 @@ then the last entries are left out (a pack note says how many). Each message is
 masked from at most its first 1,000 characters and kept to 4,000, so long
 lines cannot stall the pack; lone surrogates from escaped JSON become
 visible `\udXXX` escapes, so a pack always encodes. A Loki answer above 64
-MiB narrows its window like the line limit does.
+MiB narrows its window like the line limit does, and so does a connection
+Loki closes without an answer: Loki's query frontend splits a query into
+1-hour pieces whose answers pass inside Loki over gRPC with a 4 MiB limit, and
+a piece above it is dropped silently. The signature pass's 2,000-line limit
+keeps a piece below that for lines of up to about 2 KB (on 2026-11-19, 5,000
+RustFS lines of about 1.2 KB on fractal made the whole signature section
+fail); a window that is still not answered at about 11 minutes is skipped with
+a note, like one too large. After 40 unanswered windows in one pack the
+signature section fails instead (a Loki that answers nothing is an outage, not
+an oversized piece); the earlier days it had read completely and the host activity are saved first, pruned to the retention window as on a normal run. The unit-restart query and the "unit_loops" status keep
+their 5,000-line limit: systemd's restart lines are short.
 
 The source is the stream's `service` label, which Vector derives from
 journald's trusted `_SYSTEMD_UNIT`. Only a line whose JSON, parsed by Loki
@@ -171,7 +181,7 @@ which the template occurred
 (`host_active`, confirmed from all its lines, sessions and transient units
 included, over the last eight days of each run), so a newly shipping host
 is not measured against days before it existed. A day with a window that had to
-be skipped (too large even after splitting) never enters the baseline and is
+be skipped (too large or not answered even after splitting) never enters the baseline and is
 a pack error; the next run tries it again. A pack larger than
 `pack_max_bytes` (1,200,000; at most 2,000,000, half of what `obs_ctl.py
 pack` hands over; the model reads it in one go) has its longest lists halved until it

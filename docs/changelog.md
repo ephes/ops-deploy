@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- obs_daily: the signature pass of the daily pack survives Loki closing a
+  connection without an answer. Loki's query frontend splits each query into
+  1-hour pieces whose answers pass inside Loki over gRPC with a 4 MiB limit;
+  on 2026-11-19 a piece of 5,000 RustFS lines of about 1.2 KB on fractal
+  exceeded it, Loki dropped the connection, and the whole `logs.signatures`
+  section failed in both of the day's runs. The signature pass now asks for
+  at most 2,000 lines per query (from 5,000; the unit-restart query and the
+  `unit_loops` status keep 5,000), and a dropped connection narrows the window
+  like an answer above 64 MiB; a window still not answered at about 11
+  minutes is skipped with a note and keeps its day out of the baseline. After
+  40 unanswered windows in one pack the section fails as before, so a Loki
+  outage is not split into thousands of queries; the earlier days it had
+  read completely are kept, so the next run continues the backfill. The next `obs_daily` deploy
+  uploads the new `obs_pack.py`; nothing else changes.
+
 - voxhelm: the source sync also excludes the SQLite sidecars (`db.sqlite3-*`:
   `-journal`, `-wal`, `-shm`) in `voxhelm_sync_excludes`, next to
   `db.sqlite3`. The live database runs in rollback-journal mode; before this,

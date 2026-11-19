@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -68,6 +69,14 @@ from typing import Any
 SCHEMA = 1
 HTTP_TIMEOUT = 60
 MAX_LINES = 5000
+# Lines per problem-line query (logs.signatures). Loki's query frontend splits a query into
+# 1-hour pieces and each piece's answer travels inside Loki over gRPC, limited to 4 MiB:
+# 2000 lines of about 1.2 KB (RustFS on fractal, 2026-11-19) stay well below it, 5000 did not.
+PROBLEM_LINES = 2000
+# Problem-line windows Loki may leave unanswered in one pack before the signature pass gives
+# up: an isolated oversized piece costs a handful, an outage that drops every query would
+# otherwise split every window of every day down to the last level.
+MAX_DROPPED = 40
 MASK_INPUT = 1000
 MAX_BODY = 64 * 1024 * 1024
 MAX_SPLIT = 5  # a 6-hour window halves down to about 11 minutes
@@ -154,6 +163,7 @@ class Context:
     errors: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     skipped_windows: int = 0
+    dropped_windows: int = 0
     # host -> day -> whether the host shipped any log line that day (from logs.volume)
     activity: dict[str, dict[str, bool]] = field(default_factory=dict)
 
@@ -168,6 +178,11 @@ class TooLarge(RuntimeError):
     """An answer above ``MAX_BODY`` bytes: the caller narrows its window."""
 
 
+class Dropped(TooLarge):
+    """Loki closed the connection without an answer, as it does when a query piece's
+    answer exceeds its internal gRPC message limit: the caller narrows its window."""
+
+
 def _http(request: urllib.request.Request, timeout: float = HTTP_TIMEOUT, max_body: int = MAX_BODY) -> bytes:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -180,6 +195,8 @@ def _http(request: urllib.request.Request, timeout: float = HTTP_TIMEOUT, max_bo
         raise RuntimeError(f"HTTP {error.code}: {detail[0][:160] if detail else ''}") from None
     except (urllib.error.URLError, OSError) as error:
         reason = getattr(error, "reason", error)
+        if isinstance(reason, http.client.RemoteDisconnected):
+            raise Dropped(f"unreachable: {str(reason)[:160]}") from None
         raise RuntimeError(f"unreachable: {str(reason)[:160]}") from None
 
 
@@ -464,16 +481,21 @@ def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int 
         "query": query,
         "start": str(int(start * NS)),
         "end": str(int(end * NS)),
-        "limit": str(MAX_LINES),
+        "limit": str(PROBLEM_LINES),
         "direction": "backward",
     }
     try:
         data = ctx.loki("query_range", params)
-    except TooLarge:
+    except TooLarge as error:
+        if isinstance(error, Dropped):
+            ctx.dropped_windows += 1
+            if ctx.dropped_windows > MAX_DROPPED:
+                raise RuntimeError(f"{error} ({MAX_DROPPED} windows not answered; giving up)") from None
         if depth < MAX_SPLIT and end - start > 5 * 60:
             middle = start + (end - start) / 2
             return problem_lines(ctx, host, start, middle, depth + 1) + problem_lines(ctx, host, middle, end, depth + 1)
-        ctx.notes.append(f"{host}: answer too large in {iso(start)}..{iso(end)}; skipped")
+        what = "connection closed without an answer" if isinstance(error, Dropped) else "answer too large"
+        ctx.notes.append(f"{host}: {what} in {iso(start)}..{iso(end)}; skipped")
         ctx.skipped_windows += 1
         return []
     found: list[tuple[str, str]] = []
@@ -497,13 +519,13 @@ def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int 
             # Only the start of a message is ever masked or shown; keep no more of it in memory.
             # Lone surrogates (from escaped JSON) become visible escapes, so the pack always encodes.
             found.append((clean(source), clean(message[: 4 * MASK_INPUT])))
-    if len(found) >= MAX_LINES:
+    if len(found) >= PROBLEM_LINES:
         if depth < MAX_SPLIT and end - start > 5 * 60:
             middle = start + (end - start) / 2
             return problem_lines(ctx, host, start, middle, depth + 1) + problem_lines(ctx, host, middle, end, depth + 1)
         # A sampled window cannot count as a complete day: it stays out of the baseline.
         ctx.notes.append(
-            f"{host}: {MAX_LINES}-line limit reached in {iso(start)}..{iso(end)}; sampled"
+            f"{host}: {PROBLEM_LINES}-line limit reached in {iso(start)}..{iso(end)}; sampled"
         )
         ctx.skipped_windows += 1
     return found
@@ -515,7 +537,7 @@ def signature_key(host: str, source: str, template: str) -> str:
 
 def day_signatures(ctx: Context, hosts: list[str], end: float) -> tuple[dict[str, dict[str, Any]], bool]:
     """Templates of the 24 hours before ``end``, per host: key -> host, source, template, count; and
-    whether every window was read (a window skipped as too large leaves the day incomplete).
+    whether every window was read (a window skipped as too large or unanswered leaves the day incomplete).
 
     Each host is compared with its own past: a failure that is routine on one
     host is still new when it first appears on another.
@@ -574,6 +596,18 @@ def _record(store: dict[str, Any], day: str, found: dict[str, dict[str, Any]]) -
     store["covered_days"] = sorted(set(store.get("covered_days", [])) | {day})
 
 
+def _save_signatures(path: str, store: dict[str, Any], oldest: str) -> None:
+    """Write the baseline without the days before ``oldest`` (the retention window)."""
+
+    for entry in store.get("signatures", {}).values():
+        entry["days"] = {day: count for day, count in entry["days"].items() if day >= oldest}
+    store["signatures"] = {k: v for k, v in store.get("signatures", {}).items() if v["days"]}
+    store["covered_days"] = [d for d in store.get("covered_days", []) if d >= oldest]
+    store.pop("host_inactive", None)
+    store["host_active"] = {h: [d for d in days if d >= oldest] for h, days in store.get("host_active", {}).items()}
+    _write_json(path, store, indent=None)
+
+
 def section_signatures(ctx: Context, hosts: list[str]) -> dict[str, Any]:
     """Today's templates against the stored days strictly before today.
 
@@ -588,29 +622,36 @@ def section_signatures(ctx: Context, hosts: list[str]) -> dict[str, Any]:
         store = {"schema": SIGNATURE_SCHEMA, "signatures": {}, "covered_days": []}
     today = day_of(ctx.now)
     covered = set(store.get("covered_days", []))
-    backfilled = []
-    for back in range(int(ctx.config["backfill_days"]), 0, -1):
-        day = day_of(ctx.now - back * DAY)
-        if day not in covered:
-            earlier, complete = day_signatures(ctx, hosts, ctx.now - back * DAY)
-            if complete:
-                _record(store, day, earlier)
-                backfilled.append(day)
-            else:
-                # An incomplete day never enters the baseline; the next run tries it again.
-                ctx.errors.append(f"logs.signatures: {day} incomplete (a window was too large); not in the baseline")
-    if backfilled:
-        ctx.notes.append(f"signature baseline filled from {len(backfilled)} earlier days ({backfilled[0]}..)")
     # Days a host shipped no log line at all (from logs.volume) do not count in its baseline.
     active = store.setdefault("host_active", {})
     for host, days in ctx.activity.items():
         confirmed = set(active.get(host, [])) | {day for day, shipped in days.items() if shipped}
         active[host] = sorted(confirmed - {day for day, shipped in days.items() if not shipped})
-    found, complete_today = day_signatures(ctx, hosts, ctx.now)
-    if not complete_today:
-        ctx.errors.append("logs.signatures: today incomplete (a window was too large); not added to the baseline")
-    known = store.get("signatures", {})
     oldest = day_of(ctx.now - int(ctx.config["signature_retention_days"]) * DAY)
+    backfilled = []
+    try:
+        for back in range(int(ctx.config["backfill_days"]), 0, -1):
+            day = day_of(ctx.now - back * DAY)
+            if day not in covered:
+                earlier, complete = day_signatures(ctx, hosts, ctx.now - back * DAY)
+                if complete:
+                    _record(store, day, earlier)
+                    backfilled.append(day)
+                else:
+                    # An incomplete day never enters the baseline; the next run tries it again.
+                    ctx.errors.append(f"logs.signatures: {day} incomplete (a window was too large or not answered); not in the baseline")
+        if backfilled:
+            ctx.notes.append(f"signature baseline filled from {len(backfilled)} earlier days ({backfilled[0]}..)")
+        found, complete_today = day_signatures(ctx, hosts, ctx.now)
+    except RuntimeError:
+        # A pass that gives up (Loki stopped answering) keeps the days it read completely and
+        # the host activity it learned, so the next run continues the backfill instead of
+        # starting it again.
+        _save_signatures(path, store, oldest)
+        raise
+    if not complete_today:
+        ctx.errors.append("logs.signatures: today incomplete (a window was too large or not answered); not added to the baseline")
+    known = store.get("signatures", {})
     baseline_days = len([d for d in store.get("covered_days", []) if oldest <= d < today])
     new, surging = [], []
     for key, entry in found.items():
@@ -631,13 +672,7 @@ def section_signatures(ctx: Context, hosts: list[str]) -> dict[str, Any]:
                             "days_seen_before": len(before), "first_seen": min(before)})  # fmt: skip
     if complete_today:
         _record(store, today, found)
-    for entry in store["signatures"].values():
-        entry["days"] = {day: count for day, count in entry["days"].items() if day >= oldest}
-    store["signatures"] = {k: v for k, v in store["signatures"].items() if v["days"]}
-    store["covered_days"] = [d for d in store["covered_days"] if d >= oldest]
-    store.pop("host_inactive", None)
-    store["host_active"] = {h: [d for d in days if d >= oldest] for h, days in store.get("host_active", {}).items()}
-    _write_json(path, store, indent=None)
+    _save_signatures(path, store, oldest)
     new, surging = grouped(new), grouped(surging)
     return {
         "baseline_days": baseline_days,

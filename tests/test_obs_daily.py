@@ -329,7 +329,7 @@ def test_signatures_fill_the_baseline_then_report_only_new_and_surging_templates
 
 
 def test_a_window_at_the_line_limit_is_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(pack, "MAX_LINES", 4)
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 4)
     monkeypatch.setattr(pack, "MAX_SPLIT", 3)
     loki = Loki()
     loki.problem = {"web": [(NOW - 6 * 3600 + i * 600, journald("boom failed")) for i in range(30)]}
@@ -1064,7 +1064,7 @@ def test_only_a_triage_that_ran_refreshes_its_freshness(tmp_path: Path, monkeypa
 
 
 def test_pack_hosts_and_notes_keep_their_real_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(pack, "MAX_LINES", 2)
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
     loki = Loki()
     loki.problem = {"odd host": [(NOW - 100 - i, journald("boom failed")) for i in range(9)]}
     ctx = context(tmp_path, loki)
@@ -1466,6 +1466,119 @@ def test_an_oversized_loki_answer_narrows_the_window(tmp_path: Path) -> None:
     assert any("too large" in note for note in ctx.notes)
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_a_connection_loki_closes_without_an_answer_is_dropped(monkeypatch: pytest.MonkeyPatch, wrapped: bool) -> None:
+    import http.client
+    import urllib.error
+
+    def closed(request: Any, timeout: float) -> Any:
+        error = http.client.RemoteDisconnected("Remote end closed connection without response")
+        raise urllib.error.URLError(error) if wrapped else error
+
+    monkeypatch.setattr(pack.urllib.request, "urlopen", closed)
+    with pytest.raises(pack.Dropped, match="unreachable: Remote end closed"):
+        pack.loki_client("http://loki")("query_range", {})
+
+
+def test_a_refused_connection_still_fails_the_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refused(request: Any, timeout: float) -> Any:
+        raise ConnectionRefusedError(61, "Connection refused")
+
+    monkeypatch.setattr(pack.urllib.request, "urlopen", refused)
+    with pytest.raises(RuntimeError) as caught:
+        pack.loki_client("http://loki")("query_range", {})
+    assert not isinstance(caught.value, pack.TooLarge)
+
+
+def test_a_window_loki_does_not_answer_is_split_and_the_rest_is_read(tmp_path: Path) -> None:
+    loki = Loki()
+    loki.problem = {"web": [(NOW - 3600 * h - 30, journald("boom failed")) for h in range(6)]}
+    calls: list[tuple[float, float]] = []
+
+    def dropping(path: str, params: dict[str, str]) -> Any:
+        if path == "query_range" and "|~" in params["query"]:
+            start, end = int(params["start"]) / NS, int(params["end"]) / NS
+            calls.append((start, end))
+            # Loki drops every answer that covers the newest half hour.
+            if end > NOW - 1800:
+                raise pack.Dropped("unreachable: Remote end closed connection without response")
+        return loki(path, params)
+
+    ctx = context(tmp_path, dropping)
+    found = pack.problem_lines(ctx, "web", NOW - 6 * 3600, NOW)
+
+    assert len(found) == 5  # the line inside the unanswered newest window is the one missing
+    assert len(calls) > 2
+    assert any("connection closed without an answer" in note for note in ctx.notes)
+    assert ctx.skipped_windows == 3  # the three 11-minute windows that end in the newest half hour
+
+
+def test_an_unanswered_window_keeps_the_day_out_of_the_baseline_without_failing_the_section(
+    tmp_path: Path,
+) -> None:
+    loki = Loki()
+    loki.problem = {"web": [(NOW - 100 - i, journald("brand new failure in worker 7")) for i in range(5)]}
+
+    def dropping(path: str, params: dict[str, str]) -> Any:
+        if path == "query_range" and "|~" in params["query"] and int(params["end"]) / NS > NOW - 60:
+            raise pack.Dropped("unreachable: Remote end closed connection without response")
+        return loki(path, params)
+
+    ctx = context(tmp_path, dropping)
+    section = pack.section_signatures(ctx, ["web"])
+
+    assert isinstance(section, dict)
+    assert pack.day_of(NOW) not in json.loads((tmp_path / "signatures.json").read_text())["covered_days"]
+    assert any("today incomplete" in e and "not answered" in e for e in ctx.errors)
+
+
+def test_a_loki_that_answers_no_problem_query_fails_the_section_after_a_bounded_number(tmp_path: Path) -> None:
+    calls = 0
+
+    def outage(path: str, params: dict[str, str]) -> Any:
+        nonlocal calls
+        if path == "query_range":
+            calls += 1
+            raise pack.Dropped("unreachable: Remote end closed connection without response")
+        return Loki()(path, params)
+
+    with pytest.raises(RuntimeError, match="windows not answered; giving up"):
+        pack.section_signatures(context(tmp_path, outage), ["web"])
+    assert calls == pack.MAX_DROPPED + 1
+
+
+def test_a_pass_that_gives_up_keeps_the_backfilled_days_it_read_completely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pack, "MAX_DROPPED", 3)
+    loki = Loki()
+
+    def dropping(path: str, params: dict[str, str]) -> Any:
+        if path == "query_range" and int(params["end"]) / NS > NOW - 1.5 * DAY:
+            raise pack.Dropped("unreachable: Remote end closed connection without response")
+        return loki(path, params)
+
+    expired = pack.day_of(NOW - 40 * DAY)
+    key = pack.signature_key("web", "app.service", "old failure")
+    store = {"schema": 2, "signatures": {key: {"days": {expired: 3}}}, "covered_days": [expired]}
+    (tmp_path / "signatures.json").write_text(json.dumps(store))
+    ctx = context(tmp_path, dropping)
+    ctx.activity = {"web": {pack.day_of(NOW - back * DAY): True for back in range(8)}}
+
+    with pytest.raises(RuntimeError, match="giving up"):
+        pack.section_signatures(ctx, ["web"])
+    stored = json.loads((tmp_path / "signatures.json").read_text())
+    # The completely read day is kept, the expired one is pruned, and the activity is merged.
+    assert stored["covered_days"] == [pack.day_of(NOW - 2 * DAY)]
+    assert stored["signatures"] == {}
+    assert stored["host_active"]["web"] == sorted(pack.day_of(NOW - back * DAY) for back in range(8))
+
+
+def test_the_problem_line_limit_leaves_the_unit_restart_limit_alone() -> None:
+    assert pack.PROBLEM_LINES * 1200 < 4 * 1024 * 1024
+    assert pack.MAX_LINES == 5000
+
+
 def test_a_day_with_a_skipped_window_stays_out_of_the_baseline(tmp_path: Path) -> None:
     def huge(path: str, params: dict[str, str]) -> Any:
         if path == "query_range":
@@ -1505,7 +1618,7 @@ def test_a_pack_that_cannot_be_trimmed_becomes_an_error_pack() -> None:
 def test_a_window_still_at_the_line_limit_keeps_the_day_out_of_the_baseline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(pack, "MAX_LINES", 2)
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
     monkeypatch.setattr(pack, "MAX_SPLIT", 0)
     loki = Loki()
     loki.problem = {"web": [(NOW - 100 - i, journald("boom failed")) for i in range(9)]}
