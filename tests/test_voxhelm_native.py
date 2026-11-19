@@ -6,6 +6,7 @@ import base64
 import json
 import plistlib
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -270,3 +271,36 @@ def test_control_batch_url_limits_match_long_recordings(tmp_path: Path) -> None:
 def test_control_batch_url_limits_must_be_positive(tmp_path: Path, overrides: dict[str, Any]) -> None:
     with pytest.raises(ValidationError, match="must be positive"):
         control_config(tmp_path, **overrides)
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="needs rsync, as on the target")
+def test_source_sync_keeps_sqlite_database_and_sidecars_across_delete(tmp_path: Path) -> None:
+    # The live database runs in rollback-journal mode; --delete must never
+    # unlink a hot journal (or a WAL/SHM pair) next to db.sqlite3.
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "pyproject.toml").write_text('[project]\nname="voxhelm"\nversion="0.1.15"\n')
+    cfg = control_config(source, voxhelm_worker_enabled=False, voxhelm_prune_enabled=False)
+    recorder = RecordingRsyncRunner()
+    responses = {"-status ": ["current"], " bootstrap-check ": ["current"], **fakehost.directory(cfg.voxhelm_app_dir)}
+    run = run_deploy_fake(deploy_voxhelm, cfg, control_secrets(), responses=responses, rsync=recorder)
+    assert run.succeeded, run.error
+    excludes = [arg for arg in recorder.calls[0] if arg.startswith("--exclude=")]
+    assert "--exclude=db.sqlite3" in excludes
+    assert "--exclude=db.sqlite3-*" in excludes
+    target = tmp_path / "site"
+    target.mkdir()
+    kept = ["db.sqlite3", "db.sqlite3-journal", "db.sqlite3-wal", "db.sqlite3-shm"]
+    for name in kept:
+        (target / name).write_bytes(b"fixture " + name.encode() + b"\n")
+    (target / "stale.py").write_text("removed by --delete\n")
+    subprocess.run(
+        ["rsync", "-rl", "--delete", *excludes, str(source) + "/", str(target) + "/"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert not (target / "stale.py").exists()
+    assert (target / "pyproject.toml").is_file()
+    for name in kept:
+        assert (target / name).read_bytes() == b"fixture " + name.encode() + b"\n"

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- voxhelm: the source sync also excludes the SQLite sidecars (`db.sqlite3-*`:
+  `-journal`, `-wal`, `-shm`) in `voxhelm_sync_excludes`, next to
+  `db.sqlite3`. The live database runs in rollback-journal mode; before this,
+  the sync's `--delete` could unlink the hot journal of a write in flight,
+  and a writer crashing in that moment would have left a half-written
+  transaction without its journal. The next `voxhelm` deploy sends one more
+  `--exclude`; files and services change only as before.
+
 - mail_backend: Dovecot waits at start, at most
   `dovecot_time_sync_wait_seconds` (new, default 60, 0 removes it), for the
   synchronised clock through a drop-in `ExecStartPre=-/usr/bin/timeout 60
