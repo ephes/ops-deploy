@@ -121,7 +121,9 @@ each deploy.
    the runtime's names that Compose does not own are removed (the role's
    takeover); compose file (`root:root 0640`) and runtime unit; the unit is
    enabled and started and restarted only when one of them changed or a
-   container was removed. InfluxDB must answer `influx ping`.
+   container was removed. InfluxDB must answer `influx ping`. Both
+   containers log to the host journal (Docker's `journald` driver, tagged
+   with the container name), which Logyard ships as `service=<container name>`.
 4. Grafana's InfluxDB v1 login: probed by name (`influx v1 auth list`),
    created only when missing, then checked with its password on every run
    (read-only). Creation and check go through InfluxDB's HTTP API on the

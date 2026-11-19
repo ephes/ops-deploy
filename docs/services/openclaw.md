@@ -21,6 +21,10 @@ deploy_openclaw(cfg, secrets)
 The operations are named `Deploy OpenClaw | ...`, `Remove OpenClaw | ...` and
 `OpenClaw Nyxmon checks | ...`.
 
+The gateway container logs to the host journal (Docker's `journald` driver,
+tagged with `openclaw_container_name`), which Logyard ships as
+`service=<container name>`; `docker logs` keeps working.
+
 ## Inputs
 
 The role's interface is kept as it is: about 230 variables (`defaults/main.yml`)

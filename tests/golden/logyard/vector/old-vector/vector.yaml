@@ -146,6 +146,11 @@ transforms:
         }
       }
 
+      message = replace_with(message, r'(?P<s>[A-Za-z][A-Za-z0-9+.\-]*://)[^\s"<>/]*@') -> |m| { (string(m.s) ?? "") + "REDACTED@" }
+      message = replace(message, r'\?[^\s"<>]+', "?REDACTED")
+      message = replace_with(message, r'(?P<k>[&#][^=&#\s"<>]*=)[^&\s"<>]+') -> |m| { (string(m.k) ?? "") + "REDACTED" }
+      message = replace_with(message, r'(?i)(?P<b>\b(?:bearer|basic)\s+)[^\s"\x27,;]+') -> |m| { (string(m.b) ?? "") + "REDACTED" }
+
       pid = to_string(."_PID") ?? to_string(journal._PID) ?? null
       boot_id = to_string(."_BOOT_ID") ?? to_string(journal._BOOT_ID) ?? null
 

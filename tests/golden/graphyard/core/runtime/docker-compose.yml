@@ -15,6 +15,11 @@ services:
     volumes:
       - "/data/influx:/var/lib/influxdb2"
       - "/data/influx-config:/etc/influxdb2"
+    # The host journal (CONTAINER_NAME), which Logyard's Vector ships.
+    logging:
+      driver: journald
+      options:
+        tag: "influx-x"
     networks:
       - monitoring
 
@@ -36,6 +41,10 @@ services:
       - "/srv/prov:/etc/grafana/provisioning"
       - "/srv/dash:/etc/grafana/provisioning/dashboards-json"
       - "/data/grafana:/var/lib/grafana"
+    logging:
+      driver: journald
+      options:
+        tag: "grafana-x"
     networks:
       - monitoring
 

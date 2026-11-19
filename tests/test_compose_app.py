@@ -119,6 +119,16 @@ def test_compose_file_is_a_deterministic_render_with_long_binds(cfg: ComposeAppC
     assert "networks" not in doc
 
 
+def test_journald_log_driver_is_tagged_with_the_container_name(cfg: ComposeAppConfig) -> None:
+    vpn = cfg.services[0].model_copy(update={"log_driver": "journald", "container_name": "stack-vpn-1"})
+    client = cfg.services[1].model_copy(update={"log_driver": "journald", "container_name": None})
+    doc = yaml.safe_load(render_compose(cfg.model_copy(update={"services": (vpn, client, *cfg.services[2:])})))
+
+    assert doc["services"]["vpn"]["logging"] == {"driver": "journald", "options": {"tag": "stack-vpn-1"}}
+    assert doc["services"]["client"]["logging"] == {"driver": "journald", "options": {"tag": "client"}}
+    assert "logging" not in yaml.safe_load(render_compose(cfg))["services"]["vpn"]
+
+
 def test_compose_values_are_literal(cfg: ComposeAppConfig) -> None:
     vpn = cfg.services[0].model_copy(
         update={"environment": (EnvEntry(key="PATTERN", value="a$b${c}"),), "command": ("sh", "-c", "echo $HOME")}

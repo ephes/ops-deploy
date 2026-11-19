@@ -46,7 +46,10 @@ the config from an `AppSpec` (`pyinfra_support/compose_apps.py`, see its
 `exposure_reason` says why not), `env_files`, `environment` (literals only),
 `binds`, `cap_add` (`NET_ADMIN`, `SYS_ADMIN`), `devices` (`/dev/net/tun`),
 `sysctls`, `shm_size`, `mem_limit`, `cpus`, `pids_limit`, `restart`,
-`depends_on` and `healthcheck`. Unknown keys fail. There is no `privileged`
+`depends_on`, `healthcheck` and `log_driver` (unset: the daemon's default;
+`journald`: the host journal, tagged with `container_name` or else the
+service name; Logyard's Vector labels the lines by the journal's
+`CONTAINER_NAME`, `service=<container name>`). Unknown keys fail. There is no `privileged`
 and no `build`. Validation also refuses: a bind source that is not a declared
 directory, config file or the site directory (or below a declared directory
 or required path); a `service:X` that is not a service of the app; a

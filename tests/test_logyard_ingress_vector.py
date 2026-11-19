@@ -1,6 +1,7 @@
 """Deploy-level scenarios for logyard ingress, the Vector producer and the whole stack."""
 
 import base64
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
@@ -443,3 +444,243 @@ def test_converged_stack_changes_nothing(tmp_path: Path) -> None:
 
 def test_ingress_route_sends_hsts_without_preload() -> None:
     assert len(hsts_headers(ingress_module.render_route(ingress_config()))) == 1
+
+
+# -- vector file sources -----------------------------------------------------------------
+
+
+RSPAMD = {"service": "rspamd", "paths": ("/var/log/rspamd/rspamd.log",), "acl": "dir"}
+ECHOPORT = {
+    "service": "echoport-scheduler",
+    "paths": ("/home/echoport/logs/scheduler.log", "/home/echoport/logs/cleanup*.log"),
+    "kind": "echoport",
+    "acl": "files",
+}
+
+
+def test_file_sources_reach_the_fragment_with_their_own_sink() -> None:
+    cfg = vector_config(
+        files=(
+            {
+                "service": "traefik-access",
+                "paths": ("/var/log/traefik/access.log",),
+                "kind": "traefik",
+                "sample_rate": 50,
+            },
+            {"service": "agent", "paths": ("/Users/example/Library/Logs/agent.log",), "fingerprint": "checksum"},
+        )
+    )
+
+    fragment = yaml.safe_load(vector_module.render_fragment(cfg, True))
+
+    source = fragment["sources"]["logyard_file_traefik_2daccess"]
+    assert source["include"] == ["/var/log/traefik/access.log"]
+    assert source["read_from"] == "end"
+    assert source["fingerprint"] == {"strategy": "device_and_inode"}
+    assert fragment["sources"]["logyard_file_agent"]["fingerprint"] == {"strategy": "checksum"}
+    sample = fragment["transforms"]["logyard_file_traefik_2daccess_sample"]
+    assert sample["rate"] == 50
+    assert sample["exclude"] == {"type": "vrl", "source": ".logyard_keep == true"}
+    assert fragment["transforms"]["logyard_files_out"]["inputs"] == [
+        "logyard_file_traefik_2daccess_sample",
+        "logyard_file_agent_parse",
+    ]
+    sink = fragment["sinks"]["logyard_loki_files"]
+    assert sink["inputs"] == ["logyard_files_out"]
+    assert sink["labels"]["source_type"] == "file"
+    assert sink["buffer"]["type"] == "disk"
+    # The journald pipeline stays as it was.
+    assert fragment["sinks"]["logyard_loki"]["inputs"] == ["normalize_logs"]
+    assert fragment["sinks"]["logyard_loki"]["labels"]["source_type"] == "journald"
+
+
+def test_without_file_sources_the_fragment_has_no_file_pipeline() -> None:
+    fragment = yaml.safe_load(vector_module.render_fragment(vector_config(), True))
+
+    assert list(fragment["sources"]) == ["journald_logs"]
+    assert list(fragment["transforms"]) == ["normalize_logs"]
+    assert list(fragment["sinks"]) == ["logyard_loki"]
+
+
+ACL_CHECK = "<logyard-vector-acl>','exec'))\" check"
+
+
+def acl_host(cfg: LogyardVectorConfig, state: str) -> dict[str, Any]:
+    responses = vector_host(cfg)
+    request = vector_module.acl_request(cfg)
+    assert request is not None
+    responses[vector_module.acl_command(request, "check")] = [state]
+    return responses
+
+
+def test_acl_grants_run_before_the_restart_and_only_where_asked() -> None:
+    cfg = vector_config(files=(RSPAMD, ECHOPORT, {"service": "pg", "paths": ("/var/log/postgresql/x.log",)}))
+    responses = acl_host(cfg, "needed")
+    responses.update(file_as(FRAGMENT, "sources: {}\n", group="vector", mode="-rw-r-----"))
+
+    run = run_vector(cfg, responses)
+
+    request = vector_module.acl_request(cfg)
+    assert request == {
+        "user": "vector",
+        "dirs": [
+            {"path": "/home/echoport/logs", "files": True, "patterns": ["scheduler.log", "cleanup*.log"]},
+            {"path": "/var/log/rspamd", "files": False, "patterns": []},
+        ],
+    }
+    apply = vector_module.acl_command(request, "apply")
+    assert apply in run.executed_commands
+    assert run.executed_commands.index(apply) < run.executed_commands.index("systemctl restart vector.service")
+
+
+def test_acl_grants_are_skipped_when_the_check_says_current() -> None:
+    cfg = vector_config(files=(RSPAMD,))
+
+    run = run_vector(cfg, acl_host(cfg, "current"))
+
+    assert run.mutating_changed_ops == []
+    assert not any(c.endswith(" apply " + c.rsplit(" ", 1)[-1]) and "acl" in c for c in run.executed_commands)
+
+
+def test_no_acl_step_without_acl_sources() -> None:
+    cfg = vector_config(files=({"service": "pg", "paths": ("/var/log/postgresql/x.log",)},))
+
+    run = run_vector(cfg, vector_host(cfg))
+
+    assert vector_module.acl_request(cfg) is None
+    assert not any("logyard-vector-acl" in command for command in run.executed_commands)
+
+
+def test_source_ids_are_stable_and_distinct() -> None:
+    assert vector_module.source_id("traefik-access") == "traefik_2daccess"
+    assert vector_module.source_id("a.b") != vector_module.source_id("a-b")
+    assert vector_module.source_id("Ab") != vector_module.source_id("ab")
+    first = vector_module.render_fragment(vector_config(files=(RSPAMD, ECHOPORT)), True)
+    second = vector_module.render_fragment(vector_config(files=(ECHOPORT, RSPAMD)), True)
+    assert "logyard_file_rspamd:" in first
+    assert "logyard_file_rspamd:" in second
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"files": ({"service": "a", "paths": ("/x.log",)}, {"service": "a", "paths": ("/y.log",)})},
+        {"files": ({"service": "a", "paths": ()},)},
+        {"files": ({"service": "a", "paths": ("relative.log",)},)},
+        {"files": ({"service": "a", "paths": ("/var/log/../etc/shadow",)},)},
+        {"files": ({"service": "a", "paths": ("/var/log/with space.log",)},)},
+        {"files": ({"service": "a", "paths": ("/var/log/x.log; rm",)},)},
+        {"files": ({"service": "a b", "paths": ("/x.log",)},)},
+        {"files": ({"service": "a", "paths": ("/x.log",), "drop": ("it's",)},)},
+        {"files": ({"service": "a", "paths": ("/x.log",), "drop": ("(unclosed",)},)},
+        {"files": ({"service": "a", "paths": ("/x.log",), "sample_rate": 10},)},
+        {"files": ({"service": "a", "paths": ("/var/*/x.log",), "acl": "dir"},)},
+        {"files": ({"service": "a", "paths": ("/x.log",), "kind": "nginx"},)},
+        {"journald": False},
+        {"darwin": {}},
+        {"allow_unconfined_label_templates": False, "files": ({"service": "a", "paths": ("/x.log",)},)},
+        {"journald": False, "darwin": {}, "files": ({"service": "a", "paths": ("/x.log",), "acl": "dir"},)},
+        {"journald": False, "darwin": {"binary_path": "vector"}, "files": ({"service": "a", "paths": ("/x.log",)},)},
+    ],
+)
+def test_file_source_config_rejects_bad_inputs(bad: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        vector_config(**bad)
+
+
+# -- vector on Darwin ------------------------------------------------------------------------
+
+DARWIN_BINARY = "/opt/homebrew/bin/vector"
+KICKSTART = "/bin/launchctl kickstart -k system/de.wersdoerfer.graphyard.vector"
+DARWIN_FILES = ({"service": "coord-watchdog", "paths": ("/Users/example/Library/Logs/coord-watchdog.log",)},)
+
+
+def darwin_config(**changes: Any) -> LogyardVectorConfig:
+    return vector_config(host_id="studio", journald=False, darwin={}, files=DARWIN_FILES, **changes)
+
+
+def darwin_host(cfg: LogyardVectorConfig, fragment: str | None = None, job: str = "current") -> dict[str, Any]:
+    responses: dict[str, Any] = {
+        "uname -s": ["Darwin"],
+        f"{DARWIN_BINARY} --version": [VERSION],
+        f"test -x {DARWIN_BINARY}": ["present"],
+        **file_as(GLOBAL, vector_module.render_global(cfg), group="wheel", mode="-rw-r-----"),
+    }
+    if fragment is not None:
+        responses.update(file_as(FRAGMENT, fragment, group="wheel", mode="-rw-r-----"))
+    applied = hashlib.sha256(vector_module.render_fragment(cfg, True).encode()).hexdigest()
+    responses[
+        "/bin/launchctl print system/de.wersdoerfer.graphyard.vector | grep -q 'state = running'"
+        " && cat /var/lib/vector/logyard-fragment.applied"
+    ] = [applied] if job == "current" else ([job] if job else [])
+    return responses
+
+
+def test_darwin_first_run_writes_the_fragment_and_restarts_the_job() -> None:
+    cfg = darwin_config()
+
+    run = run_vector(cfg, darwin_host(cfg))
+    commands = run.executed_commands
+
+    assert run.upload(FRAGMENT).decode() == vector_module.render_fragment(cfg, True)
+    assert GLOBAL not in run.uploaded_paths
+    validate = next(i for i, c in enumerate(commands) if "validate --skip-healthchecks" in c)
+    assert DARWIN_BINARY in commands[validate]
+    restart = next(i for i, c in enumerate(commands) if c.startswith(KICKSTART))
+    digest = hashlib.sha256(vector_module.render_fragment(cfg, True).encode()).hexdigest()
+    assert commands[restart].endswith(f"&& printf '%s\\n' {digest} > /var/lib/vector/logyard-fragment.applied")
+    assert validate < restart
+    assert not any("apt" in c or "systemctl" in c or "setfacl" in c for c in commands)
+
+
+def test_darwin_second_run_changes_nothing_but_the_validation() -> None:
+    cfg = darwin_config()
+
+    run = run_vector(cfg, darwin_host(cfg, vector_module.render_fragment(cfg, True)))
+
+    assert run.mutating_changed_ops == []
+    assert run.uploaded_paths == []
+    assert not any("kickstart" in command for command in run.executed_commands)
+
+
+@pytest.mark.parametrize("job", ["0" * 64, ""])
+def test_darwin_restarts_until_a_restart_on_this_fragment_succeeded(job: str) -> None:
+    cfg = darwin_config()
+
+    run = run_vector(cfg, darwin_host(cfg, vector_module.render_fragment(cfg, True), job=job))
+
+    assert run.uploaded_paths == []
+    assert any(c.startswith(KICKSTART) and "logyard-fragment.applied" in c for c in run.executed_commands)
+
+
+def test_darwin_converges_on_its_own_fragment_whatever_the_global_holds() -> None:
+    cfg = darwin_config()
+    responses = darwin_host(cfg, vector_module.render_fragment(cfg, True), job="0" * 64)
+    responses.update(
+        file_as(GLOBAL, "# graphyard's\n" + vector_module.render_global(cfg), group="wheel", mode="-rw-r-----")
+    )
+
+    run = run_vector(cfg, responses)
+
+    assert run.uploaded_paths == []
+    assert not any("mktemp" in command for command in run.executed_commands)
+    assert any(c.startswith(KICKSTART) for c in run.executed_commands)
+
+
+def test_darwin_staged_validation_keeps_the_live_global() -> None:
+    command = vector_module.validate_command(darwin_config(), "x: 1\n", DARWIN_BINARY, own_global=False)
+
+    assert "00-global.yaml" not in command
+    assert "/opt/homebrew/bin/vector validate" in command
+
+
+def test_darwin_needs_the_graphyard_vector_first() -> None:
+    cfg = darwin_config()
+    responses = darwin_host(cfg)
+    responses[f"test -x {DARWIN_BINARY}"] = []
+
+    run = run_deploy_fake(deploy_logyard_vector, cfg, responses=responses)
+
+    assert not run.succeeded
+    assert "graphyard_vector" in str(run.error)
+    assert run.uploaded_paths == []

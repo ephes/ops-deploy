@@ -129,7 +129,8 @@ files and is counted as a mutating operation; a fully converged repeat uses
 only the live-directory check.
 
 `host_id` (required), `ingest_endpoint`, `environment`, unit and match
-filters, `current_boot_only`, `min_levels`, sink tuning. Installs Vector from apt, writes the
+filters, `current_boot_only`, `min_levels`, `journald`, `files`, `darwin`,
+`vector_user`, sink tuning. Installs Vector from apt, writes the
 shared `00-global.yaml` (`data_dir`; a different `data_dir` already on the host
 stops the deploy) and the Logyard fragment, points `/etc/default/vector` at the
 config directory, removes the legacy `/etc/vector/vector.yaml`, validates the
@@ -172,6 +173,142 @@ The remap turns each journald entry into one Loki line with the labels
 `tests/test_logyard_vector_remap.py` runs the rendered remap through
 `vector test` with journald-shaped events (skipped without a local `vector`).
 
+Every shipped message (journald and files, and the Traefik user agent and
+path) is redacted, best effort: a defence in depth for the common shapes,
+not a guarantee for arbitrary text. In order: a URL's user information,
+everything from `://` to the last `@` before the next `/`, space, quote or
+angle bracket (`https://REDACTED@host`, `postgresql://REDACTED@db`; clients
+accept almost any character in a password, so the rule does not parse it);
+a URL query string as a whole, fragment included (`?REDACTED`); the value
+of every `&name=value` or `#name=value` pair (form bodies, OAuth fragments);
+bearer tokens and Basic credentials (`Bearer REDACTED`, `Basic REDACTED`,
+also inside JSON). logfmt fields such as `code=200` (after a space) stay as
+they are. Not caught: secrets in other shapes, e.g. a bare-word token, a
+password holding a space, quote or `/`, an `@` inside a query that follows
+the host without a `/`. A service that logs such text is not a candidate
+for shipping without its own filter. What is guaranteed: Traefik's query
+values and referer are never shipped (parsed fields only), and PostgreSQL
+lines are scrubbed as described under `postgres`.
+
+### Log files (`files`)
+
+`files` adds log files beside journald. Each `FileSource` has its own
+`service` label (unique per producer; the Vector component id and with it
+the file checkpoints derive from it, so reordering `files` keeps them) and
+goes to Loki through a second sink
+with `source_type="file"` (labels `host`, `source_type`, `environment`,
+`service`, `level`); the line carries the `file` it came from. A first start
+reads from the end of each file (no history is backfilled); afterwards
+Vector's checkpoints in `data_dir` resume where it stopped. Files not
+written for `file_ignore_older_secs` (7 days) are not watched. File sources
+need `allow_unconfined_label_templates` (the default): without it the sink
+could not set `service` and `level`, and the config is refused. Fields:
+
+| Field | Meaning |
+|-------|---------|
+| `service` | the `service` label |
+| `paths` | absolute paths, globs (`*`, `?`) in the file name; no spaces, quotes or `..` |
+| `kind` | the line parser, below (`plain` by default) |
+| `drop` | RE2 patterns; a matching line is not shipped (no `'`) |
+| `min_level` | floor like `min_levels` |
+| `fingerprint` | `inode` (default) follows rename-and-create rotation (logrotate `create`); `checksum` (of the first line) follows copy-and-truncate (`darwin_log_trim`, logrotate `copytruncate`), which `inode` misreads as a continuation of the old file and loses the first lines after the truncation |
+| `acl` | Linux only: `dir` grants the Vector user (`vector_user`) `r-x` on the parent directory (files already world-readable in a closed directory), `files` also `r--` on the matching files there now and, as the directory's default ACL, on files created there later. A directory's first default ACL is explicit and tight (`d:u::rwx,d:g::---,d:o::---,d:m::r--` plus Vector's read): Linux ignores the creator's umask once a default ACL exists, so files created there later are readable by their owner and Vector only, whatever their mode asks for group and others. Vector's read still needs group read in the creation mode (the mode's group bits cap the mask), so a rotated log must be created like logrotate's `create 0640`, not `0600`. The directories must be literal (globs in file names only); `setfacl`/`getfacl` must be installed |
+| `sample_rate`, `slow_ms` | `traefik` only, below |
+
+The kinds:
+
+- `traefik`: Traefik's access log, JSON (`format = "json"`) or the common
+  log format. A line that matches neither (a header value with a quote, a
+  garbled request) ships only as `unparsed access log line (<n> bytes)`.
+  The line becomes `<status> <method> <host><path> <ms>ms
+  router=<router>` with the fields `http_method`, `http_host`, `http_path`,
+  `http_query_keys`, `http_status`, `duration_ms`, `router`, `client`,
+  `client_user` (and `user_agent` from the common log format). Query values
+  and the referer are never shipped, only the parameter names. Each path
+  segment is checked percent-decoded but shipped as logged (an encoded `/`
+  does not move a boundary); it becomes `REDACTED` when, decoded, it holds
+  `?`, `=` or `&` (an embedded query), a `:` before an `@` (credentials of
+  an embedded URL) or a run of 20 or more letters and
+  digits that mixes both (tokens, hashes, signed ids, share slugs). A path
+  that decodes to a Home Assistant webhook route (`/api/webhook`) becomes
+  `/api/webhook/REDACTED` as a whole. Server errors, requests without a response
+  (status 0), 401/403/407/429, other client errors on a routed host, and
+  requests at least `slow_ms` (1000) slow are always shipped. Everything
+  else (2xx and 3xx, client aborts 499 such as long polls, the 404s of
+  requests no router matched) is sampled one in `sample_rate` (1 ships
+  all); Vector marks those lines with `sample_rate`. `level`: `error` for
+  5xx and status 0, `warning` for other 4xx except 499, else `info`.
+- `postgres`: PostgreSQL's stderr log (`<time> <zone> [<pid>] [user@db
+  ]SEVERITY:  text`). Continuation lines and `DETAIL`, `STATEMENT`,
+  `QUERY`, `CONTEXT`, `HINT` and `LOCATION` lines (which can carry row
+  values and statements) are not shipped, nor checkpoint and autovacuum
+  `LOG` lines. In the lines that are shipped, everything after a
+  `statement`, `execute`, `parse`, `bind` or `utility command` keyword (with
+  or without `duration:`) becomes `[omitted]`, and so does the rest of the
+  line from the first single quote, and from the first double quote that
+  does not open the identifier after `user`, `database`, `role`, `relation`,
+  `table`, `column`, `constraint` and the other object words (PostgreSQL
+  inserts input values verbatim, so an embedded quote cannot end them). `FATAL` is `critical`, `PANIC` `emerg`.
+- `fail2ban`: bans, unbans and jail events with the level fail2ban writes;
+  the per-attempt `Found` lines (the attempts are in the journal's `sshd`
+  entries) and `already banned` are not shipped. The jail is in `jail`.
+- `echoport`: Echoport's cron logs (`LEVEL <date> <time> <logger> text` or
+  plain lines). `DEBUG` lines and the idle scheduler ticks (`Checking <n>
+  scheduled targets...`, `Complete: 0 triggered, <n> skipped`) are not shipped.
+- `plain`: a level word at the start of the line, after an optional
+  timestamp or in brackets (`INFO:`, `2026-11-19 16:58:46,374 WARNING`,
+  `[ERROR]`; the words of the level table, `EMERG`/`PANIC`/`ALERT`/`CRIT`/
+  `FATAL`/`ERR`/`WARN`/`NOTICE`/`TRACE` included), else `info`.
+
+The `acl` grants run as root through `files/logyard_vector_acl.py`: a
+read-only `check` while planning (a converged host shows no change), then
+`apply` after validation and before the restart. Every directory and file is
+opened one path component at a time without following a symbolic link
+(`O_NOFOLLOW`) and changed through `/proc/self/fd/<n>`, so a link anywhere
+in the path, or planted by a service in its own log directory, never moves a
+grant onto another file; links and non-regular files among the matches are
+skipped. Access is evaluated as Linux does (owner, named entry, one
+matching group entry covering the whole request, `other`, within the mask).
+Access the Vector user already has is left alone, and an existing named
+entry is extended, keeping its rights. The mask is never recalculated
+(`setfacl -n`). The deploy stops before changing anything when the grant
+would not take effect or would change other rights: the mask, or for a file
+without ACL its group bits, is too narrow (a `0600` file; an existing
+default ACL whose mask, or group entry without a mask, excludes reading); Vector
+owns the file without the bits; or Vector already has some rights through a
+group or `other` that a named entry would replace. A configured directory
+that does not exist stops the deploy too.
+
+Trust boundary: Vector's file source follows symbolic links. On Linux it
+reads as `vector` (groups `adm`, `systemd-journal`), so a link in a log
+directory can at most point it at another file that account may read
+anyway, which then ships under the source's `service`. On macOS Vector runs
+as root: list only files in directories that root or the machine's
+administrator account writes (the launchd agents' `~/Library/Logs`, root's
+`/private/var/log`); a link planted there by that account would ship a
+root-only file to Logyard, whose readers are the same administrator.
+
+`tests/test_logyard_vector_files.py` runs the file pipelines through
+`vector test`.
+
+### macOS (`darwin`)
+
+With `darwin` set (and `journald: false`), the producer is the Homebrew
+Vector that Graphyard's Darwin deploy runs as root under launchd
+(`launchd_label`, default `de.wersdoerfer.graphyard.vector`; `binary_path`,
+default `/opt/homebrew/bin/vector`). The deploy installs nothing: it stops
+unless that binary and the shared `00-global.yaml` exist (deploy
+`graphyard_vector` first) and the `data_dir` matches, validates the staged
+directory with that binary, writes the fragment `root:<config_group>`
+(`wheel`) `0640`, and restarts the job with `launchctl kickstart -k` when the
+fragment changed. A successful `kickstart` records the fragment's hash in
+`<data_dir>/logyard-fragment.applied`; a current fragment without that
+record (the restart failed), or with the job not running, is restarted
+again on the next run. Only the
+Logyard fragment decides; `00-global.yaml` is Graphyard's, and the staged
+validation keeps the live one. Graphyard's own Darwin deploy validates the directory with
+this fragment in it. The fragment has no journald source, transform or sink.
+
 The template-confinement opt-out is chosen from `vector --version` while
 planning. On a host without Vector the configured default
 (`supports_template_confinement`, `True`) applies; validation stops a wrong
@@ -180,7 +317,9 @@ guess before it reaches the running service, and the next run corrects it.
 ## Tests
 
 `tests/test_logyard_golden.py`, `tests/test_logyard.py`,
-`tests/test_logyard_vector_remap.py`, `tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
+`tests/test_logyard_vector_remap.py`, `tests/test_logyard_vector_files.py`,
+`tests/test_logyard_vector_acl.py`,
+`tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
 (fake connector: first runs, converged no-ops, each kind of change and what it
 restarts, secret handling, config validation). The Ansible/pyinfra coexistence
 smoke lives in ops-control (`just smoke-logyard-coexistence`).

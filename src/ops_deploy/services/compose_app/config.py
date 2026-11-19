@@ -318,6 +318,9 @@ class ComposeService(Part):
     restart: Literal["unless-stopped", "always", "on-failure", "no"] = "unless-stopped"
     depends_on: tuple[DependsOn, ...] = ()
     healthcheck: Healthcheck | None = None
+    # None: the Docker daemon's default (json-file). journald: the host
+    # journal, which Logyard's Vector ships (service label = container name).
+    log_driver: Literal["journald"] | None = None
 
     @field_validator("environment")
     @classmethod

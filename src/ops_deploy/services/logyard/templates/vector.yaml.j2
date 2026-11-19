@@ -1,4 +1,41 @@
+{#- Best-effort redaction of every shipped message and free-text field (a
+    defence in depth for common shapes, not a guarantee for arbitrary text):
+    first a URL's user information, everything from "://" to the last "@"
+    before the next "/", space, quote or angle bracket; then a URL query
+    string as a whole with its fragment ("?REDACTED"), the value of every
+    "&name=value" or "#name=value" pair, bearer tokens and Basic credentials.
+    The guarantees are the Traefik fields (query values and referer never
+    shipped) and the PostgreSQL scrubbing below. -#}
+{% macro redact(var) %}
+      {{ var }} = replace_with({{ var }}, r'(?P<s>[A-Za-z][A-Za-z0-9+.\-]*://)[^\s"<>/]*@') -> |m| { (string(m.s) ?? "") + "REDACTED@" }
+      {{ var }} = replace({{ var }}, r'\?[^\s"<>]+', "?REDACTED")
+      {{ var }} = replace_with({{ var }}, r'(?P<k>[&#][^=&#\s"<>]*=)[^&\s"<>]+') -> |m| { (string(m.k) ?? "") + "REDACTED" }
+      {{ var }} = replace_with({{ var }}, r'(?i)(?P<b>\b(?:bearer|basic)\s+)[^\s"\x27,;]+') -> |m| { (string(m.b) ?? "") + "REDACTED" }
+{% endmacro %}
+{% macro sink_options() %}
+    endpoint: {{ logyard_vector_ingest_endpoint | to_json }}
+    encoding:
+      codec: json
+{% endmacro %}
+{% macro sink_tail() %}
+    remove_label_fields: false
+    request:
+      timeout_secs: {{ logyard_vector_http_timeout_secs }}
+      concurrency: {{ logyard_vector_request_concurrency }}
+      retry_initial_backoff_secs: {{ logyard_vector_retry_initial_backoff_secs }}
+      retry_max_duration_secs: {{ logyard_vector_retry_max_duration_secs }}
+    batch:
+      max_events: {{ logyard_vector_batch_max_events }}
+      timeout_secs: {{ logyard_vector_batch_timeout_secs }}
+    buffer:
+      type: disk
+      max_size: {{ logyard_vector_buffer_max_size }}
+    # Startup must not depend on transient Logyard/Loki availability.
+    healthcheck:
+      enabled: {{ logyard_vector_healthcheck_enabled | ternary('true', 'false') }}
+{% endmacro %}
 sources:
+{% if logyard_vector_journald %}
   journald_logs:
     type: journald
 {% if logyard_vector_current_boot_only %}
@@ -22,8 +59,24 @@ sources:
       {{ match.key | to_json }}: {{ match.value | to_json }}
 {% endfor %}
 {% endif %}
+{% endif %}
+{% for f in logyard_vector_files %}
+  logyard_file_{{ f.id }}:
+    type: file
+    include:
+{% for path in f.paths %}
+      - {{ path | to_json }}
+{% endfor %}
+    # A first start ships new lines only, not the files' history.
+    read_from: end
+    ignore_older_secs: {{ logyard_vector_file_ignore_older_secs }}
+    max_line_bytes: 65536
+    fingerprint:
+      strategy: {{ 'device_and_inode' if f.fingerprint == 'inode' else 'checksum' }}
+{% endfor %}
 
 transforms:
+{% if logyard_vector_journald %}
   normalize_logs:
     type: remap
     inputs:
@@ -167,6 +220,7 @@ transforms:
         }
       }
 
+{{ redact("message") }}
       pid = to_string(."_PID") ?? to_string(journal._PID) ?? null
       boot_id = to_string(."_BOOT_ID") ?? to_string(journal._BOOT_ID) ?? null
 
@@ -182,8 +236,257 @@ transforms:
         "pid": pid,
         "boot_id": boot_id,
       }
+{% endif %}
+{% for f in logyard_vector_files %}
+  logyard_file_{{ f.id }}_parse:
+    type: remap
+    inputs:
+      - logyard_file_{{ f.id }}
+    source: |
+      raw = to_string(.message) ?? ""
+      if strip_whitespace(raw) == "" {
+        abort
+      }
+      file = to_string(.file) ?? ""
+      names = {
+        "emerg": "emerg", "emergency": "emerg", "panic": "emerg",
+        "alert": "alert",
+        "crit": "critical", "critical": "critical", "fatal": "critical",
+        "err": "error", "error": "error",
+        "warn": "warning", "warning": "warning",
+        "notice": "notice",
+        "info": "info", "information": "info",
+        "debug": "debug", "trace": "debug"
+      }
+      level = "info"
+      message = raw
+      fields = {}
+{% if f.kind == 'traefik' %}
+      # Traefik access log, JSON or common log format. Only the path and the
+      # names of the query parameters are kept (no values, no referer), and
+      # path segments that look like tokens are replaced.
+      method = ""
+      host = ""
+      target = ""
+      status = 0
+      duration_ms = 0
+      router = ""
+      client = ""
+      user = "-"
+      agent = ""
+      parsed = false
+      keep = false
+      if starts_with(raw, "{") {
+        j = object(parse_json(raw) ?? {}) ?? {}
+        if exists(j.RequestMethod) {
+          parsed = true
+          method = string(j.RequestMethod) ?? ""
+          host = string(j.RequestHost) ?? ""
+          target = string(j.RequestPath) ?? ""
+          status = to_int(j.DownstreamStatus) ?? 0
+          duration_ms = to_int((to_float(j.Duration) ?? 0.0) / 1000000.0)
+          router = string(j.RouterName) ?? ""
+          client = string(j.ClientHost) ?? ""
+          user = string(j.ClientUsername) ?? "-"
+        }
+      } else {
+        c = parse_regex(raw, r'^(?P<client>\S+) \S+ (?P<user>\S+) \[[^\]]+\] "(?P<method>\S+) (?P<target>\S+) [^"]*" (?P<status>[0-9]{3}|-) \S+ "[^"]*" "(?P<agent>[^"]*)" [0-9]+ "(?P<router>[^"]*)" "[^"]*" (?P<duration>[0-9]+)ms$') ?? {}
+        if exists(c.method) {
+          parsed = true
+          method = string(c.method) ?? ""
+          target = string(c.target) ?? ""
+          status = to_int(string(c.status) ?? "0") ?? 0
+          duration_ms = to_int(string(c.duration) ?? "0") ?? 0
+          router = string(c.router) ?? ""
+          client = string(c.client) ?? ""
+          user = string(c.user) ?? "-"
+          agent = string(c.agent) ?? ""
+        }
+      }
+      if !parsed {
+        # Not an access line Traefik's formats produce (a header value with a
+        # quote, a garbled request): its text could hold the referer or query
+        # values, so only its length is shipped.
+        level = "warning"
+        message = "unparsed access log line (" + to_string(length(raw)) + " bytes)"
+      } else {
+        if router == "" {
+          router = "-"
+        }
+        parts = split(target, "?", limit: 2)
+        path = string(parts[0]) ?? ""
+        query_keys = []
+        if length(parts) > 1 {
+          found = parse_regex_all(string(parts[1]) ?? "", r'(?:^|&)(?P<k>[^=&]{1,64})=') ?? []
+          query_keys = map_values(found) -> |m| { string(m.k) ?? "" }
+        }
+        # A segment with a run of 20+ letters/digits that mixes both is a
+        # token, hash or signed id (webhook ids, reset links, share slugs).
+        # Each segment is checked percent-decoded (Traefik logs the path as
+        # sent) but kept as logged, so "%2F" cannot move a boundary. A segment
+        # is replaced when, decoded, it holds "?", "=" or "&" (an embedded
+        # query or parameters), ":" before "@" (credentials of an embedded URL) or a run of 20+ letters/digits that mixes both
+        # (tokens, hashes, signed ids, share slugs). A path that decodes to a
+        # Home Assistant webhook route is replaced as a whole.
+        # Home Assistant webhook ids, however the route is encoded: checked on
+        # the whole decoded path before any segment is masked.
+        webhook = contains(downcase(decode_percent(path)), "/api/webhook")
+        segments = split(path, "/")
+        masked = []
+        for_each(segments) -> |index, segment| {
+          plain = decode_percent(segment)
+          secret = match(plain, r'[?=&]') || match(plain, r':[^@]*@')
+          runs = parse_regex_all(plain, r'(?P<run>[A-Za-z0-9_]{20,})') ?? []
+          for_each(runs) -> |_index, run| {
+            text = string(run.run) ?? ""
+            if match(text, r'[0-9]') && match(text, r'[A-Za-z]') {
+              secret = true
+            }
+          }
+          shown = segment
+          if secret {
+            shown = "REDACTED"
+          }
+          masked = push(masked, shown)
+        }
+        path = join(masked, "/")
+        if webhook {
+          path = "/api/webhook/REDACTED"
+        }
+{{ redact("path") }}
+        # Always shipped: server errors, no response, authentication and rate
+        # limit refusals, client errors on a routed host, and slow requests.
+        # Client aborts (499, long polls), unrouted scanner 404s and
+        # ordinary requests are sampled.
+        keep = status >= 500 || status == 0 || includes([401, 403, 407, 429], status) || (status >= 400 && status != 499 && router != "-") || (duration_ms >= {{ f.slow_ms }} && status >= 200 && status != 499)
+        if status >= 500 || status == 0 {
+          level = "error"
+        } else if status >= 400 && status != 499 {
+          level = "warning"
+        }
+        message = join([to_string(status), method, host + path, to_string(duration_ms) + "ms", "router=" + router], " ")
+        fields = {
+          "http_method": method,
+          "http_host": host,
+          "http_path": path,
+          "http_query_keys": query_keys,
+          "http_status": status,
+          "duration_ms": duration_ms,
+          "router": router,
+          "client": client,
+          "client_user": user
+        }
+        if agent != "" {
+{{ redact("agent") }}
+          # Redacted whole, then shortened: a cut could split a credential.
+          fields.user_agent = slice(agent, 0, 200) ?? agent
+        }
+      }
+      fields.logyard_keep = keep
+{% elif f.kind == 'postgres' %}
+      # PostgreSQL's stderr log: "<time> <zone> [<pid>] [user@db ]SEVERITY:  text".
+      # Continuation lines and DETAIL/STATEMENT/QUERY/CONTEXT/HINT (which
+      # can carry row values and statements) are not shipped.
+      p = parse_regex(raw, r'^\S+ \S+ \S+ \[(?P<pid>[0-9]+)\] (?:(?P<who>\S+@\S+) )?(?P<severity>[A-Z]+[0-9]?):  (?P<text>.*)$') ?? {}
+      severity = string(p.severity) ?? ""
+      if severity == "" || includes(["DETAIL", "STATEMENT", "QUERY", "CONTEXT", "HINT", "LOCATION"], severity) {
+        abort
+      }
+      text = string(p.text) ?? ""
+      if severity == "LOG" && match(text, r'^(?:checkpoint (?:starting|complete)|automatic (?:vacuum|analyze) )') {
+        abort
+      }
+      # Primary lines can carry SQL (log_min_duration_statement, log_statement:
+      # "duration: 5 ms  execute <name>: ...") and input values in quoted
+      # literals, which PostgreSQL inserts verbatim (an embedded quote does
+      # not end them). Everything after the statement keyword is omitted, and
+      # everything from the first single quote, and from the first double
+      # quote that does not open the identifier after user, database, role,
+      # relation and the other object words.
+      text = replace_with(text, r'(?i)^(?P<p>(?:duration: [0-9.]+ ms\s+)?(?:statement|execute|parse|bind|utility command))\b.*$') -> |m| { (string(m.p) ?? "") + " [omitted]" }
+      text = replace(text, r'\x27.*$', "[omitted]")
+      text = replace_with(text, r'(?i)(?P<w>\b(?:user|database|role|relation|table|column|constraint|index|schema|function|type|extension|publication|subscription|slot|tablespace|server|sequence|view|trigger)\s+)"(?P<n>[^"]*)"') -> |m| {
+        (string(m.w) ?? "") + "\u{2045}" + (string(m.n) ?? "") + "\u{2046}"
+      }
+      text = replace(text, r'".*$', "[omitted]")
+      text = replace(replace(text, "\u{2045}", "\""), "\u{2046}", "\"")
+      original = string(p.text) ?? ""
+      message = (slice(raw, 0, length(raw) - length(original)) ?? "") + text
+      level = string(get({"LOG": "info", "INFO": "info", "NOTICE": "notice", "WARNING": "warning", "ERROR": "error", "FATAL": "critical", "PANIC": "emerg"}, [severity]) ?? null) ?? "debug"
+{% elif f.kind == 'fail2ban' %}
+      # fail2ban.log: bans, unbans and jail events; the per-attempt "Found"
+      # lines (already in the journal's sshd entries) are not shipped.
+      b = parse_regex(raw, r'^\S+ \S+ fail2ban\.\S+\s+\[[0-9]+\]: (?P<level>[A-Z]+)\s+(?P<text>.*)$') ?? {}
+      text = string(b.text) ?? raw
+      if match(text, r'^\[[^\]]+\] Found ') || contains(text, "already banned") {
+        abort
+      }
+      level = string(get(names, [downcase(string(b.level) ?? "")]) ?? null) ?? "info"
+      jail = parse_regex(text, r'^\[(?P<jail>[^\]]+)\]') ?? {}
+      if exists(jail.jail) {
+        fields.jail = string(jail.jail) ?? ""
+      }
+{% elif f.kind == 'echoport' %}
+      # Echoport's cron logs: "LEVEL <date> <time> <logger> text" or plain
+      # lines. DEBUG lines and the idle five-minute scheduler ticks are not shipped.
+      e = parse_regex(raw, r'^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) [0-9]{4}-') ?? {}
+      level = string(get(names, [downcase(string(e.level) ?? "")]) ?? null) ?? "info"
+      if level == "debug" || match(raw, r'^(?:Checking [0-9]+ scheduled targets\.\.\.|Complete: 0 triggered, [0-9]+ skipped)$') {
+        abort
+      }
+{% else %}
+      # A level word at the start of the line, after an optional timestamp:
+      # "INFO: ...", "2026-11-19 16:58:46,374 WARNING ...", "[ERROR] ...".
+      w = parse_regex(raw, r'^(?:[0-9][0-9T:.,+\-/Z ]{6,40}\s)?\[?(?P<level>EMERGENCY|EMERG|PANIC|ALERT|CRITICAL|CRIT|FATAL|ERROR|ERR|WARNING|WARN|NOTICE|INFORMATION|INFO|DEBUG|TRACE)\]?[:\s]') ?? {}
+      level = string(get(names, [downcase(string(w.level) ?? "")]) ?? null) ?? "info"
+{% endif %}
+{% if f.drop %}
+      if match_any(raw, [{% for pattern in f.drop %}r'{{ pattern | replace('$', '$$') }}'{{ ", " if not loop.last }}{% endfor %}]) {
+        abort
+      }
+{% endif %}
+{% if f.min_level %}
+      severity = {"emerg": 0, "alert": 1, "critical": 2, "error": 3, "warning": 4, "notice": 5, "info": 6, "debug": 7}
+      if (to_int(get(severity, [level]) ?? 6) ?? 6) > {{ {"emerg": 0, "alert": 1, "critical": 2, "error": 3, "warning": 4, "notice": 5, "info": 6, "debug": 7}[f.min_level] }} {
+        abort
+      }
+{% endif %}
+{{ redact("message") }}
+      . = merge(fields, {
+        "message": message,
+        "host": {{ logyard_vector_host_id | to_json }},
+        "service": {{ f.service | to_json }},
+        "level": level,
+        "environment": {{ logyard_vector_environment | to_json }},
+        "source_type": "file",
+        "file": file,
+      })
+{% if f.kind == 'traefik' and f.sample_rate > 1 %}
+
+  logyard_file_{{ f.id }}_sample:
+    type: sample
+    inputs:
+      - logyard_file_{{ f.id }}_parse
+    rate: {{ f.sample_rate }}
+    exclude:
+      type: vrl
+      source: .logyard_keep == true
+{% endif %}
+
+{% endfor %}
+{% if logyard_vector_files %}
+  logyard_files_out:
+    type: remap
+    inputs:
+{% for f in logyard_vector_files %}
+      - logyard_file_{{ f.id }}_{{ 'sample' if f.kind == 'traefik' and f.sample_rate > 1 else 'parse' }}
+{% endfor %}
+    source: |
+      del(.logyard_keep)
+{% endif %}
 
 sinks:
+{% if logyard_vector_journald %}
   logyard_loki:
     type: loki
     inputs:
@@ -232,3 +535,25 @@ sinks:
     # Startup must not depend on transient Logyard/Loki availability.
     healthcheck:
       enabled: {{ logyard_vector_healthcheck_enabled | ternary('true', 'false') }}
+{% endif %}
+{% if logyard_vector_files %}
+  logyard_loki_files:
+    type: loki
+    inputs:
+      - logyard_files_out
+{{ sink_options() }}
+    labels:
+      host: {{ logyard_vector_host_id | to_json }}
+      source_type: "file"
+      environment: {{ logyard_vector_environment | to_json }}
+{% if logyard_vector_allow_unconfined_label_templates | bool %}
+      service: "{{ '{{ service }}' }}"
+      level: "{{ '{{ level }}' }}"
+{% endif %}
+{% if (logyard_vector_allow_unconfined_label_templates | bool) and (logyard_vector_supports_template_confinement | bool) %}
+    # Same opt-out as the journald sink: `service` is a configured constant
+    # per file source here and `level` the remap's fixed enum.
+    dangerously_allow_unconfined_template_resolution: true
+{% endif %}
+{{ sink_tail() }}
+{% endif %}

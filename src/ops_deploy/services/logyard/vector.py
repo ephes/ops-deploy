@@ -30,7 +30,7 @@ from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import DeployError, StringCommand, deploy, operation
 from pyinfra.facts.files import File, FileContents, Sha256File
@@ -41,7 +41,7 @@ from ops_deploy.base import RoleConfig
 from ops_deploy.core.config import ServiceName
 from ops_deploy.helpers import mark_read_only
 from ops_deploy.infra import VectorAptInstallConfig, vector_apt_steps
-from ops_deploy.services.logyard._common import Part, Url, Word, probe, render_role
+from ops_deploy.services.logyard._common import FILES, Part, Url, Word, probe, render_role
 
 Level = Literal["emerg", "alert", "critical", "error", "warning", "notice", "info", "debug"]
 # Loki's own query/table-manager logs reach journald through Docker's journald
@@ -61,6 +61,91 @@ class Match(Part):
     value: str | tuple[str, ...]
 
 
+# A file path or glob Vector's file source reads: absolute, no "..", no
+# characters with a meaning in YAML or shell beyond the glob's "*" and "?".
+FilePath = Annotated[str, Field(pattern=r"^/(?:[A-Za-z0-9@._+*?-]+/)*[A-Za-z0-9@._+*?-]+$")]
+# An RE2 pattern rendered into a VRL raw string r'...': no quote, no control characters.
+DropPattern = Annotated[str, Field(min_length=1, max_length=400, pattern=r"^[^'\x00-\x1f\x7f]+$")]
+FileKind = Literal["plain", "traefik", "postgres", "fail2ban", "echoport"]
+
+
+class FileSource(Part):
+    """One log file (or a glob of them) shipped under one ``service`` label.
+
+    ``kind`` picks the line parser: ``traefik`` (JSON or common log format,
+    query values and token-like path segments redacted, ordinary requests
+    sampled 1 in ``sample_rate``), ``postgres`` (prefixed lines only, no
+    DETAIL/STATEMENT/CONTEXT/QUERY/HINT, no checkpoint or autovacuum
+    chatter), ``fail2ban`` (no per-attempt "Found" lines), ``echoport``
+    (level prefix, no idle scheduler ticks) and ``plain`` (a level word near
+    the start of the line, else info). ``drop`` adds patterns whose lines are
+    not shipped; ``min_level`` is a floor like ``min_levels``.
+
+    ``fingerprint``: ``inode`` follows rename-and-create rotation (logrotate
+    ``create``); ``checksum`` (the first line) follows copy-and-truncate
+    (darwin_log_trim, logrotate ``copytruncate``), which ``inode`` misreads.
+    ``acl``: grant the Vector user read access with POSIX ACLs, ``dir`` on
+    the parent directory only (traverse and list), ``files`` also on the
+    files and as the directory's default for files created there later.
+    """
+
+    service: Word
+    paths: Annotated[tuple[FilePath, ...], Field(min_length=1)]
+    kind: FileKind = "plain"
+    min_level: Level | None = None
+    drop: tuple[DropPattern, ...] = ()
+    fingerprint: Literal["inode", "checksum"] = "inode"
+    acl: Literal["none", "dir", "files"] = "none"
+    # traefik only: one in ``sample_rate`` ordinary requests is shipped.
+    sample_rate: int = Field(default=1, ge=1, le=100000)
+    # traefik only: requests at least this slow are always shipped.
+    slow_ms: int = Field(default=1000, ge=1)
+
+    @field_validator("drop")
+    @classmethod
+    def _compiles(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for pattern in value:
+            try:
+                re.compile(pattern)
+            except re.error as error:
+                raise ValueError(f"drop pattern does not compile: {error}") from None
+        return value
+
+    @field_validator("paths")
+    @classmethod
+    def _no_parent(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for path in value:
+            parts = PurePosixPath(path).parts
+            if ".." in parts or "." in parts:
+                raise ValueError("file paths must not contain '.' or '..' segments")
+        return value
+
+    @property
+    def dirs(self) -> tuple[str, ...]:
+        """The parent directories, which must be literal (no glob characters) for ``acl``."""
+
+        return tuple(dict.fromkeys(str(PurePosixPath(path).parent) for path in self.paths))
+
+
+class LogyardVectorDarwin(Part):
+    """The Homebrew Vector that Graphyard's Darwin deploy runs under launchd.
+
+    The Logyard fragment joins that process's config directory; this deploy
+    only writes the fragment, validates the directory and restarts the job.
+    """
+
+    binary_path: PurePosixPath = PurePosixPath("/opt/homebrew/bin/vector")
+    launchd_label: Word = "de.wersdoerfer.graphyard.vector"
+    config_group: Word = "wheel"
+
+    @field_validator("binary_path")
+    @classmethod
+    def _absolute(cls, value: PurePosixPath) -> PurePosixPath:
+        if not value.is_absolute() or ".." in value.parts or not re.fullmatch(r"[A-Za-z0-9/._-]+", str(value)):
+            raise ValueError("binary_path must be absolute, plain characters, without '..'")
+        return value
+
+
 class LogyardVectorConfig(RoleConfig):
     """The role's variables without the ``logyard_vector_`` prefix (defaults from its defaults/main.yml)."""
 
@@ -71,11 +156,15 @@ class LogyardVectorConfig(RoleConfig):
     env_file: PurePosixPath = PurePosixPath("/etc/default/vector")
     data_dir: PurePosixPath = PurePosixPath("/var/lib/vector")
     service_name: ServiceName = "vector"
+    # The account the Linux package runs Vector as (the ``acl`` grants name it).
+    vector_user: Word = "vector"
 
     ingest_endpoint: Url = "http://127.0.0.1:3101"
     host_id: Word
     environment: Word = "prod"
     source_type: Literal["journald"] = "journald"
+    # False on hosts without journald (Darwin): the fragment ships files only.
+    journald: bool = True
     include_units: tuple[str, ...] = ()
     exclude_units: tuple[str, ...] = ()
     include_matches: tuple[Match, ...] = ()
@@ -86,6 +175,15 @@ class LogyardVectorConfig(RoleConfig):
     min_levels: dict[Annotated[str, Field(pattern=r"^[A-Za-z0-9@._:\\-]+$")], Level] = Field(
         default_factory=lambda: dict(DEFAULT_MIN_LEVELS)
     )
+
+    # Log files beside journald, each with its own ``service`` label; they
+    # go to Loki with ``source_type="file"`` (labels host, service, level,
+    # environment). The services must be unique.
+    files: tuple[FileSource, ...] = ()
+    # Set on macOS: no apt, systemd or env file; see LogyardVectorDarwin.
+    darwin: LogyardVectorDarwin | None = None
+    # Files older than this (seconds since the last write) are not watched.
+    file_ignore_older_secs: int = Field(default=7 * 86400, ge=60)
 
     http_timeout_secs: int = Field(default=15, ge=1)
     request_concurrency: int = Field(default=1, ge=1)
@@ -106,6 +204,27 @@ class LogyardVectorConfig(RoleConfig):
             raise ValueError("paths must be absolute, without '..', and not '/'")
         return value
 
+    @model_validator(mode="after")
+    def _consistent(self) -> LogyardVectorConfig:
+        services = [source.service for source in self.files]
+        if len(services) != len(set(services)):
+            raise ValueError("file sources need distinct service labels")
+        if not self.journald and not self.files:
+            raise ValueError("a producer without journald needs at least one file source")
+        if self.files and not self.allow_unconfined_label_templates:
+            raise ValueError("file sources need the service and level labels (allow_unconfined_label_templates)")
+        if self.darwin is not None and self.journald:
+            raise ValueError("Darwin has no journald: set journald to false")
+        for source in self.files:
+            if source.kind != "traefik" and (source.sample_rate != 1 or source.slow_ms != 1000):
+                raise ValueError("sample_rate and slow_ms apply to traefik sources only")
+            if source.acl != "none":
+                if self.darwin is not None:
+                    raise ValueError("acl grants are for Linux producers (Vector runs as root on Darwin)")
+                if any(char in directory for directory in source.dirs for char in "*?"):
+                    raise ValueError("acl needs literal parent directories (globs in file names only)")
+        return self
+
     @property
     def config_path(self) -> PurePosixPath:
         return self.config_dir / self.config_name
@@ -113,6 +232,14 @@ class LogyardVectorConfig(RoleConfig):
     @property
     def global_config_path(self) -> PurePosixPath:
         return self.config_dir / self.global_config_name
+
+
+def source_id(service: str) -> str:
+    """The Vector component id of a file source: stable (Vector keeps the file checkpoints under it,
+    so reordering ``files`` must not change it) and collision-free (every character but a-z and 0-9
+    is spelled ``_<hex>``)."""
+
+    return "".join(char if char in "abcdefghijklmnopqrstuvwxyz0123456789" else f"_{ord(char):02x}" for char in service)
 
 
 def role_vars(cfg: LogyardVectorConfig, supports_confinement: bool | None = None) -> dict[str, object]:
@@ -128,6 +255,22 @@ def role_vars(cfg: LogyardVectorConfig, supports_confinement: bool | None = None
             for m in cfg.include_matches
         ],
         "logyard_vector_current_boot_only": cfg.current_boot_only,
+        "logyard_vector_journald": cfg.journald,
+        "logyard_vector_files": [
+            {
+                "id": source_id(source.service),
+                "service": source.service,
+                "paths": list(source.paths),
+                "kind": source.kind,
+                "min_level": source.min_level,
+                "drop": list(source.drop),
+                "fingerprint": source.fingerprint,
+                "sample_rate": source.sample_rate,
+                "slow_ms": source.slow_ms,
+            }
+            for source in cfg.files
+        ],
+        "logyard_vector_file_ignore_older_secs": cfg.file_ignore_older_secs,
         "logyard_vector_min_levels": dict(sorted(cfg.min_levels.items())),
         "logyard_vector_http_timeout_secs": cfg.http_timeout_secs,
         "logyard_vector_request_concurrency": cfg.request_concurrency,
@@ -195,26 +338,35 @@ def env_line(path: str, line: str) -> Generator[StringCommand, None, None]:
     yield from files.put._inner(src=StringIO(content), dest=path, user="root", group="root", mode="0644")
 
 
-def validate_command(cfg: LogyardVectorConfig, fragment: str) -> str:
-    """Validate the config directory with this deploy's two fragments swapped in, in a temp directory."""
+def validate_command(cfg: LogyardVectorConfig, fragment: str, binary: str = "vector", own_global: bool = True) -> str:
+    """Validate the config directory with this deploy's fragments swapped in, in a temp directory.
+
+    ``own_global=False`` (Darwin, where graphyard_vector owns it) keeps the live global fragment.
+    """
 
     def b64(text: str) -> str:
         return base64.b64encode(text.encode()).decode()
 
     live = shlex.quote(str(cfg.config_dir))
     names = " -o ".join(f"-name '{pattern}'" for pattern in CONFIG_PATTERNS)
-    skip = " ".join(f"! -name {shlex.quote(name)}" for name in (cfg.config_name, cfg.global_config_name))
+    owned = (cfg.config_name, cfg.global_config_name) if own_global else (cfg.config_name,)
+    skip = " ".join(f"! -name {shlex.quote(name)}" for name in owned)
+    write_global = (
+        f'printf %s {b64(render_global(cfg))} | base64 -d > "$dir"/{shlex.quote(cfg.global_config_name)}; '
+        if own_global
+        else ""
+    )
     script = (
         "set -e; dir=$(mktemp -d /tmp/logyard-vector-validate-XXXXXX); trap 'rm -rf \"$dir\"' EXIT; "
         f'if [ -d {live} ]; then find {live} -maxdepth 1 -type f \\( {names} \\) {skip} -exec cp {{}} "$dir"/ \\;; fi; '
-        f'printf %s {b64(render_global(cfg))} | base64 -d > "$dir"/{shlex.quote(cfg.global_config_name)}; '
-        f'printf %s {b64(fragment)} | base64 -d > "$dir"/{shlex.quote(cfg.config_name)}; '
-        'vector validate --skip-healthchecks --config-dir "$dir"'
+        + write_global
+        + f'printf %s {b64(fragment)} | base64 -d > "$dir"/{shlex.quote(cfg.config_name)}; '
+        f'{shlex.quote(binary)} validate --skip-healthchecks --config-dir "$dir"'
     )
     return f"bash -c {shlex.quote(script)}"
 
 
-def fragments_current(expected: dict[PurePosixPath, str]) -> bool:
+def fragments_current(expected: dict[PurePosixPath, str], group: str = "vector") -> bool:
     """Reuse pyinfra's file facts: current bytes, owner, group and mode.
 
     Only exact current inputs can validate in place. Any missing/non-file or
@@ -224,14 +376,116 @@ def fragments_current(expected: dict[PurePosixPath, str]) -> bool:
 
     for path, text in expected.items():
         info = host.get_fact(File, path=str(path))
-        if not info or info["mode"] != 640 or info["user"] != "root" or info["group"] != "vector":
+        if not info or info["mode"] != 640 or info["user"] != "root" or info["group"] != group:
             return False
         if host.get_fact(Sha256File, path=str(path)) != hashlib.sha256(text.encode()).hexdigest():
             return False
     return True
 
 
+def acl_request(cfg: LogyardVectorConfig) -> dict[str, object] | None:
+    """What ``files/logyard_vector_acl.py`` grants: per parent directory of an ``acl`` source,
+    whether its files get access too and which file name patterns are meant."""
+
+    dirs: dict[str, dict[str, object]] = {}
+    for source in cfg.files:
+        if source.acl == "none":
+            continue
+        for path in source.paths:
+            parent, name = str(PurePosixPath(path).parent), PurePosixPath(path).name
+            entry = dirs.setdefault(parent, {"path": parent, "files": False, "patterns": []})
+            if source.acl == "files":
+                entry["files"] = True
+                patterns = entry["patterns"]
+                assert isinstance(patterns, list)
+                if name not in patterns:
+                    patterns.append(name)
+    if not dirs:
+        return None
+    return {"user": cfg.vector_user, "dirs": [dirs[key] for key in sorted(dirs)]}
+
+
+def acl_command(request: dict[str, object], action: Literal["check", "apply"]) -> str:
+    script = (FILES / "logyard_vector_acl.py").read_bytes()
+    launcher = (
+        "import base64;exec(compile(base64.b64decode('"
+        + base64.b64encode(script).decode()
+        + "'),'<logyard-vector-acl>','exec'))"
+    )
+    encoded = base64.b64encode(json.dumps(request, sort_keys=True).encode()).decode()
+    return shlex.join(["python3", "-I", "-c", launcher, action, encoded])
+
+
+def darwin_steps(cfg: LogyardVectorConfig, fragment: str) -> None:
+    """Add the fragment to the Graphyard Vector's config directory on macOS and restart that job."""
+
+    native = cfg.darwin
+    assert native is not None
+    binary = str(native.binary_path)
+    group = native.config_group
+    if probe(f"test -x {shlex.quote(binary)} && echo present").strip() != "present":
+        raise DeployError(f"{binary} is missing: deploy graphyard_vector (Homebrew Vector) first")
+    existing = global_data_dir(host.get_fact(FileContents, path=str(cfg.global_config_path)) or None, cfg.data_dir)
+    if not host.get_fact(File, path=str(cfg.global_config_path)):
+        raise DeployError(f"{cfg.global_config_path} is missing: deploy graphyard_vector first")
+    if existing != str(cfg.data_dir):
+        raise DeployError(
+            f"existing shared Vector global config uses data_dir={existing}, "
+            f"but data_dir={cfg.data_dir}; align the shared Vector data_dir before deploying"
+        )
+    # Only this deploy's fragment decides: graphyard_vector owns 00-global.yaml
+    # (its data_dir was checked above) and the launchd job. A restart that
+    # succeeded records the fragment's hash in the data directory; a fragment
+    # without that record (the restart failed, or another run wrote it) gets
+    # the restart again.
+    live = shlex.quote(str(cfg.config_dir))
+    marker = cfg.data_dir / "logyard-fragment.applied"
+    digest = hashlib.sha256(fragment.encode()).hexdigest()
+    restart = (
+        f"/bin/launchctl kickstart -k {shlex.quote('system/' + native.launchd_label)} && "
+        f"printf '%s\\n' {digest} > {shlex.quote(str(marker))}"
+    )
+    if fragments_current({cfg.config_path: fragment}, group):
+        mark_read_only(
+            server.shell(
+                name="Validate the live Vector configuration",
+                commands=[f"{shlex.quote(binary)} validate --skip-healthchecks --config-dir {live}"],
+            )
+        )
+        # Also restarted when the job is not running (it is KeepAlive; a stopped
+        # job ships nothing although the configuration validates).
+        state = probe(
+            f"/bin/launchctl print {shlex.quote('system/' + native.launchd_label)} | grep -q 'state = running'"
+            f" && cat {shlex.quote(str(marker))}"
+        )
+        if state.strip() != digest:
+            server.shell(name=f"Restart {native.launchd_label} (not yet on this fragment)", commands=[restart])
+        return
+    server.shell(
+        name="Validate the staged Vector configuration",
+        commands=[validate_command(cfg, fragment, binary, own_global=False)],
+    )
+    files.put(
+        name="Deploy the Logyard Vector config fragment",
+        src=StringIO(fragment),
+        dest=str(cfg.config_path),
+        user="root",
+        group=group,
+        mode="0640",
+    )
+    server.shell(name=f"Restart {native.launchd_label}", commands=[restart])
+
+
 def vector_steps(cfg: LogyardVectorConfig) -> None:
+    if cfg.darwin is not None:
+        binary = str(cfg.darwin.binary_path)
+        darwin_steps(
+            cfg,
+            render_fragment(
+                cfg, supports_confinement(probe(f"{shlex.quote(binary)} --version"), cfg.supports_template_confinement)
+            ),
+        )
+        return
     vector_apt_steps(cfg.apt)
 
     fragment = render_fragment(cfg, supports_confinement(probe("vector --version"), cfg.supports_template_confinement))
@@ -266,6 +520,10 @@ def vector_steps(cfg: LogyardVectorConfig) -> None:
         line=f"VECTOR_CONFIG_DIR={cfg.config_dir}",
     )
     files.file(name="Remove the legacy monolithic Vector config", path="/etc/vector/vector.yaml", present=False)
+    request = acl_request(cfg)
+    # Planned from a read-only check, so a converged host reports no change.
+    if request is not None and probe(acl_command(request, "check")).strip() != "current":
+        server.shell(name="Grant Vector read access to its log files", commands=[acl_command(request, "apply")])
 
     global_config = files.put(
         name="Deploy the shared Vector global config",

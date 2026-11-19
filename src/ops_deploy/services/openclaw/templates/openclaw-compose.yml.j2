@@ -30,6 +30,11 @@ services:
 {% if openclaw_weeknotes_enabled | bool and openclaw_weeknotes_backend == 's3' %}
       - "{{ openclaw_weeknotes_s3_mc_host_path }}:{{ openclaw_weeknotes_s3_mc_container_path }}:ro"
 {% endif %}
+    # The host journal (CONTAINER_NAME), which Logyard's Vector ships.
+    logging:
+      driver: journald
+      options:
+        tag: "{{ openclaw_container_name }}"
 
   openclaw-cli:
     image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}

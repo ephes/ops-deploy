@@ -43,7 +43,7 @@
       "mode": "0600"
     },
     "/home/openclaw/site/docker-compose.yml": {
-      "sha256": "8337b367aadc57b0440c2923a0d320c2c92fe56a24563cc28046a1785139a174",
+      "sha256": "68fd48dd8596107d303b7324e31607abf3653175cc9c691c40e9d1f44935b645",
       "owner": "root",
       "group": "root",
       "mode": "0644"

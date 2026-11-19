@@ -22,6 +22,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+import yaml
 
 from ops_deploy.services._metrics_httpd import HttpdSwitchFields
 from ops_deploy.services.openclaw import OpenClawConfig, OpenClawSecrets, layout
@@ -151,6 +152,17 @@ def test_host_state_matches_golden(name: str, tmp_path: Path, monkeypatch: pytes
         "openclaw_json": config,
     }
     assert_golden(GOLDEN / f"{name}.json", json.dumps(recorded, indent=2) + "\n")
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_compose_file_parses_with_journald_logging(name: str) -> None:
+    v = role_variables(name)
+    compose = yaml.safe_load(layout.compose_file(v).content.decode())
+
+    gateway = compose["services"][v["openclaw_container_name"]]
+    assert gateway["logging"] == {"driver": "journald", "options": {"tag": v["openclaw_container_name"]}}
+    assert all(isinstance(volume, str) for volume in gateway["volumes"])
+    assert "logging" not in compose["services"]["openclaw-cli"]
 
 
 def test_a_seeded_override_is_only_normalized(tmp_path: Path) -> None:

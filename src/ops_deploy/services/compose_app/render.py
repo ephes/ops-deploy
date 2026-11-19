@@ -325,6 +325,9 @@ def service_document(cfg: ComposeAppConfig, service: ComposeService) -> dict[str
             "start_period": check.start_period,
         }
     doc["restart"] = service.restart
+    if service.log_driver == "journald":
+        # journald entries carry CONTAINER_NAME; Logyard's Vector labels them by it.
+        doc["logging"] = {"driver": "journald", "options": {"tag": service.container_name or service.name}}
     return _escaped(doc)  # type: ignore[no-any-return]
 
 

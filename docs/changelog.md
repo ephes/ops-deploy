@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- logyard: the Vector producer ships log files beside journald (`files`,
+  docs/services/logyard.md "Log files"), each under its own `service` label
+  with `source_type="file"` through a second Loki sink, read from the end on
+  the first start. Parsers: `traefik` (JSON and common log format; query
+  values, the referer and token-like path segments are not shipped; 5xx, no
+  response, 401/403/407/429, routed 4xx and slow requests always, everything
+  else sampled one in `sample_rate`), `postgres` (no DETAIL/STATEMENT/QUERY/
+  CONTEXT/HINT, no checkpoint or autovacuum lines), `fail2ban` (no per-attempt
+  `Found` lines), `echoport` (no DEBUG, no idle scheduler ticks) and `plain`.
+  `acl` grants the Vector user read access with ACLs where a directory or
+  file is closed to it (without following links, without widening masks);
+  `fingerprint: checksum` follows copy-and-truncate rotation. On macOS
+  (`darwin`, `journald: false`) the fragment joins the Homebrew Vector of
+  Graphyard's Darwin deploy and restarts its launchd job. Every message,
+  journald included, now also passes a best-effort redaction (URL user
+  information, query strings, `&`/`#` pairs, bearer and Basic credentials;
+  a defence in depth, not a guarantee: docs/services/logyard.md lists what
+  it does not catch). Guaranteed are only the Traefik fields (no query
+  values, no referer) and the PostgreSQL scrubbing. The next
+  `logyard_vector` deploy rewrites the fragment and restarts Vector on
+  every producer, also without `files`.
+- graphyard, openclaw: Grafana, InfluxDB and the OpenClaw gateway log to the
+  host journal (Docker's `journald` driver, tagged with the container name),
+  which Logyard ships as `service=<container name>`; `docker logs` keeps
+  working. The next `graphyard` and `openclaw` deploys rewrite the compose
+  file and recreate those containers.
+- compose_app: `log_driver: journald` per service (default unset: the
+  daemon's json-file); a service whose `log_driver` changes is recreated by
+  the next deploy.
+
 - obs_daily: the signature pass of the daily pack survives Loki closing a
   connection without an answer. Loki's query frontend splits each query into
   1-hour pieces whose answers pass inside Loki over gRPC with a 4 MiB limit;
