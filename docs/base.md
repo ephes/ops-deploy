@@ -46,6 +46,7 @@ change.
 | `tlshd` | none (new) | `TlshdConfig` | `deploy_tlshd` (`tlshd_operations` inside another deploy) |
 | `nfs_client_mount` | none (new) | `NfsClientConfig`, `NfsClientMount`, `NfsHostsEntry` | `deploy_nfs_client_mount` |
 | `default_qdisc` | none (pyinfra only) | `DefaultQdiscConfig` | `deploy_default_qdisc` |
+| `darwin_log_trim` | none (new, macOS) | `DarwinLogTrimConfig` | `deploy_darwin_log_trim` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -1415,6 +1416,70 @@ host that is not Linux with systemd as PID 1, has no `/usr/sbin/tc`
 default qdisc or root qdisc it cannot read. It has no `absent` mode: remove
 the two files, `systemctl disable default-qdisc.service` and set the qdisc
 back by hand if it is ever not wanted.
+
+## darwin_log_trim
+
+macOS only. Caps launchd-written log files (a job's `StandardOutPath` or
+`StandardErrorPath`) that grow without bound.
+
+```python
+from ops_deploy.base import DarwinLogTrimConfig, deploy_darwin_log_trim
+
+deploy_darwin_log_trim(DarwinLogTrimConfig(logs=("/private/var/log/voxhelm/voxhelm.log",)))
+```
+
+launchd opens those files once, in append mode, and the job keeps the
+descriptor. newsyslog can only rename a log; the job then keeps writing to the
+renamed file, and once newsyslog compresses and deletes it, to a deleted
+inode whose space only comes back when the job restarts. So this deploy does
+what logrotate's `copytruncate` does instead: a root LaunchDaemon
+(`de.wersdoerfer.log-trim`, plist in `/Library/LaunchDaemons`) runs the program
+`/usr/local/libexec/ops-deploy/log-trim` (`base/files/darwin_log_trim.py`,
+`/usr/bin/python3 -I`, standard library, Python 3.9) daily at `hour:minute`
+(default 04:15 local) and logs to `/private/var/log/ops-log-trim.log`, one
+line per action. Label and paths are fixed, so a config cannot point the root
+job anywhere else.
+
+`logs` must be canonical paths below `/private/var/log` (`/var` is a
+symbolic link; the config refuses other spellings, repeats that differ only in
+case, the job's own log, and logs whose rotated names, `.N.gz` or `.trim-*`,
+would be another log). For each file the program, running as root, requires
+the canonical path, and its directory and every ancestor to be root-owned,
+not writable by group or others and without an ACL (ACL entry lines of
+`ls -lde`, also next to extended attributes); it takes an exclusive `flock`
+on the directory (a directory held by another run is skipped), opens the file
+without following a symbolic link and requires a regular file with one link
+and no ACL, and every existing generation slot to be a regular file. A file
+of at least `max_bytes` (default 50 MiB) is compressed completely into
+`<file>.trim-tmp` (exclusive create, root's alone, 0600), synced and renamed
+to `<file>.trim-done`; only then is it emptied in place through a descriptor
+of the same inode, the generations moved up into the
+first free slot (`<file>.<keep>.gz` is deleted only when every slot is taken;
+`keep` default 5), the copy published as `<file>.1.gz` and only then given
+the file's owner and mode (without group/other write). The writer's next
+append starts at offset 0 because of append mode (checked with a launchd job
+on macOS 27, 2026-11-19). The next run finishes or undoes an interrupted one:
+a `.trim-tmp` (the compression did not finish) is deleted, a `.trim-done`
+(complete; whether the file was truncated cannot always be told) is always
+published (it stays root's, 0600), so at worst one generation repeats entries
+and none is lost; that run then rotates nothing more for the file. The
+generated names are looked up as spelled, so the filesystem decides which
+spellings are the same entry. Lines written between the end of the copy and the
+truncation are lost. One file's failure does not stop the others; the exit
+status is then 1.
+
+The deploy refuses hosts other than macOS and hosts where a directory on the
+way to the program, the plist, the marker (`/private/var/db/ops-deploy`) or
+the job's log, or the installed program or plist, is not root's alone
+(owner, mode or ACL), writes the program and plist, and (re)loads the job (`launchctl
+enable`, `bootout`, `bootstrap`) when the fingerprint of plist and program
+recorded at the last load (`/private/var/db/ops-deploy/de.wersdoerfer.log-trim.loaded`,
+removed before each load and written after it) differs or the job is not
+loaded, so an interrupted deploy is completed by the next one.
+It never runs the trim itself. Tests: `tests/test_base_darwin_log_trim.py`
+(plist, the program against real files on macOS including symlinks, hard
+links, writable directories, failed compression and recovery, the deploy
+against the fake connector).
 
 ## Tests
 

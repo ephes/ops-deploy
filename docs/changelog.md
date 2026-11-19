@@ -18,6 +18,19 @@
   updated `ssh-guard-tx` installed on their next ssh_guard run that has a
   change to apply.
 
+- New base deploy `darwin_log_trim` (macOS): a root LaunchDaemon that once a
+  day copies each listed launchd log of at least `max_bytes` (50 MiB) to a
+  compressed generation (`keep` 5), empties the original in place and keeps
+  the writer appending at offset 0, since newsyslog can only rename a file
+  launchd keeps open. Needs `/usr/bin/python3` (the program is standard
+  library, Python 3.9). Logs must be canonical paths below `/private/var/log`
+  in directories that are root's alone (no group/other write, no ACL); others
+  are refused or skipped at run time, and the deploy refuses a host where the
+  directories of the program, plist, marker or job log, or the installed
+  program or plist, are not root's alone. Label and paths are fixed. For Studio's
+  Voxhelm logs (`voxhelm.log` 276 MB, `worker.err.log` 150 MB, mostly
+  heartbeat lines). `docs/base.md`.
+
 - echoport: the cron jobs' logs under `<home>/logs` are rotated by
   `/etc/logrotate.d/echoport` (weekly or from 50M, 12 compressed copies, as
   the service user; new `logrotate_enabled`,

@@ -11,6 +11,7 @@ size-capped helpers/ops/core layer.
 
 from ops_deploy.base._common import RoleConfig
 from ops_deploy.base.boot_visible_i915 import BootVisibleI915Config, deploy_boot_visible_i915
+from ops_deploy.base.darwin_log_trim import DarwinLogTrimConfig, deploy_darwin_log_trim
 from ops_deploy.base.default_qdisc import DefaultQdiscConfig, deploy_default_qdisc
 from ops_deploy.base.dpkg_arch_remove import DpkgArchRemoveConfig, deploy_dpkg_arch_remove
 from ops_deploy.base.echoport_command_guard import (
@@ -54,6 +55,7 @@ __all__ = [
     "AuthorizedKey",
     "BindSource",
     "BootVisibleI915Config",
+    "DarwinLogTrimConfig",
     "DefaultQdiscConfig",
     "DpkgArchRemoveConfig",
     "EchoportCommandGuardConfig",
@@ -84,6 +86,7 @@ __all__ = [
     "UvAliasConfig",
     "UvInstallConfig",
     "deploy_boot_visible_i915",
+    "deploy_darwin_log_trim",
     "deploy_default_qdisc",
     "deploy_dpkg_arch_remove",
     "deploy_echoport_command_guard",
