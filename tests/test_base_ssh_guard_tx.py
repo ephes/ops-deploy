@@ -11,6 +11,7 @@ ordering against apply, confirm and later transactions is exercised.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -824,3 +825,314 @@ def test_a_revert_that_cannot_see_the_apply_unit_end_restores_nothing(world: Wor
     (world.root / "fail-show").unlink()
     assert world.fire(timer).returncode == 0
     assert world.state()["status"] == "reverted"
+
+
+def test_a_removed_file_comes_back_with_its_mode_on_revert(world: World) -> None:
+    """``sshd_remove_cloud_init_dropin``: an ``absent`` step on a managed 0600 file, then the drop-in."""
+
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(cloud).write_text("PasswordAuthentication yes\n")
+    os.chmod(cloud, 0o600)
+    world.unit("ssh")
+    bundle = world.bundle(
+        [
+            {"id": "s1", "kind": "absent", "name": "Remove cloud-init", "path": cloud},
+            {"id": "s2", "kind": "file", "name": "Write drop-in", "path": world.dropin, "content": "X no\n"},
+            {
+                "id": "s3",
+                "kind": "shell",
+                "name": "Reload ssh",
+                "command": "systemctl reload ssh",
+                "when": ["s1", "s2"],
+                "always": False,
+            },
+        ]
+    )
+    owner = {"uid": world.uid, "gid": world.gid}
+    bundle["files"].append({"path": cloud, **owner, "mode": 0o644})
+    bundle["services"] = [
+        {"role": "ssh", "unit": "ssh", "files": [world.dropin, cloud], "check": "true"},
+    ]
+    assert world.plan(bundle)["steps"] == ["Remove cloud-init", "Write drop-in", "Reload ssh"]
+
+    result = world.run(bundle)
+
+    assert result.returncode == 0, result.stderr
+    assert world.state()["changed"] == ["Remove cloud-init", "Write drop-in", "Reload ssh"]
+    assert not Path(cloud).exists()
+
+    fired = world.fire()
+
+    assert fired.returncode == 0, fired.stderr
+    assert world.state()["status"] == "reverted"
+    assert Path(cloud).read_text() == "PasswordAuthentication yes\n"
+    assert mode(cloud) == 0o600
+    assert not Path(world.dropin).exists()
+    assert "systemctl reload ssh" in world.log()[-2:]
+
+
+def test_a_removed_file_that_reappears_supersedes_the_transaction(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(cloud).write_text("PasswordAuthentication yes\n")
+    world.unit("ssh")
+    bundle = world.bundle([{"id": "s1", "kind": "absent", "name": "Remove cloud-init", "path": cloud}])
+    bundle["files"].append({"path": cloud, "uid": world.uid, "gid": world.gid, "mode": 0o644})
+    bundle["services"] = [{"role": "ssh", "unit": "ssh", "files": [world.dropin, cloud], "check": "true"}]
+    assert world.run(bundle).returncode == 0
+
+    # Something (cloud-init) writes the file again inside the window.
+    Path(cloud).write_text("PasswordAuthentication yes\n")
+    fired = world.fire()
+
+    assert world.state()["status"] == "superseded"
+    assert "nothing restored" in fired.stderr
+    assert Path(cloud).read_text() == "PasswordAuthentication yes\n"
+
+
+def removal_bundle(world: World, cloud: str, expect: str) -> dict[str, Any]:
+    bundle = world.bundle(
+        [
+            {"id": "s1", "kind": "absent", "name": "Remove cloud-init", "path": cloud, "expect_sha256": expect},
+            {"id": "s2", "kind": "file", "name": "Write drop-in", "path": world.dropin, "content": "X no\n"},
+        ]
+    )
+    bundle["files"].append({"path": cloud, "uid": world.uid, "gid": world.gid, "mode": 0o644})
+    bundle["services"] = [{"role": "ssh", "unit": "ssh", "files": [world.dropin, cloud], "check": "true"}]
+    return bundle
+
+
+def test_a_file_changed_before_the_apply_is_refused_before_anything_is_armed(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    planned = b"PasswordAuthentication yes\n"
+    Path(cloud).write_bytes(planned + b"AllowUsers someone\n")
+    world.unit("ssh")
+    bundle = removal_bundle(world, cloud, hashlib.sha256(planned).hexdigest())
+
+    assert world.plan(bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} changed since planning"]
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert world.state()["status"] == "aborted"
+    assert "changed since planning; nothing changed" in world.state()["reason"]
+    assert Path(cloud).read_bytes() == planned + b"AllowUsers someone\n"
+    assert not Path(world.dropin).exists()
+    assert world.timers() == []
+
+
+def test_a_digest_bound_removal_of_a_symlink_is_refused(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    target = world.etc / "target.conf"
+    target.write_bytes(b"PasswordAuthentication yes\n")
+    os.symlink(target, cloud)
+    world.unit("ssh")
+
+    result = world.run(removal_bundle(world, cloud, hashlib.sha256(target.read_bytes()).hexdigest()))
+
+    assert result.returncode != 0
+    assert os.path.islink(cloud)
+    assert target.exists()
+    assert world.state()["status"] == "aborted"
+
+
+def test_a_file_changed_after_the_snapshot_is_not_removed(world: World) -> None:
+    """The step itself compares the digest right before it removes the file; the failure reverts at once."""
+
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    planned = b"PasswordAuthentication yes\n"
+    Path(cloud).write_bytes(planned)
+    world.unit("ssh")
+    bundle = removal_bundle(world, cloud, hashlib.sha256(planned).hexdigest())
+    edit = {
+        "id": "s0",
+        "kind": "shell",
+        "name": "Someone edits it",
+        "command": f"echo 'AllowUsers someone' >> {shlex.quote(cloud)}",
+        "when": [],
+        "always": True,
+    }
+    bundle["steps"].insert(0, edit)
+
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert "changed since planning; not removed" in (world.root / "apply.err").read_text()
+    # The revert restores the snapshot (as for every managed file): the planned content.
+    assert world.state()["status"] == "reverted"
+    assert Path(cloud).read_bytes() == planned
+    assert not Path(world.dropin).exists()
+
+
+def test_a_planned_removal_of_a_file_already_gone_is_refused_before_anything_is_armed(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(world.dropin).write_text("X no\n")
+    os.chown(world.dropin, world.uid, world.gid)
+    os.chmod(world.dropin, 0o644)
+    world.unit("ssh")
+    bundle = removal_bundle(world, cloud, hashlib.sha256(b"PasswordAuthentication yes\n").hexdigest())
+    reload_ = {
+        "id": "s3",
+        "kind": "shell",
+        "name": "Reload ssh",
+        "command": "systemctl reload ssh",
+        "when": ["s1", "s2"],
+        "always": False,
+    }
+    bundle["steps"].append(reload_)
+
+    assert world.plan(bundle) == {
+        "pending": True,
+        "steps": [f"Remove cloud-init: refused, {cloud} disappeared since planning"],
+    }
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert world.state()["status"] == "aborted"
+    assert "disappeared since planning; nothing changed" in world.state()["reason"]
+    assert world.timers() == []
+    assert not any("reload" in line for line in world.log())
+
+
+def test_a_planned_file_that_disappears_during_the_apply_is_restored(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    planned = b"PasswordAuthentication yes\n"
+    Path(cloud).write_bytes(planned)
+    world.unit("ssh")
+    bundle = removal_bundle(world, cloud, hashlib.sha256(planned).hexdigest())
+    gone = {
+        "id": "s0",
+        "kind": "shell",
+        "name": "Someone deletes it",
+        "command": f"rm -f {shlex.quote(cloud)}",
+        "when": [],
+        "always": True,
+    }
+    bundle["steps"].insert(0, gone)
+
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert "disappeared since planning; not removed" in (world.root / "apply.err").read_text()
+    assert world.state()["status"] == "reverted"
+    assert Path(cloud).read_bytes() == planned
+
+
+def test_the_plan_refuses_a_large_special_or_unreadable_replacement(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    bundle = removal_bundle(world, cloud, hashlib.sha256(b"PasswordAuthentication yes\n").hexdigest())
+
+    # The bundle expects exactly this oversized content: only a bounded read refuses it.
+    big = b"#" * (65536 + 1)
+    Path(cloud).write_bytes(big)
+    big_bundle = removal_bundle(world, cloud, hashlib.sha256(big).hexdigest())
+    assert world.plan(big_bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} changed since planning"]
+    os.unlink(cloud)
+    os.mkfifo(cloud)
+    assert world.plan(bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} changed since planning"]
+    os.unlink(cloud)
+    os.symlink(world.etc / "missing-target", cloud)
+    assert world.plan(bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} changed since planning"]
+    os.unlink(cloud)
+    Path(cloud).write_text("x")
+    os.chmod(cloud, 0)
+    if os.geteuid() != 0:
+        assert world.plan(bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} cannot be read"]
+    os.chmod(cloud, 0o600)
+
+
+def absent_bundle(world: World, cloud: str) -> dict[str, Any]:
+    bundle = world.bundle(
+        [
+            {"id": "s1", "kind": "absent", "name": "Remove cloud-init", "path": cloud, "expect_absent": True},
+            {"id": "s2", "kind": "file", "name": "Write drop-in", "path": world.dropin, "content": "X no\n"},
+        ]
+    )
+    bundle["files"].append({"path": cloud, "uid": world.uid, "gid": world.gid, "mode": 0o644})
+    bundle["services"] = [{"role": "ssh", "unit": "ssh", "files": [world.dropin, cloud], "check": "true"}]
+    return bundle
+
+
+def test_an_expected_absence_changes_nothing_while_the_file_stays_missing(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(world.dropin).write_text("X no\n")
+    # A new file's group follows its directory on some systems (BSD): set exactly what the bundle expects.
+    os.chown(world.dropin, world.uid, world.gid)
+    os.chmod(world.dropin, 0o644)
+    world.unit("ssh")
+    bundle = absent_bundle(world, cloud)
+
+    assert world.plan(bundle) == {"pending": False, "steps": []}
+    result = world.run(bundle)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "unchanged"
+
+
+def test_a_file_that_appeared_since_planning_is_refused_before_anything_is_armed(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(world.dropin).write_text("X no\n")
+    # A new file's group follows its directory on some systems (BSD): set exactly what the bundle expects.
+    os.chown(world.dropin, world.uid, world.gid)
+    os.chmod(world.dropin, 0o644)
+    Path(cloud).write_text("PasswordAuthentication yes\n")
+    world.unit("ssh")
+    bundle = absent_bundle(world, cloud)
+
+    assert world.plan(bundle)["steps"] == [f"Remove cloud-init: refused, {cloud} appeared since planning"]
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert world.state()["status"] == "aborted"
+    assert "appeared since planning" in world.state()["reason"]
+    assert Path(cloud).read_text() == "PasswordAuthentication yes\n"
+    assert world.timers() == []
+
+
+def test_a_file_that_appears_during_the_apply_fails_the_step(world: World) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    world.unit("ssh")
+    bundle = absent_bundle(world, cloud)
+    create = {
+        "id": "s0",
+        "kind": "shell",
+        "name": "cloud-init writes it",
+        "command": f"echo 'PasswordAuthentication yes' > {shlex.quote(cloud)}",
+        "when": [],
+        "always": True,
+    }
+    bundle["steps"].insert(0, create)
+
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert "appeared since planning; not removed" in (world.root / "apply.err").read_text()
+    assert world.state()["status"] == "reverted"
+    assert not Path(world.dropin).exists()
+
+
+@pytest.mark.parametrize(
+    "step_fields",
+    [{"expect_absent": False}, {"expect_absent": 1}, {"expect_absent": True, "expect_sha256": "a" * 64}],
+)
+def test_an_invalid_expect_absent_is_refused(world: World, step_fields: dict[str, Any]) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    bundle = absent_bundle(world, cloud)
+    del bundle["steps"][0]["expect_absent"]
+    bundle["steps"][0].update(step_fields)
+
+    result = world.run(bundle)
+
+    assert result.returncode != 0
+    assert "expect_absent must be true and alone" in result.stderr
+
+
+@pytest.mark.parametrize("expect", ["", "ABC", "g" * 64, 5, None])
+def test_an_invalid_removal_digest_is_refused(world: World, expect: Any) -> None:
+    cloud = str(world.etc / "ssh" / "50-cloud-init.conf")
+    Path(cloud).write_text("PasswordAuthentication yes\n")
+
+    result = world.run(removal_bundle(world, cloud, expect))
+
+    assert result.returncode != 0
+    assert "invalid expect_sha256" in result.stderr
+    assert Path(cloud).exists()
+    assert not world.state_dir.joinpath("state.json").exists()

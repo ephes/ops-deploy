@@ -181,6 +181,13 @@ def validate_bundle(bundle: Any) -> dict[str, Any]:
             raise TxError(f"bundle: step {step_id} writes a file outside the managed set")
         if kind == "file" and not isinstance(step.get("content"), str):
             raise TxError(f"bundle: step {step_id} has no content")
+        if kind == "absent" and "expect_sha256" in step:
+            expect = step["expect_sha256"]
+            if not isinstance(expect, str) or not re.fullmatch(r"[0-9a-f]{64}", expect):
+                raise TxError(f"bundle: step {step_id} has an invalid expect_sha256")
+        bad_absent = step.get("expect_absent") is not True or "expect_sha256" in step
+        if kind == "absent" and "expect_absent" in step and bad_absent:
+            raise TxError(f"bundle: step {step_id}: expect_absent must be true and alone")
         if kind == "dir" and _path(step.get("path"), step_id) not in seen_dirs:
             raise TxError(f"bundle: step {step_id} creates a directory outside the managed set")
         if kind == "package":
@@ -368,6 +375,10 @@ def predicted(bundle: dict[str, Any]) -> list[str]:
         elif kind == "file":
             hit = file_differs(step["path"], step["content"], files[step["path"]])
         elif kind == "absent":
+            deviation = removal_deviation(step)
+            if deviation:
+                # The apply refuses this before any change: report that, not the steps that would follow.
+                return [f"{step['name']}: refused, {deviation}"]
             hit = os.path.lexists(step["path"])
         elif kind == "package":
             hit = not package_installed(step["package"])
@@ -655,6 +666,73 @@ def apt_install(package: str, no_recommends: bool) -> subprocess.CompletedProces
     return run_tree(argv, timeout=STEP_TIMEOUT, env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
 
 
+def removal_deviation(step: dict[str, Any]) -> str:
+    """Why an ``absent`` step's file is not what the plan saw now ('' when it is, or the step binds nothing)."""
+
+    present = os.path.lexists(step["path"])
+    if step.get("expect_absent"):
+        return f"{step['path']} appeared since planning" if present else ""
+    expect = step.get("expect_sha256")
+    if expect is None:
+        return ""
+    if not present:
+        return f"{step['path']} disappeared since planning"
+    try:
+        current = bounded_digest(step["path"])
+    except OSError:
+        return f"{step['path']} cannot be read"
+    return "" if current == expect else f"{step['path']} changed since planning"
+
+
+# The read-only plan compares at most this much of a file (the probe accepts 4096 bytes).
+DIGEST_READ_LIMIT = 65536
+
+
+def bounded_digest(path: str) -> str | None:
+    """SHA-256 of a regular file of at most ``DIGEST_READ_LIMIT`` bytes; None for anything else.
+
+    Only a path that ``lstat`` shows as a regular file is opened, without
+    following a symbolic link and without blocking, and ``fstat`` checks the
+    opened file again; it is read in chunks, so a large replacement costs no
+    memory.
+    """
+
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        # Never open anything else (a device's open can have side effects).
+        return None
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        digest, size = hashlib.sha256(), 0
+        while chunk := os.read(fd, 8192):
+            size += len(chunk)
+            if size > DIGEST_READ_LIMIT:
+                return None
+            digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
+
+
+def planned_removals_match(bundle: dict[str, Any], before: dict[str, Any]) -> str:
+    """'' when, in the snapshot, every ``expect_sha256`` step's file has the planned content and every
+    ``expect_absent`` step's file is missing."""
+
+    for step in bundle["steps"]:
+        if step["kind"] != "absent":
+            continue
+        expect = step.get("expect_sha256")
+        entry = before["files"].get(step["path"], {})
+        if step.get("expect_absent") and entry.get("present"):
+            return f"{step['path']} appeared since planning; nothing changed"
+        if expect and not entry.get("present"):
+            return f"{step['path']} disappeared since planning; nothing changed"
+        if expect and entry.get("sha256") != expect:
+            return f"{step['path']} changed since planning; nothing changed"
+    return ""
+
+
 def run_step(step: dict[str, Any], bundle: dict[str, Any], changed: set[str]) -> bool:
     """Run one step if needed; True when it ran (changed something). Raises TxError on failure."""
 
@@ -677,7 +755,19 @@ def run_step(step: dict[str, Any], bundle: dict[str, Any], changed: set[str]) ->
         return True
     if kind == "absent":
         if not os.path.lexists(step["path"]):
+            if "expect_sha256" in step:
+                # The plan saw the file: it went away without this transaction.
+                raise TxError(f"{step['name']}: {step['path']} disappeared since planning; not removed")
             return False
+        if step.get("expect_absent"):
+            # Missing while planning: a file that appeared since is not removed unchecked.
+            raise TxError(f"{step['name']}: {step['path']} appeared since planning; not removed")
+        expect = step.get("expect_sha256")
+        if expect is not None:
+            # Only the content the deploy checked while planning (a regular file, not a link).
+            current = file_state(step["path"])
+            if current.get("sha256") != expect:
+                raise TxError(f"{step['name']}: {step['path']} changed since planning; not removed")
         os.unlink(step["path"])
         return True
     if kind == "package":
@@ -812,9 +902,14 @@ def cmd_apply(args: argparse.Namespace) -> int:
         try:
             unit_procs(state["apply_unit"])
             before = snapshot(bundle)
+            # A file the plan removes must still be the probed one: refuse before anything is armed or changed.
+            mismatch = planned_removals_match(bundle, before)
+            if mismatch:
+                raise TxError(mismatch)
         except TxError as exc:
             state.update(status="aborted", reason=str(exc), finished=time.time())
             store.save(state)
+            print(f"ssh_guard tx apply: {exc}", file=sys.stderr)
             return 1
         write_atomic(txdir / "snapshot.json", json.dumps(before).encode(), 0, 0, 0o600)
         timer = f"ssh-guard-tx-revert-{args.txid[:12]}"

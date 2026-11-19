@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- ssh_guard: new `sshd_remove_cloud_init_dropin` (default `false`). With
+  `password_authentication: "no"` and the timed revert it removes cloud-init's
+  `/etc/ssh/sshd_config.d/50-cloud-init.conf` (`PasswordAuthentication yes`,
+  which sorts before `99-ssh-guard.conf` and would win) in the same
+  transaction as the drop-in; a revert restores it with its owner and mode.
+  The deploy refuses a file that is not a regular, readable, small ASCII file
+  holding only `PasswordAuthentication` lines, and the host program removes it
+  only while it still has the probed content (`expect_sha256`, a new optional
+  field of `absent` steps, checked against the snapshot before anything is
+  armed and again before the removal). A file missing while planning gets a
+  step marked `expect_absent`, so the host refuses if it appeared since; the
+  read-only plan names such a deviation as one refused step. Hosts without
+  the option probe and deploy as before; hosts with a timed revert get the
+  updated `ssh-guard-tx` installed on their next ssh_guard run that has a
+  change to apply.
+
 - logyard vector: the remap takes `level` from the application's own output
   when it carries one (OpenThread's `[W]` for `otbr-agent`, gunicorn's
   `[ERROR]` tag, JSON `level` including pino's numbers or else `severity`,

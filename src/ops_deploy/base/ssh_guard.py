@@ -24,6 +24,10 @@ rewrites nothing. On top of the role the deploy
 - optionally renders ``PasswordAuthentication``, ``KbdInteractiveAuthentication``
   and ``PermitRootLogin`` into the same drop-in (off by default: no line),
   checked the same way.
+- optionally (``sshd_remove_cloud_init_dropin``, only under the timed revert)
+  removes cloud-init's ``50-cloud-init.conf`` from the drop-in directory: it
+  sorts first and its ``PasswordAuthentication yes`` would win over the
+  drop-in's ``no``. A file with any other directive is refused.
 
 fail2ban is restarted only when its filter, jail or packages changed and ssh is
 reloaded only when the drop-in changed, so a converged host reports no change.
@@ -40,6 +44,7 @@ such a transaction is open.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import shlex
@@ -86,6 +91,15 @@ FILTER_OVERRIDE_CONTENT = (
 SSHD_SESSION = "/usr/lib/openssh/sshd-session"
 # The role validates the main config, which includes every drop-in.
 SSHD_CONFIG = "/etc/ssh/sshd_config"
+# cloud-init's drop-in (``ssh_pwauth``): it sorts before 99-ssh-guard.conf, and
+# sshd keeps the first value it reads.
+CLOUD_INIT_DROPIN = "50-cloud-init.conf"
+# The probe reads at most this many bytes of it (+1); a larger file is refused.
+CLOUD_INIT_MAX_BYTES = 4096
+# What the probe appends to the bytes when its read fails.
+CLOUD_INIT_READ_FAILED = b"\xffops-deploy-read-failed"
+# The only lines ``sshd_remove_cloud_init_dropin`` removes the file for.
+_CLOUD_INIT_LINE = re.compile(r"passwordauthentication(?:\s+|\s*=\s*)[^\s#]+(?:\s+#.*)?", re.IGNORECASE)
 # Seconds the gate waits for the jail after a fail2ban (re)start.
 GATE_WAIT = 60
 
@@ -234,6 +248,14 @@ class SshGuardConfig(RoleConfig):
     # Not in the role. 0: off (the plain deploy). Otherwise the seconds after
     # which an unconfirmed change is reverted (docs/base.md, "Timed revert").
     timed_revert_seconds: StrictInt = 0
+    # Not in the role. True: remove cloud-init's ``50-cloud-init.conf`` from the
+    # drop-in's directory in the same transaction. It sorts before the drop-in
+    # and sshd keeps the first value it reads, so its ``PasswordAuthentication
+    # yes`` would win over ``password_authentication: no``. Only together with
+    # that value and the timed revert (which restores the file when the change
+    # is not confirmed); a file with anything but PasswordAuthentication lines
+    # is refused while planning.
+    sshd_remove_cloud_init_dropin: StrictBool = False
 
     @model_validator(mode="after")
     def _role_asserts(self) -> SshGuardConfig:
@@ -257,11 +279,22 @@ class SshGuardConfig(RoleConfig):
             penalty_tokens(self.per_source_penalties)
         if self.timed_revert_seconds and not TX_REVERT_MIN <= self.timed_revert_seconds <= TX_REVERT_MAX:
             raise ValueError(f"timed_revert_seconds must be 0 (off) or {TX_REVERT_MIN}..{TX_REVERT_MAX}")
+        if self.sshd_remove_cloud_init_dropin:
+            if not (self.sshd_dropin_enabled and self.password_authentication == "no" and self.timed_revert_seconds):
+                raise ValueError(
+                    "sshd_remove_cloud_init_dropin needs the drop-in, password_authentication no and the timed revert"
+                )
+            if self.sshd_dropin_path == self.cloud_init_dropin_path:
+                raise ValueError("sshd_remove_cloud_init_dropin: the drop-in cannot be cloud-init's file")
         return self
 
     @property
     def dropin_dir(self) -> str:
         return str(PurePosixPath(self.sshd_dropin_path).parent)
+
+    @property
+    def cloud_init_dropin_path(self) -> str:
+        return str(PurePosixPath(self.sshd_dropin_path).parent / CLOUD_INIT_DROPIN)
 
     @property
     def banaction_name(self) -> str:
@@ -499,8 +532,31 @@ def probe_command(cfg: SshGuardConfig) -> str:
         f' /etc/fail2ban/jail.d/*.local; do [ -f "$f" ] && [ "$f" != {JAIL_PATH} ] || continue'
         "; grep -E '^[[:space:]]*([[][^]]*[]]|banaction[[:space:]]*=)' \"$f\" | sed 's/^/jailconf=/'; done"
         f"{ports}"
+        f"{_cloud_init_probe(cfg)}"
         # An open timed-revert transaction (files/ssh_guard_tx.py) blocks every deploy.
         f'; echo "tx_state=$(head -n 1 {TX_STATUS} 2>/dev/null)"'
+    )
+
+
+def _cloud_init_probe(cfg: SshGuardConfig) -> str:
+    """With ``sshd_remove_cloud_init_dropin``: the file's type and, for a regular file, its first bytes (base64).
+
+    Only a regular file that is not a symbolic link is read (a FIFO would
+    block), in one read of never more than ``CLOUD_INIT_MAX_BYTES`` + 1 bytes
+    and at most 10 s. A failed read appends ``CLOUD_INIT_READ_FAILED`` (it
+    starts with the byte 0xff, which no accepted file holds; dash's printf
+    cannot print a NUL) to what it read; a failed encoding prints no line.
+    """
+
+    if not cfg.sshd_remove_cloud_init_dropin:
+        return ""
+    path = shlex.quote(cfg.cloud_init_dropin_path)
+    failed = "\\377" + CLOUD_INIT_READ_FAILED[1:].decode()
+    return (
+        f'; echo "cloud_init_kind=$(stat -c %F {path} 2>/dev/null || echo missing)"'
+        f"; if [ -f {path} ] && [ ! -L {path} ]; then b=$("
+        f"{{ timeout 10 head -c {CLOUD_INIT_MAX_BYTES + 1} -- {path} 2>/dev/null || printf '{failed}'; }}"
+        ' | base64 -w 0) && echo "cloud_init_b64=$b"; fi'
     )
 
 
@@ -528,6 +584,11 @@ class HostState:
     jail_config: tuple[str, ...] = ()
     # The timed-revert state line: ``<status> <generation> <txid>``; empty: none yet.
     tx_state: str = ""
+    # cloud-init's drop-in (probed only with ``sshd_remove_cloud_init_dropin``):
+    # ``stat -c %F`` or missing, and the bytes read (base64; None: not read),
+    # ``CLOUD_INIT_READ_FAILED`` at the end when the read failed.
+    cloud_init_kind: str = "missing"
+    cloud_init_b64: str | None = None
 
     @classmethod
     def parse(cls, text: str) -> HostState:
@@ -556,6 +617,8 @@ class HostState:
             loaded_actions=tuple(values.get("loaded_actions", "").replace(",", " ").split()),
             jail_config=tuple(jail_config),
             tx_state=values.get("tx_state", ""),
+            cloud_init_kind=values.get("cloud_init_kind") or "missing",
+            cloud_init_b64=values.get("cloud_init_b64"),
         )
 
     @property
@@ -615,6 +678,44 @@ def _check_openssh(cfg: SshGuardConfig, state: HostState) -> None:
             raise DeployError(f"ssh_guard: {key} needs OpenSSH {since[0]}.{since[1]} or later; the host has {have}")
 
 
+def cloud_init_digest(cfg: SshGuardConfig, state: HostState) -> str | None:
+    """SHA-256 of cloud-init's drop-in as probed, None when it is missing; DeployError unless it may be removed.
+
+    Removable: a regular file (not a symbolic link) of at most
+    ``CLOUD_INIT_MAX_BYTES`` printable ASCII bytes (tab, CR and LF allowed)
+    whose lines, comments and blank lines aside, are all PasswordAuthentication
+    directives. The removal step carries the digest, so the host refuses to
+    remove a file that changed after planning.
+    """
+
+    path = cfg.cloud_init_dropin_path
+    if state.cloud_init_kind == "missing":
+        return None
+
+    def refuse(why: str) -> DeployError:
+        return DeployError(f"ssh_guard: {path} {why}; not removed")
+
+    if state.cloud_init_kind not in ("regular file", "regular empty file"):
+        raise refuse(f"is a {state.cloud_init_kind}, not a regular file")
+    if state.cloud_init_b64 is None:
+        raise refuse("could not be read")
+    try:
+        data = base64.b64decode(state.cloud_init_b64, validate=True)
+    except ValueError:
+        raise refuse("could not be read (bad base64 from the probe)") from None
+    if data.endswith(CLOUD_INIT_READ_FAILED):
+        raise refuse("could not be read")
+    if len(data) > CLOUD_INIT_MAX_BYTES:
+        raise refuse(f"is larger than {CLOUD_INIT_MAX_BYTES} bytes")
+    if any(not (32 <= byte < 127 or byte in (9, 10, 13)) for byte in data):
+        raise refuse("holds bytes other than printable ASCII")
+    lines = [line.strip() for line in data.decode("ascii").splitlines()]
+    other = [line for line in lines if line and not line.startswith("#") and not _CLOUD_INIT_LINE.fullmatch(line)]
+    if other:
+        raise refuse(f"holds {len(other)} line(s) other than PasswordAuthentication (move them elsewhere first)")
+    return hashlib.sha256(data).hexdigest()
+
+
 def _check_transaction(state: HostState) -> None:
     status, generation, txid = state.tx
     program = f"{HOST_PYTHON} -I {TX_PROGRAM_PATH}"
@@ -671,6 +772,8 @@ def deploy_ssh_guard(cfg: SshGuardConfig) -> None:
     _check_transaction(state)
     if cfg.sshd_dropin_enabled:
         _check_openssh(cfg, state)
+    if cfg.sshd_remove_cloud_init_dropin:
+        cloud_init_digest(cfg, state)
     if cfg.fail2ban_enabled:
         _check_fail2ban(cfg, state)
 
@@ -880,20 +983,41 @@ def transaction_bundle(cfg: SshGuardConfig, state: HostState, *, installed: bool
         services.append({"role": "fail2ban", "unit": service, "files": sorted(fail2ban_files)})
     if cfg.sshd_dropin_enabled:
         manage(cfg.sshd_dropin_path)
-        dropin = put(cfg.sshd_dropin_path, render_dropin(cfg))
-        step("shell", "Validate the sshd configuration", command=validate_command(cfg), when=[dropin], always=False)
+        ssh_files = [cfg.sshd_dropin_path]
+        sshd_changes: list[str] = []
+        if cfg.sshd_remove_cloud_init_dropin:
+            # Managed (snapshotted, restored by a revert) whether or not this run removes it.
+            manage(cfg.cloud_init_dropin_path)
+            ssh_files.append(cfg.cloud_init_dropin_path)
+            digest = cloud_init_digest(cfg, state)
+            name = f"Remove {cfg.cloud_init_dropin_path} (cloud-init's PasswordAuthentication)"
+            if digest is not None:
+                # The host removes it only while it still has the probed content.
+                sshd_changes.append(step("absent", name, path=cfg.cloud_init_dropin_path, expect_sha256=digest))
+            else:
+                # Missing while planning: the host refuses (nothing changed) if it appeared since,
+                # so a converged drop-in cannot hide a new PasswordAuthentication yes.
+                sshd_changes.append(step("absent", name, path=cfg.cloud_init_dropin_path, expect_absent=True))
+        sshd_changes.append(put(cfg.sshd_dropin_path, render_dropin(cfg)))
+        step(
+            "shell",
+            "Validate the sshd configuration",
+            command=validate_command(cfg),
+            when=list(sshd_changes),
+            always=False,
+        )
         step(
             "shell",
             f"Reload {cfg.sshd_service_name} for the new drop-in",
             command=reload_command(cfg.sshd_service_name),
-            when=[dropin],
+            when=list(sshd_changes),
             always=False,
         )
         services.append(
             {
                 "role": "ssh",
                 "unit": cfg.sshd_service_name,
-                "files": [cfg.sshd_dropin_path],
+                "files": ssh_files,
                 "check": f"sshd -t -f {SSHD_CONFIG}",
             }
         )

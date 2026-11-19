@@ -465,6 +465,7 @@ keys, and checks of the running jail and of sshd's effective values.
 | `kbd_interactive_authentication` | `None` | not in the role: `None` leaves the directive out; `"yes"` or `"no"` writes `KbdInteractiveAuthentication` |
 | `permit_root_login` | `None` | not in the role: `None` leaves the directive out; `"yes"`, `"prohibit-password"`, `"forced-commands-only"` or `"no"` writes `PermitRootLogin` (the old spelling `without-password` is refused) |
 | `timed_revert_seconds` | `0` | not in the role: `0` off; 60..3600 runs every change under a timed revert (below) |
+| `sshd_remove_cloud_init_dropin` | `false` | not in the role: `true` removes cloud-init's `50-cloud-init.conf` from the drop-in's directory in the same transaction (below); needs the drop-in, `password_authentication: "no"` and `timed_revert_seconds` |
 
 Values written into the files must not contain line breaks or other control
 characters, so a value cannot add a directive of its own. The role's two
@@ -494,6 +495,65 @@ configuration can still set either for matching connections; neither is
 checked here. sshd takes the first value it reads, so an earlier drop-in that
 sets a directive wins; the `sshd -T` check fails the deploy (and removes the
 drop-in) when the effective value is not the rendered one.
+
+cloud-init writes `/etc/ssh/sshd_config.d/50-cloud-init.conf` with only
+`PasswordAuthentication yes` on images built with `ssh_pwauth` (IONOS'
+Debian, Ubuntu installs). It sorts before `99-ssh-guard.conf`, so it wins
+over `password_authentication: "no"` and the `sshd -T` check fails.
+`sshd_remove_cloud_init_dropin: true` removes that file in the same timed-revert
+transaction, before the drop-in is written; either change runs the check and
+the reload. The file is a managed file of the transaction (snapshotted with
+content, owner and mode), so a revert puts it back, and a file that
+reappears inside the window makes the transaction `superseded`. The probe
+reads the file only when it is a regular file and not a symbolic link (a FIFO
+would block), in one read of never more than 4097 bytes and at most 10 s, as
+base64 (a failed read appends a marker starting with the byte 0xff); the
+deploy refuses before any change when it is anything else, cannot be read, is
+larger than 4096 bytes, holds bytes other than printable ASCII (tab, CR, LF
+allowed) or any line other than a `PasswordAuthentication` directive
+(comments and blank lines aside), so no other setting is dropped with it. The
+removal step carries the SHA-256 of the probed bytes (`expect_sha256`, an
+optional field of `absent` steps). The host program compares it with the
+snapshot before it arms anything (a mismatch ends `aborted`, nothing
+changed) and again right before it removes the file (a regular file, not a
+link; a mismatch fails the step and the transaction reverts at once). A file the
+plan saw that is gone is a deviation too: missing in the snapshot, the
+transaction ends `aborted` with nothing changed; gone after the snapshot, the
+step fails and the revert restores it. The read-only `plan` reports such a
+deviation (a changed, disappeared or appeared file) as one refused step
+instead of the steps that would follow. A file deleted by hand without an ssh
+reload is not visible to any deploy (sshd may still run on it): reload ssh
+after such an edit. Like
+every managed file, the transaction assumes no other writer in
+`sshd_config.d` from the snapshot until it is `armed` or reverted (normally
+until the apply ends: a second or so for the drop-in alone, minutes when
+fail2ban packages are installed first), under the controller and host deploy
+locks: a revert while it is `applying` or `reverting` restores the snapshot,
+so an edit made then is overwritten, as for the drop-in itself. An apply that
+died stays `applying` until its timer reverts it, or, when it died before the
+timer was started, until a manual `revert` (inspect with `status` first). A
+`staged` transaction (no snapshot yet) is only cancelled (`aborted`, nothing
+restored). Once the transaction is `armed`, an edit to a managed file makes
+the revert end `superseded` and restore nothing (above). When the file is
+missing while planning, the bundle still has its removal step, marked
+`expect_absent`: it changes nothing while the file stays missing, and the
+host refuses the transaction (before arming, or by failing the step) if the
+file appeared since, so a converged drop-in cannot hide a new
+`PasswordAuthentication yes`. Like any deploy this is a check at one point in
+time: a file that appears after the read-only plan of a converged host (or
+after the deploy) is found by the next ssh_guard run once the previous
+transaction is in any final state (`unchanged`, `aborted`, `confirmed`,
+`reverted`, `revert-failed`, or `superseded`, which a revert records when it
+finds the file changed while the transaction was armed; an open one makes
+every deploy refuse): that run plans its removal under a new transaction if the file
+passes the checks above, and refuses otherwise. `sshd -T` on the host shows
+the effective value meanwhile.
+The option is refused without the drop-in,
+without `password_authentication: "no"` and without the timed revert, the
+plain deploy never removes it. cloud-init's `set_passwords` module runs once
+per instance, so the file does not come back on a reboot; should it, the next
+deploy removes it again (the `sshd -T` check fails a deploy only when a
+changed drop-in or a removal runs).
 
 ### Planning
 
