@@ -177,11 +177,19 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   `<state_root>/<job>/status.json` (same fields as the MinIO replica probe),
   sets `lag.marker` to the object's modification time and touches
   `parity.marker` whenever parity holds (created on the first run, so a new
-  job starts its parity grace). Levels and reasons follow the MinIO probe:
-  warning/critical by lag hours, critical when parity breaks (queue, object
-  delta or size delta beyond the job's tolerances). The service exits 2 when
-  a required job is critical. File-age checks on the markers are the
-  operator's alerting hook.
+  job starts its parity grace). Levels follow the MinIO probe: warning and
+  critical by lag hours, critical when the object or size delta exceeds the
+  job's tolerances. A breach whose only cause is a non-empty replication
+  queue (a backup burst, counts and sizes within tolerance) is graded by how
+  long parity has been missing, measured from `parity.marker`: `ok` below
+  the job's `queue_warning_minutes` (default 30), `warning` from there,
+  `critical` from `parity_critical_hours` (default 1 h, where the marker
+  turns stale anyway). `status.json` lists the deciding reasons in
+  `critical_reasons`, a tolerated queue in `warning_reasons`
+  (`replication_queue_nonzero`), and the breach age in
+  `parity_breach_seconds`; the journal gets one line per job that is not ok
+  or has a warning reason. The service exits 2 when a required job is
+  critical. File-age checks on the markers are the operator's alerting hook.
 - `replica` with `status_port`: `rustfs-replication-status.service` serves
   `GET /.well-known/rustfs-replication` on `127.0.0.1:<status_port>` for a
   Nyxmon json-metrics check on the same host. It computes per request, from

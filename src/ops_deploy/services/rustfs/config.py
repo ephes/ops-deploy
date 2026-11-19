@@ -109,6 +109,10 @@ class RustfsMonitorJob(RoleConfig):
     critical_hours: Hours = 6
     # A parity breach longer than this turns the replica's parity marker stale.
     parity_critical_hours: Hours = 1
+    # A breach caused only by a non-empty replication queue (a backup burst)
+    # is ok this long, then a warning; critical at ``parity_critical_hours``
+    # (which wins when it is the shorter of the two).
+    queue_warning_minutes: Annotated[StrictInt, Field(ge=0)] = 30
     parity_tolerance_percent: Annotated[float, Field(ge=0, le=100)] = 0.1
     parity_size_delta_tolerance_bytes: Annotated[StrictInt, Field(ge=0)] = 0
     parity_object_delta_tolerance: Annotated[StrictInt, Field(ge=0)] = 200

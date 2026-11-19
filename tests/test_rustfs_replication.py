@@ -245,6 +245,7 @@ def test_incoherent_replication_configuration_refused(change: dict[str, Any]) ->
         {"heartbeat_key": "/abs"},
         {"heartbeat_key": "a/../b"},
         {"warning_hours": 6, "critical_hours": 2},
+        {"queue_warning_minutes": -1},
     ],
 )
 def test_incoherent_monitor_jobs_refused(job: dict[str, Any]) -> None:
@@ -524,6 +525,14 @@ def heartbeat_object(bucket: str, **values: Any) -> bytes:
 
 
 def test_probe_keeps_minio_status_contract_and_markers(monitor: types.ModuleType, tmp_path: Path) -> None:
+    # obsidian has missed parity for two hours: its queue is no longer a burst.
+    aged = tmp_path / "obsidian/parity.marker"
+    aged.parent.mkdir(parents=True)
+    aged.touch()
+    two_hours_ago = datetime.now(UTC).timestamp() - 2 * 3600
+    import os
+
+    os.utime(aged, (two_hours_ago, two_hours_ago))
     FakeApi.objects = {
         ("backups", "_replication-health/heartbeat.json"): (heartbeat_object("backups"), stamp(timedelta(minutes=3))),
         ("backups", "_replication-health/jobs/obsidian.json"): (
@@ -539,12 +548,89 @@ def test_probe_keeps_minio_status_contract_and_markers(monitor: types.ModuleType
     obsidian = json.loads((tmp_path / "obsidian/status.json").read_text())
     assert obsidian["level"] == "critical"
     assert obsidian["critical_reasons"] == ["replication_queue_nonzero"]
+    assert obsidian["warning_reasons"] == []
+    assert 2 * 3600 - 60 <= obsidian["parity_breach_seconds"] <= 2 * 3600 + 60
+    assert backups["parity_breach_seconds"] == 0
     assert obsidian["lag_basis"] == "status_object_in_heartbeat_bucket"
     lag = (tmp_path / "obsidian/lag.marker").stat().st_mtime
     assert abs(datetime.now(UTC).timestamp() - lag - 3 * 3600) < 60
-    # The parity marker exists from the first run (grace), then follows parity_ok.
-    assert (tmp_path / "obsidian/parity.marker").exists()
+    # The parity marker follows parity_ok: obsidian's stays old, backups' is fresh.
+    assert abs(aged.stat().st_mtime - two_hours_ago) < 2
     assert set(backups) == set(obsidian)
+
+
+def test_probe_tolerates_a_short_replication_queue(
+    monitor: types.ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A backup burst (queue only, counts in tolerance) neither pages nor fails the unit."""
+    FakeApi.objects = {
+        ("backups", "_replication-health/heartbeat.json"): (
+            heartbeat_object("backups", parity_ok=False, queued_count=195),
+            stamp(timedelta(seconds=771)),
+        ),
+        ("backups", "_replication-health/jobs/obsidian.json"): (heartbeat_object("obsidian"), stamp(timedelta())),
+    }
+    # First run: no parity marker yet, so the grace starts now.
+    assert monitor.probe(monitor.library(), "http://100.64.0.10:9020", str(tmp_path), rows()) == 0
+    backups = json.loads((tmp_path / "backups/status.json").read_text())
+    assert backups["level"] == "ok"
+    assert backups["critical_reasons"] == []
+    assert backups["warning_reasons"] == ["replication_queue_nonzero"]
+    assert backups["parity_breach_seconds"] == 0
+    assert "job=backups level=ok" in capsys.readouterr().err
+    assert (tmp_path / "backups/parity.marker").exists()
+
+
+@pytest.mark.parametrize(
+    ("breach_minutes", "lag_hours", "level", "reasons", "warnings"),
+    [
+        (0, 0, "ok", [], ["replication_queue_nonzero"]),
+        (29, 0, "ok", [], ["replication_queue_nonzero"]),
+        (30, 0, "warning", [], ["replication_queue_nonzero"]),
+        (59, 0, "warning", [], ["replication_queue_nonzero"]),
+        (60, 0, "critical", ["replication_queue_nonzero"], []),
+        (10, 7, "critical", ["lag_exceeds_critical_threshold"], ["replication_queue_nonzero"]),
+    ],
+)  # fmt: skip
+def test_queue_only_breach_escalates_with_its_duration(
+    monitor: types.ModuleType,
+    breach_minutes: int,
+    lag_hours: float,
+    level: str,
+    reasons: list[str],
+    warnings: list[str],
+) -> None:
+    payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "queued_count": 195}
+    result = monitor.evaluate(rows()[0], payload, int(lag_hours * 3600), breach_minutes * 60)
+    assert result == (level, reasons, warnings)
+
+
+def test_a_queue_gets_no_grace_without_its_parity_fields(monitor: types.ModuleType, tmp_path: Path) -> None:
+    body = {"bucket": "backups", "parity_ok": False, "queued_count": 5}
+    FakeApi.objects = {
+        ("backups", "_replication-health/heartbeat.json"): (json.dumps(body).encode(), stamp(timedelta())),
+        ("backups", "_replication-health/jobs/obsidian.json"): (heartbeat_object("obsidian"), stamp(timedelta())),
+    }
+    assert monitor.probe(monitor.library(), "http://100.64.0.10:9020", str(tmp_path), rows()) == 2
+    backups = json.loads((tmp_path / "backups/status.json").read_text())
+    assert backups["level"] == "critical"
+    assert backups["critical_reasons"] == ["replication_queue_nonzero"]
+
+
+def test_queue_grace_ends_exactly_at_a_fractional_parity_threshold(monitor: types.ModuleType) -> None:
+    job = {**rows()[0], "parity_critical_hours": 1.0001}
+    payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "queued_count": 1}
+    assert monitor.evaluate(job, payload, 0, 3600)[0] == "warning"
+    assert monitor.evaluate(job, payload, 0, 3601)[0] == "critical"
+
+
+def test_a_queue_with_missing_objects_stays_critical(monitor: types.ModuleType) -> None:
+    payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "queued_count": 3, "object_delta": 300}
+    assert monitor.evaluate(rows()[0], payload, 0, 0) == (
+        "critical",
+        ["replication_queue_nonzero", "object_delta_exceeds_tolerance"],
+        [],
+    )
 
 
 def test_probe_records_a_missing_or_foreign_heartbeat(monitor: types.ModuleType, tmp_path: Path) -> None:
@@ -576,7 +662,7 @@ def test_evaluation_matches_the_minio_probe(
     monitor: types.ModuleType, values: dict[str, Any], lag_hours: float, level: str, reasons: list[str]
 ) -> None:
     payload = {**json.loads(heartbeat_object("backups")), **values}
-    assert monitor.evaluate(rows()[0], payload, int(lag_hours * 3600)) == (level, reasons)
+    assert monitor.evaluate(rows()[0], payload, int(lag_hours * 3600)) == (level, reasons, [])
 
 
 # -- the replica's status endpoint and the retired role's units ---------------------------------------------------

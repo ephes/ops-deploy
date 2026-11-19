@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- RustFS replica monitor: a non-empty replication queue alone (object count
+  and size within tolerance) no longer makes a job critical at once. Its level
+  follows how long parity has been missing (`parity.marker`): `ok` below the
+  new job setting `queue_warning_minutes` (default 30), `warning` from there,
+  `critical` from `parity_critical_hours` (default 1 h). Object or size
+  deltas beyond tolerance, lag beyond `critical_hours`, stale markers and
+  probe errors stay critical at once. `status.json` gains `warning_reasons`
+  and `parity_breach_seconds`, the journal line `warnings=` and
+  `parity_breach_seconds=`. Backup bursts had paged the replica's status
+  endpoint (`ok: false`) for 10-50 minutes several times a day although no
+  data was missing. The next `rustfs_replica` deploy rewrites the script and
+  the jobs file.
+
 - voxhelm: batch URL inputs default to 16 GiB (`voxhelm_batch_max_download_bytes`,
   was 512 MiB, which overrode Voxhelm's own 16 GiB default since 1b39853 and
   refused multi-hour recordings fetched by URL) and the per-try timeout is now

@@ -164,25 +164,54 @@ def touch(path, epoch):
     os.utime(path, (epoch, epoch))
 
 
-def evaluate(job, payload, lag_seconds):
-    """Level and reasons exactly as the MinIO replica probe decides them."""
+def marker_age(path, now):
+    """Seconds since ``path`` was modified; zero when it is absent."""
+    try:
+        return max(0, int(now - path.stat().st_mtime))
+    except FileNotFoundError:
+        return 0
+
+
+def evaluate(job, payload, lag_seconds, breach_seconds=0, complete=True):
+    """Level, critical reasons and warning reasons of one heartbeat.
+
+    Lag levels and the parity checks follow the MinIO replica probe, with one
+    difference: a breach whose only cause is a non-empty replication queue
+    (object count and size within tolerance) is the normal state of a backup
+    burst. It stays ``ok`` until parity has been missing for the job's
+    ``queue_warning_minutes``, is a warning from then on and critical once
+    parity has been missing for ``parity_critical_hours``, the age at which
+    the parity marker turns stale. ``breach_seconds`` is the time since the
+    last run that saw parity. ``complete`` is false when the heartbeat lacked
+    a field that proves the deltas within tolerance; such a breach gets no
+    grace.
+    """
     warning, critical = int(job["warning_hours"] * 3600), int(job["critical_hours"] * 3600)
     level = "critical" if lag_seconds >= critical else "warning" if lag_seconds >= warning else "ok"
     reasons = ["lag_exceeds_critical_threshold"] if lag_seconds >= critical else []
+    warnings = []
     if not payload["parity_ok"]:
-        level = "critical"
-        if payload["queued_count"] != 0:
-            reasons.append("replication_queue_nonzero")
+        parity = []
         if payload["object_delta"] > payload["object_delta_tolerance"]:
-            reasons.append("object_delta_exceeds_tolerance")
+            parity.append("object_delta_exceeds_tolerance")
         size_ok = payload["size_diff_percent"] <= payload["parity_tolerance_percent"]
         if payload["parity_size_delta_tolerance_bytes"] > 0:
             size_ok = size_ok or payload["size_diff_bytes"] <= payload["parity_size_delta_tolerance_bytes"]
         if not size_ok:
-            reasons.append("size_delta_exceeds_tolerance")
-        if not reasons:
-            reasons.append("parity_not_ok")
-    return level, reasons
+            parity.append("size_delta_exceeds_tolerance")
+        queued = payload["queued_count"] != 0
+        # The same threshold as the status endpoint's parity_marker_stale.
+        if queued and not parity and complete and breach_seconds < job["parity_critical_hours"] * 3600:
+            warnings.append("replication_queue_nonzero")
+            # A jobs file written before queue_warning_minutes existed: its default.
+            if breach_seconds >= int(job.get("queue_warning_minutes", 30) * 60) and level == "ok":
+                level = "warning"
+        else:
+            level = "critical"
+            reasons.extend((["replication_queue_nonzero"] if queued else []) + parity)
+            if not reasons:
+                reasons.append("parity_not_ok")
+    return level, reasons, warnings
 
 
 NUMBERS = {
@@ -191,6 +220,11 @@ NUMBERS = {
     "destination_size_bytes": int, "size_diff_percent": float, "parity_tolerance_percent": float,
     "parity_size_delta_tolerance_bytes": int,
 }  # fmt: skip
+# The heartbeat fields that show a queue-only breach; without them no grace.
+PARITY_FIELDS = (
+    "queued_count", "object_delta", "object_delta_tolerance", "size_diff_bytes", "size_diff_percent",
+    "parity_tolerance_percent", "parity_size_delta_tolerance_bytes",
+)  # fmt: skip
 
 
 def probe(iam, local_endpoint, state_root, jobs):
@@ -215,7 +249,9 @@ def probe(iam, local_endpoint, state_root, jobs):
             **{key: None for key in NUMBERS},
             "lag_seconds": None,
             "parity_ok": None,
+            "parity_breach_seconds": None,
             "critical_reasons": [],
+            "warning_reasons": [],
             "level": "critical",
             "error": None,
         }
@@ -229,15 +265,20 @@ def probe(iam, local_endpoint, state_root, jobs):
             if body.get("bucket") != job["bucket"]:
                 raise iam.Refused("heartbeat object describes another bucket")
             payload = {key: cast(body.get(key, 0)) for key, cast in NUMBERS.items()}
+            complete = all(key in body for key in PARITY_FIELDS)
             payload["parity_ok"] = body.get("parity_ok") is True
             heartbeat_epoch = int(modified.timestamp())
             now = int(datetime.now(timezone.utc).timestamp())
             lag_seconds = now - heartbeat_epoch
-            level, reasons = evaluate(job, payload, lag_seconds)
+            # Time since the last run that saw parity; the marker exists from
+            # the first run on (below), so a new job starts at zero.
+            breach_seconds = 0 if payload["parity_ok"] else marker_age(parity_marker, now)
+            level, reasons, warnings = evaluate(job, payload, lag_seconds, breach_seconds, complete)
             touch(lag_marker, heartbeat_epoch)
             if payload["parity_ok"]:
                 touch(parity_marker, now)
-            status.update(payload, lag_seconds=lag_seconds, critical_reasons=reasons, level=level)
+            status.update(payload, lag_seconds=lag_seconds, parity_breach_seconds=breach_seconds,
+                          critical_reasons=reasons, warning_reasons=warnings, level=level)  # fmt: skip
         except Exception as error:  # noqa: BLE001 - the status file records why this run failed
             status.update(parity_ok=False, critical_reasons=["probe_error"], error=safe(iam, error), level="critical")
         # A new job (or a wiped state dir) starts its parity grace at the first
@@ -246,12 +287,14 @@ def probe(iam, local_endpoint, state_root, jobs):
             parity_marker.parent.mkdir(parents=True, exist_ok=True)
             parity_marker.touch()
         atomic_write_json(status_file, status)
-        if status["level"] != "ok":
+        if status["level"] != "ok" or status["warning_reasons"]:
             print(
                 "job={job_name} level={level} required={required} lag_seconds={lag_seconds} "
                 "queued_count={queued_count} object_delta={object_delta}/{object_delta_tolerance} "
-                "size_diff_bytes={size_diff_bytes} size_diff_percent={size_diff_percent} reasons={reasons} "
+                "size_diff_bytes={size_diff_bytes} size_diff_percent={size_diff_percent} "
+                "parity_breach_seconds={parity_breach_seconds} reasons={reasons} warnings={warnings} "
                 "error={error}".format(**{**status, "reasons": ",".join(status["critical_reasons"]) or "-",
+                                         "warnings": ",".join(status["warning_reasons"]) or "-",
                                          "error": status["error"] or "-"}),
                 file=sys.stderr,
             )  # fmt: skip
