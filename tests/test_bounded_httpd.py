@@ -80,6 +80,22 @@ def _json_args(port: int, tmp: Path) -> list[str]:
     ]
 
 
+def _obs_status_args(port: int, tmp: Path) -> list[str]:
+    config = {
+        "state_dir": str(tmp),
+        "loki_url": "http://127.0.0.1:9",
+        "loki_exclude_lines": [],
+        "status_listen": f"127.0.0.1:{port}",
+        "loop_window_seconds": 3600,
+        "loop_events": 5,
+        "cache_seconds": 60,
+    }
+    (tmp / "obs-config.json").write_text(json.dumps(config))
+    # The endpoint imports obs_pack.py from its own directory, where the deploy puts both.
+    (tmp / "obs_pack.py").write_text((SRC / "services/obs_daily/files/obs_pack.py").read_text())
+    return ["--config", str(tmp / "obs-config.json")]
+
+
 @dataclass(frozen=True)
 class Server:
     path: str
@@ -118,6 +134,7 @@ SERVERS: dict[str, Server] = {
         lambda port: {"LOGYARD_HEALTH_BIND": "127.0.0.1", "LOGYARD_HEALTH_PORT": str(port)},
     ),
     "static_site": Server("services/static_site/templates/static-site-httpd.py.j2", lambda port, tmp: []),
+    "obs_daily_status": Server("services/obs_daily/files/obs_status.py", lambda port, tmp: _obs_status_args(port, tmp)),
 }
 
 

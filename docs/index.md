@@ -48,6 +48,7 @@ src/ops_deploy/
   services/gotosocial/ GoToSocial from a pinned release (port of the gotosocial_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
   services/nfs_tls_status/ NFS-over-TLS units, mounts and certificate expiry as a JSON endpoint and Nyxmon check
+  services/obs_daily/  observability routine: daily evidence pack for an LLM triage, hand-over point, Nyxmon status endpoint
   services/unifi/      UniFi configuration convergence on an existing installation (no bootstrap or upgrades)
   services/metube/    Native Git + staged Angular + uv MeTube; backup, restore and confirmed removal
   services/navidrome/ Confirmed original Navidrome removal, backup and guarded recovery restore

@@ -83,6 +83,7 @@ nav:
       - gotosocial: services/gotosocial.md
       - thermal_monitoring: services/thermal_monitoring.md
       - nfs_tls_status: services/nfs_tls_status.md
+      - obs_daily: services/obs_daily.md
       - fractal_monitoring: services/fractal_monitoring.md
       - metube (native): services/metube.md
       - Media removal: services/media-removal.md

@@ -196,6 +196,15 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
     # The unchanged backup attestation program is uploaded with files.put,
     # never interpolated into shell source; its actual file CLI is tested below.
     uploaded_backup = {"infra/files/zfs_snapshot_file_attestation.py"}
+    # The observability evidence pack, status endpoint and hand-over point are
+    # uploaded with files.put and run from the file (their regexes and LogQL
+    # need backslashes); the token helper,
+    # which does travel as -c source, is in the check.
+    uploaded_obs_daily = {
+        "services/obs_daily/files/obs_pack.py",
+        "services/obs_daily/files/obs_status.py",
+        "services/obs_daily/files/obs_ctl.py",
+    }
     # Certbot concatenates these exact original sources and its host driver,
     # then base64-encodes the whole program. Exercise that actual composed wire
     # with protected stdin through both real shells below.
@@ -225,6 +234,7 @@ def test_scripts_shipped_inline_are_fish_safe() -> None:
         | encoded_minecraft
         | encoded_unifi
         | uploaded_backup
+        | uploaded_obs_daily
         | encoded_certbot
         | encoded_wagtail
         and fish_unsafe(f"sh -c {shlex.quote(path.read_text())}")

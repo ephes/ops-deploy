@@ -171,6 +171,48 @@
   change; each service's next deploy rewrites its unit and restarts it once.
 - `docs/changelog.md`: removed an orphaned merge marker line.
 
+- New `services.obs_daily`: the observability routine on the host that runs
+  Loki, InfluxDB and Nyxmon. Its daily job looks for problems nobody knows
+  about yet: an LLM elsewhere reviews the last 24 hours open-endedly, so the
+  module holds no list of known problems and filters nothing.
+  `obs-daily-pack.timer` (06:30, as the Nyxmon user) builds a deterministic
+  evidence pack that maps the day for that review: a raw sample of what every
+  service of every log host said, at any level (newest 100 lines per
+  6-hour window, grouped by template with counts and one raw example per
+  group, bounded by `sample_budget_bytes`); problem-like log lines grouped by
+  template with raw examples against a stored 30-day baseline of counts (new
+  and surging templates; the first run fills the baseline from seven earlier
+  days); lines per host and service against the 7-day median (changed,
+  appeared, vanished, hosts silent for an hour); systemd restarts per unit;
+  gauge series whose last-day mean or maximum deviates from their own 14
+  days (robust z-score), series that fell silent or appeared; filesystems
+  nearly full or filling within 30 days; certificates of every HTTPS host
+  Nyxmon probes (plus `tls_hosts`) expiring within 21 days; and Nyxmon checks
+  currently not ok. Real host, service and unit names, raw log text included
+  (owner decision 2026-11-19, recorded with its residual risk in the service
+  doc). Loki's own container logs are filtered out of every log scan (they
+  come back through journald as errors). The triage fetches the pack, drills
+  down and hands its result back over root SSH through `obs_ctl.py`
+  (`pack`, `query`, `deliver`, `launchd`), which does every file access in
+  the state directory as the Nyxmon user: `query` runs up to ten bounded,
+  read-only queries as the Nyxmon user: LogQL, or InfluxDB series picked by a
+  tag selector from which the script builds the Flux itself (no free Flux;
+  31-day range, 500 lines or points, abandoned after 65 s, 24 KiB per result);
+  `deliver` sends the digest as
+  one Telegram message through Nyxmon's `AsyncTelegramNotifier` as the Nyxmon
+  user (the sender reads Nyxmon's environment file itself, never through
+  systemd as root), records it in `triage.json` and prints `delivered` only
+  once Telegram acknowledged it (no queue on the host: the triage keeps an
+  undelivered result and sends it again).
+  `obs-daily-status.service` serves `GET /.well-known/obs-daily` on
+  `127.0.0.1:9123` for Nyxmon: age of the last pack and the last delivered
+  triage, failed pack sections, systemd units in a restart or failure loop on
+  any log-shipping host (PID 1's own lines in Loki, last hour, refreshed in
+  the background), and the age and crash loops of the last launchd report.
+  The deploy provisions a read-only InfluxDB token on the host, checks that
+  Nyxmon's notifier loads and that the endpoint answers; it never builds a
+  pack or sends a message itself (`docs/services/obs_daily.md`).
+
 - software-live 0.1.3 (`rust/software-live`, `software-live-apt` follows):
   a newer Traefik patch inside the patch window of ops-control's Traefik
   patch policy is a notice, not a warning. New optional policy keys
