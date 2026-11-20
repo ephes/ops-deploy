@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- obs_daily: `non_systemd_hosts` names hosts that ship logs but run no
+  systemd (the macOS Studio, whose log files Logyard ships since
+  2026-11-19). The status endpoint's `unit_loops` neither queries them for
+  restart loops nor lists them in `no_pid1_hosts`; it reports the active
+  ones under `non_systemd_hosts`. Before, the Studio kept `unit_loops.ok`
+  false. Any other host without PID 1's lines is still a coverage gap.
 - obs_daily: `obs_ctl.py timemachine` keeps the Studio's Time Machine probe
   report (agent-stuff `tools/tm-guard`: whether `tmutil status` answered,
   phase, progress, seconds a running backup went without progress, the

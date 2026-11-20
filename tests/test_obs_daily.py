@@ -88,6 +88,7 @@ def test_defaults() -> None:
     ("changes", "message"),
     [
         ({"sleeping_hosts": ["a", "a"]}, "distinct"),
+        ({"non_systemd_hosts": ["studio", "studio"]}, "distinct"),
         ({"tls_hosts": ["bad host"]}, "tls_hosts"),
         ({"status_listen": "0.0.0.0:9123"}, "status_listen"),
         ({"loki_url": "http://loki.example:3100"}, "loki_url"),
@@ -1197,6 +1198,34 @@ def test_a_host_without_pid1_lines_is_not_covered(tmp_path: Path) -> None:
     loki.restarts = {"web": []}
     result = status_mod.unit_loops(status_config(tmp_path), NOW, loki)
     assert result["no_pid1_hosts"] == ["web"]
+
+
+def test_a_host_without_systemd_is_neither_a_gap_nor_queried(tmp_path: Path) -> None:
+    class InitOnLinux(Loki):
+        def __call__(self, path: str, params: dict[str, str]) -> Any:
+            query = params.get("query", "")
+            if path == "query" and 'service="init"' in query and "sum by (host)" in query:
+                return {"result": [{"metric": {"host": "web"}, "value": [0, "5"]}]}
+            return super().__call__(path, params)
+
+    loki = InitOnLinux()
+    loki.restarts = {"web": [], "studio": [], "db": []}
+    config = status_config(tmp_path)
+    config["non_systemd_hosts"] = ["studio", "retired"]
+    result = status_mod.unit_loops(config, NOW, loki)
+    # db is a systemd host without PID 1's lines: still a gap; studio runs launchd.
+    assert result["no_pid1_hosts"] == ["db"]
+    assert result["non_systemd_hosts"] == ["studio"]
+    assert result["hosts"] == 3
+    ranged = [p["query"] for path, p in loki.calls if path == "query_range"]
+    assert not any('host="studio"' in q for q in ranged)
+    assert any('host="db"' in q for q in ranged)
+
+    status = status_mod.Status(config)
+    status.loki = InitOnLinux()
+    status.loki.restarts = {"web": [], "studio": []}
+    status.refresh(NOW)
+    assert status.document(NOW)["unit_loops"]["ok"] is True
 
 
 def test_held_launchd_loops_expire_in_the_endpoint_too(tmp_path: Path) -> None:

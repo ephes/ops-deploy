@@ -369,7 +369,11 @@ older than three refresh rounds, when a host's query failed
 logged in the window, when
 a host shipped no PID 1 line (`service="init"` with `pid` 1 and unit
 `init.scope`) in a day (`no_pid1_hosts`:
-its loops would go unseen), or
+its loops would go unseen; hosts in `non_systemd_hosts` run no systemd,
+such as the macOS Studio whose launchd jobs have their own check, and are
+neither queried nor counted here; the section lists the active ones under
+`non_systemd_hosts`, and only a configured name is exempt, so a Linux host
+that stops shipping PID 1's lines stays a gap), or
 when a host of `log_hosts`, or one that logged in the last day, did not
 (`missing_hosts`: it stopped shipping logs or is down; a configured host
 stays missing until it is removed from `log_hosts`; `sleeping_hosts`

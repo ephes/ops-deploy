@@ -19,7 +19,10 @@
   is ``ok: false`` when the last query failed, the result is stale, no host
   logged in the window, a host that logged in the last day did not
   or a configured ``log_hosts`` host did not (``missing_hosts``;
-  ``sleeping_hosts`` excepted), or a host hit the line
+  ``sleeping_hosts`` excepted), a host that logged in the window has none of
+  PID 1's lines in the last day (``no_pid1_hosts``; ``non_systemd_hosts``
+  such as the Studio run no systemd and are neither queried nor expected
+  to, they are listed in ``non_systemd_hosts``), or a host hit the line
   limit. Host activity comes from a bounded ``count_over_time`` query;
 - ``launchd``: age and crash loops of the last launchd report from the
   Studio (``launchd.json``, written by ``obs_ctl.py launchd``);
@@ -228,10 +231,15 @@ def unit_loops(config: dict[str, Any], now: float, loki: Any) -> dict[str, Any]:
     pid1 = '{service="init"}'
     parsed = ' | json pid="pid", unit="unit" | __error__ = "" | pid="1" | unit="init.scope"'
     with_pid1 = set(active_hosts(loki, exclude + parsed, 86400, now, selector=pid1))
-    no_pid1 = sorted(set(hosts) - with_pid1)
+    # Hosts without systemd (``non_systemd_hosts``, the macOS Studio) have no PID 1 lines to miss
+    # and no units to loop; launchd has its own check. Only a configured name is skipped, so a
+    # Linux host that stops shipping PID 1's lines stays a gap.
+    non_systemd = set(config.get("non_systemd_hosts", []))
+    systemd_hosts = sorted(str(h) for h in hosts if h not in non_systemd)
+    no_pid1 = sorted(set(systemd_hosts) - with_pid1)
     counts: Counter[tuple[str, str, str]] = Counter()
     truncated, failed = [], []
-    for host in sorted(str(h) for h in hosts):
+    for host in systemd_hosts:
         params = {
             "query": pack.restart_selector(host, exclude),
             "start": start,
@@ -271,6 +279,7 @@ def unit_loops(config: dict[str, Any], now: float, loki: Any) -> dict[str, Any]:
         "hosts": len(hosts),
         "missing_hosts": missing,
         "no_pid1_hosts": no_pid1,
+        "non_systemd_hosts": sorted(set(hosts) & non_systemd),
         "count": len(loops),
         "loops": loops[:20],
         "truncated_hosts": truncated,

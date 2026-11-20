@@ -90,7 +90,10 @@ class ObsDailyConfig(BaseServiceConfig):
     template baseline and the status files (``user:state_group``, setgid).
     ``sleeping_hosts`` pause their logs and metrics by design (atlas).
     ``log_hosts`` must ship logs every hour; the status endpoint reports one
-    that does not until it is removed here.
+    that does not until it is removed here. ``non_systemd_hosts`` ship logs
+    but run no systemd (the Studio, macOS: its launchd has its own check);
+    the restart-loop check neither queries them nor expects PID 1's lines
+    from them. Every other host without those lines is a coverage gap.
     ``loki_exclude_lines`` drop Loki's own logs, which come back through
     journald as errors. ``tls_hosts`` are ``host[:port]`` whose certificate
     the pack checks. ``sample_lines_per_window`` lines per service and
@@ -115,6 +118,7 @@ class ObsDailyConfig(BaseServiceConfig):
     status_listen: Listen = "127.0.0.1:9123"
     sleeping_hosts: tuple[Name, ...] = ()
     log_hosts: tuple[Name, ...] = ()
+    non_systemd_hosts: tuple[Name, ...] = ()
     tls_hosts: tuple[TlsHost, ...] = ()
     loki_exclude_lines: tuple[LineFilter, ...] = ('"syslog_identifier":"logyard-loki"',)
     caps: Caps = Caps()
@@ -133,7 +137,7 @@ class ObsDailyConfig(BaseServiceConfig):
 
     @model_validator(mode="after")
     def _distinct(self) -> ObsDailyConfig:
-        for name in ("sleeping_hosts", "tls_hosts", "log_hosts"):
+        for name in ("sleeping_hosts", "tls_hosts", "log_hosts", "non_systemd_hosts"):
             values = getattr(self, name)
             if len(set(values)) != len(values):
                 raise ValueError(f"{name} must be distinct")
@@ -209,6 +213,7 @@ def render_config(cfg: ObsDailyConfig) -> str:
         "nyxmon_db": str(cfg.nyxmon_db),
         "sleeping_hosts": list(cfg.sleeping_hosts),
         "log_hosts": list(cfg.log_hosts),
+        "non_systemd_hosts": list(cfg.non_systemd_hosts),
         "tls_hosts": list(cfg.tls_hosts),
         "loki_exclude_lines": list(cfg.loki_exclude_lines),
         "caps": cfg.caps.model_dump(mode="json"),
