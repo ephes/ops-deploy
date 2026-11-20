@@ -56,6 +56,7 @@ def load(name: str) -> ModuleType:
 def _ctl_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ctl, "LOCK", str(tmp_path / "ctl.lock"))
     monkeypatch.setattr(ctl, "LAUNCHD_LOCK", str(tmp_path / "launchd.lock"))
+    monkeypatch.setattr(ctl, "TIMEMACHINE_LOCK", str(tmp_path / "timemachine.lock"))
 
 
 pack = load("obs_pack")
@@ -2124,3 +2125,229 @@ def test_stdout_carries_only_the_receipt(
     result = {"date": "2026-11-18", "status": "ok", "ran_at": NOW, "message": "neu"}
     assert ctl.deliver(config, json.dumps(result), NOW) == 1
     assert capsys.readouterr().out == ""
+
+
+# -- Time Machine probe report ---------------------------------------------------------------------
+
+
+def tm_report(**changes: Any) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "host": "studio",
+        "tmutil": "ok",
+        "tmutil_detail": "",
+        "running": True,
+        "stopping": False,
+        "phase": "ThinningPostBackup",
+        "percent": 0.25,
+        "bytes": 1000,
+        "files": 10,
+        "total_bytes": 4000,
+        "total_files": 40,
+        "auto_backup": False,
+        "stalled_seconds": 600,
+        "band_check": "ok",
+        "band_detail": "",
+        "band_newest_epoch": int(NOW) - 900,
+        "cross_check_ok": True,
+        "probe_epoch": int(NOW) - 5,
+    }
+    report.update(changes)
+    return report
+
+
+def test_timemachine_reports_reach_the_endpoint(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = ctl_config(tmp_path)
+    config = json.loads(path.read_text())
+
+    assert ctl.timemachine_report(config, json.dumps(tm_report()), NOW) == 0
+
+    kept = json.loads((tmp_path / "timemachine.json").read_text())
+    assert kept == {**tm_report(), "epoch": int(NOW)}
+    status = status_mod.Status(status_config(tmp_path))
+    section = status.document(NOW + 60)["timemachine"]
+    assert section["age_seconds"] == 60
+    assert section["tmutil_ok"] is True
+    assert section["stalled_seconds"] == 600
+    assert section["cross_check_ok"] is True
+    assert section["band_age_seconds"] == 960
+    assert section["state"] == "running ThinningPostBackup"
+    assert (section["phase"], section["bytes"], section["auto_backup"]) == ("ThinningPostBackup", 1000, False)
+
+
+def test_timemachine_main_reads_the_report_from_stdin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    path = ctl_config(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(tm_report(running=False, phase=""))))
+    assert ctl.main(["--config", str(path), "timemachine"]) == 0
+    assert json.loads((tmp_path / "timemachine.json").read_text())["running"] is False
+
+
+@pytest.mark.parametrize(
+    ("changes", "state", "tmutil_ok"),
+    [
+        ({"running": False, "phase": "", "auto_backup": False, "stalled_seconds": 0}, "disabled", True),
+        ({"running": False, "phase": "", "auto_backup": True, "stalled_seconds": 0}, "idle", True),
+        ({"running": False, "phase": "", "auto_backup": None, "stalled_seconds": 0}, "idle", True),
+        ({"tmutil": "timeout", "running": None}, "tmutil timeout", False),
+        ({"tmutil": "hung", "running": None}, "tmutil hung", False),
+        ({"tmutil": "error", "running": None}, "tmutil error", False),
+    ],
+)
+def test_timemachine_states(tmp_path: Path, changes: dict[str, Any], state: str, tmutil_ok: bool) -> None:
+    config = json.loads(ctl_config(tmp_path).read_text())
+    assert ctl.timemachine_report(config, json.dumps(tm_report(**changes)), NOW) == 0
+    section = status_mod.timemachine_section(json.loads((tmp_path / "timemachine.json").read_text()), NOW)
+    assert (section["state"], section["tmutil_ok"]) == (state, tmutil_ok)
+
+
+def test_a_missing_timemachine_report_fails_every_rule() -> None:
+    section = status_mod.timemachine_section({}, NOW)
+    assert section == {"age_seconds": status_mod.NEVER, "state": "no report"}
+
+
+def test_a_failed_band_read_while_running_fails_the_cross_check(tmp_path: Path) -> None:
+    config = json.loads(ctl_config(tmp_path).read_text())
+    report = tm_report(band_check="failed", band_detail="ssh exit 255", band_newest_epoch=None, cross_check_ok=False)
+    assert ctl.timemachine_report(config, json.dumps(report), NOW) == 0
+    section = status_mod.timemachine_section(json.loads((tmp_path / "timemachine.json").read_text()), NOW)
+    assert (section["cross_check_ok"], section["band_age_seconds"], section["band_detail"]) == (
+        False,
+        None,
+        "ssh exit 255",
+    )
+
+
+def test_timemachine_texts_are_cut_to_printable_ascii(tmp_path: Path) -> None:
+    config = json.loads(ctl_config(tmp_path).read_text())
+    report = tm_report(tmutil="error", running=None, tmutil_detail="bad\x1b[31m\u00e4" + "x" * 300)
+    assert ctl.timemachine_report(config, json.dumps(report), NOW) == 0
+    detail = json.loads((tmp_path / "timemachine.json").read_text())["tmutil_detail"]
+    assert detail.startswith("bad?[31m?x")
+    assert len(detail) == 200
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"host": "bad host"},
+        {"tmutil": "maybe"},
+        {"band_check": "unknown"},
+        {"running": None},
+        {"running": "yes"},
+        {"percent": float("inf")},
+        {"percent": 101},
+        {"percent": True},
+        {"bytes": -1},
+        {"bytes": "9"},
+        {"bytes": 10**16},
+        {"stalled_seconds": None},
+        {"stalled_seconds": True},
+        {"cross_check_ok": None},
+        {"probe_epoch": None},
+        {"phase": "Copying; rm -rf"},
+        {"phase": "x" * 61},
+        {"phase": 17},
+        {"host": None},
+        {"tmutil_detail": 5},
+        {"band_detail": ["x"]},
+        {"percent": 10**400},
+        {"percent": -(10**400)},
+    ],
+)
+def test_malformed_timemachine_reports_are_refused(tmp_path: Path, changes: dict[str, Any]) -> None:
+    config = json.loads(ctl_config(tmp_path).read_text())
+    # json.dumps writes inf as Infinity, which json.loads reads back.
+    assert ctl.timemachine_report(config, json.dumps(tm_report(**changes)), NOW) == 2
+    assert not (tmp_path / "timemachine.json").exists()
+
+
+def test_timemachine_refuses_non_objects(tmp_path: Path) -> None:
+    config = json.loads(ctl_config(tmp_path).read_text())
+    for raw in ("[]", "null", "not json"):
+        assert ctl.timemachine_report(config, raw, NOW) == 2
+
+
+def test_a_held_timemachine_lock_keeps_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import fcntl
+
+    config = json.loads(ctl_config(tmp_path).read_text())
+    monkeypatch.setattr(ctl, "LOCK_WAIT", 0)
+    with open(ctl.TIMEMACHINE_LOCK, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        assert ctl.timemachine_report(config, json.dumps(tm_report()), NOW) == 3
+    assert not (tmp_path / "timemachine.json").exists()
+
+
+def test_a_broken_timemachine_file_never_breaks_the_endpoint(tmp_path: Path) -> None:
+    status = status_mod.Status(status_config(tmp_path))
+    raw = '{"epoch": EPOCH, "stalled_seconds": 1e400, "band_newest_epoch": 1e400, "percent": 1e400, "phase": {"a": 1}}'
+    for epoch in ("1e400", "true", '"x"', "-5", str(10**12)):
+        (tmp_path / "timemachine.json").write_text(raw.replace("EPOCH", epoch))
+        document = status.document(NOW)
+        assert document["timemachine"] == {"age_seconds": status_mod.NEVER, "state": "no report"}
+        assert "launchd" in document
+    (tmp_path / "timemachine.json").write_text(raw.replace("EPOCH", str(int(NOW))))
+    section = status.document(NOW)["timemachine"]
+    assert (section["stalled_seconds"], section["band_age_seconds"], section["age_seconds"]) == (
+        status_mod.NEVER,
+        None,
+        0,
+    )
+    assert (section["percent"], section["phase"]) == (None, None)
+    # The document with the 1e400 report is strict JSON (no Infinity).
+    json.loads(json.dumps(status.document(NOW)), parse_constant=lambda c: pytest.fail(f"non-standard JSON {c}"))
+    (tmp_path / "timemachine.json").write_text(json.dumps({"epoch": int(NOW), "tmutil": {"x": "y" * 4000}}))
+    section = status.document(NOW)["timemachine"]
+    assert (section["state"], section["tmutil"], section["tmutil_ok"]) == ("tmutil unknown", None, False)
+    (tmp_path / "timemachine.json").write_text("[" * 100_000 + "]" * 100_000)
+    assert status.document(NOW)["timemachine"]["state"] == "no report"
+
+
+def test_a_stuck_timemachine_writer_does_not_hold_the_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import time as time_mod
+
+    config = json.loads(ctl_config(tmp_path).read_text())
+    monkeypatch.setattr(ctl, "READ_TIMEOUT", 0.2)
+    real_waitpid = os.waitpid
+    blocking: list[int] = []
+
+    def waitpid(pid: int, options: int) -> tuple[int, int]:
+        if options != os.WNOHANG:
+            blocking.append(pid)  # would hang on a writer stuck in uninterruptible I/O
+        return real_waitpid(pid, options)
+
+    monkeypatch.setattr(ctl, "_write_json", lambda path, data: time_mod.sleep(30))
+    monkeypatch.setattr(ctl.os, "waitpid", waitpid)
+    started = time_mod.monotonic()
+    assert ctl.timemachine_report(config, json.dumps(tm_report()), NOW) == 1
+    assert time_mod.monotonic() - started < 10
+    assert blocking == []
+
+
+def test_an_abandoned_timemachine_writer_lets_go_of_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A writer that survives SIGKILL (simulated: the kill is not sent) must not keep the lock or the streams."""
+
+    import fcntl
+    import signal as signal_mod
+    import time as time_mod
+
+    config = json.loads(ctl_config(tmp_path).read_text())
+    monkeypatch.setattr(ctl, "READ_TIMEOUT", 0.2)
+    survivors: list[int] = []
+
+    def kill(pid: int, sig: int) -> None:
+        survivors.append(pid)  # left alive: as a child stuck in uninterruptible I/O
+
+    monkeypatch.setattr(ctl, "_write_json", lambda path, data: time_mod.sleep(30))
+    monkeypatch.setattr(ctl.os, "kill", kill)
+    try:
+        assert ctl.timemachine_report(config, json.dumps(tm_report()), NOW) == 1
+        assert survivors
+        with open(ctl.TIMEMACHINE_LOCK, "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if the child held it
+    finally:
+        monkeypatch.undo()
+        for pid in survivors:  # the children this test let live
+            os.kill(pid, signal_mod.SIGKILL)
+            os.waitpid(pid, 0)

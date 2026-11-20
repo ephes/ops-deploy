@@ -38,6 +38,12 @@ with the message on standard input.
   report as JSON on standard input (``host``, ``checked``, ``loops``) and keeps
   it as ``launchd.json`` with the time it arrived; the status endpoint reports
   its age and loops to Nyxmon.
+- ``obs_ctl.py --config FILE timemachine`` reads that machine's Time Machine
+  probe report as JSON on standard input (agent-stuff ``tools/tm-guard``:
+  whether ``tmutil status`` answered, phase, progress, seconds without
+  progress, the cross-check against the bundle's newest band write on the
+  backup server) and keeps the validated fields as ``timemachine.json`` with
+  the time it arrived; the status endpoint reports them to Nyxmon.
 """
 
 from __future__ import annotations
@@ -76,6 +82,9 @@ MAX_STORED_LOOPS = 500  # each with its own last sighting; the endpoint shows at
 MAX_STATE = 1024 * 1024  # as obs_status.py reads it
 LOCK = "/run/obs-daily-ctl.lock"
 LAUNCHD_LOCK = "/run/obs-daily-launchd.lock"
+TIMEMACHINE_LOCK = "/run/obs-daily-timemachine.lock"
+TM_STATES = ("ok", "timeout", "hung", "error")
+TM_BAND_CHECKS = ("ok", "failed", "skipped")
 SENDER_TIMEOUT = 180
 STATUSES = ("ok", "skipped", "failed")
 # Drill-down queries (``query``).
@@ -178,8 +187,13 @@ def read_as(user: str, path: str) -> dict[str, Any]:
     return data
 
 
-def wait_child(pid: int, seconds: float) -> int | None:
-    """Exit code of child ``pid``, or None after killing it once ``seconds`` passed (it is ours)."""
+def wait_child(pid: int, seconds: float, grace: float | None = None) -> int | None:
+    """Exit code of child ``pid``, or None after killing it once ``seconds`` passed (it is ours).
+
+    With ``grace``, the killed child is waited for at most that long and then
+    left behind (a child stuck in uninterruptible I/O does not die at once),
+    so the caller and any lock it holds are never held up.
+    """
 
     deadline = time.monotonic() + seconds
     while True:
@@ -188,18 +202,33 @@ def wait_child(pid: int, seconds: float) -> int | None:
             return os.waitstatus_to_exitcode(status)
         if time.monotonic() > deadline:
             os.kill(pid, signal.SIGKILL)
-            os.waitpid(pid, 0)
+            if grace is None:
+                os.waitpid(pid, 0)
+                return None
+            until = time.monotonic() + grace
+            while time.monotonic() < until and not os.waitpid(pid, os.WNOHANG)[0]:
+                time.sleep(0.05)
             return None
         time.sleep(0.05)
 
 
-def write_as(user: str, path: str, data: Any) -> None:
-    """``_write_json`` in a child that dropped to ``user`` (creating the parent directory); raises on failure."""
+def write_as(user: str, path: str, data: Any, grace: float | None = None) -> None:
+    """``_write_json`` in a child that dropped to ``user`` (creating the parent directory); raises on failure.
+
+    With ``grace`` the child may be left behind (``wait_child``), so it first
+    lets go of every inherited descriptor: the caller's lock and the SSH
+    session's streams must not stay open in a child that outlives the call.
+    """
 
     pid = os.fork()
     if pid == 0:
         code = 0
         try:
+            if grace is not None:
+                null = os.open(os.devnull, os.O_RDWR)
+                for fd in (0, 1, 2):
+                    os.dup2(null, fd)
+                os.closerange(3, os.sysconf("SC_OPEN_MAX"))
             drop_privileges(user)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             _write_json(path, data)
@@ -207,7 +236,7 @@ def write_as(user: str, path: str, data: Any) -> None:
             code = 1
         finally:
             os._exit(code)
-    code = wait_child(pid, READ_TIMEOUT)
+    code = wait_child(pid, READ_TIMEOUT, grace)
     if code != 0:
         why = f"no result within {READ_TIMEOUT} s" if code is None else "failed"
         raise Unreadable(f"writing {os.path.basename(path)} as {user} {why}")
@@ -470,6 +499,110 @@ def _launchd_merge(
         "epoch": int(now),
     }  # fmt: skip
     _write_json(path, report)
+    return 0
+
+
+def _tm_text(data: dict[str, Any], key: str, limit: int) -> str:
+    """A string or null; printable ASCII only, at most ``limit`` characters (the endpoint passes it on as is)."""
+
+    value = data.get(key)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string or null")
+    return "".join(c if " " <= c <= "~" else "?" for c in value)[:limit]
+
+
+def _tm_int(data: dict[str, Any], key: str, *, nullable: bool = True, top: int = 10**16) -> int | None:
+    value = data.get(key)
+    if value is None and nullable:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < top:
+        raise ValueError(f"{key} must be an integer from 0 to {top - 1}" + (" or null" if nullable else ""))
+    return value
+
+
+def _tm_bool(data: dict[str, Any], key: str, *, nullable: bool = True) -> bool | None:
+    value = data.get(key)
+    if value is None and nullable:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be true or false" + (" or null" if nullable else ""))
+    return value
+
+
+def parse_timemachine(raw: str) -> dict[str, Any]:
+    """The validated fields of one Time Machine probe report; ``ValueError`` when it is unusable."""
+
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("needs an object")
+    host = data.get("host")
+    if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,62}", host):
+        raise ValueError("bad host")
+    tmutil = data.get("tmutil")
+    if tmutil not in TM_STATES:
+        raise ValueError(f"tmutil must be one of {', '.join(TM_STATES)}")
+    band_check = data.get("band_check")
+    if band_check not in TM_BAND_CHECKS:
+        raise ValueError(f"band_check must be one of {', '.join(TM_BAND_CHECKS)}")
+    percent = data.get("percent")
+    # Range first: a huge JSON integer must not reach float() or math.isfinite (OverflowError).
+    if percent is not None and (
+        isinstance(percent, bool) or not isinstance(percent, int | float) or not -1 <= percent <= 100
+        or (isinstance(percent, float) and not math.isfinite(percent))
+    ):  # fmt: skip
+        raise ValueError("percent must be a number from -1 to 100 or null")
+    phase = data.get("phase")
+    if phase is None:
+        phase = ""
+    if not isinstance(phase, str) or not re.fullmatch(r"[A-Za-z0-9_. -]{0,60}", phase):
+        raise ValueError("bad phase")
+    running = _tm_bool(data, "running")
+    if tmutil == "ok" and running is None:
+        raise ValueError("a report whose tmutil answered needs running")
+    return {
+        "host": host,
+        "tmutil": tmutil,
+        "tmutil_detail": _tm_text(data, "tmutil_detail", 200),
+        "running": running,
+        "stopping": _tm_bool(data, "stopping"),
+        "phase": phase,
+        "percent": None if percent is None else float(percent),
+        "bytes": _tm_int(data, "bytes"),
+        "files": _tm_int(data, "files"),
+        "total_bytes": _tm_int(data, "total_bytes"),
+        "total_files": _tm_int(data, "total_files"),
+        "auto_backup": _tm_bool(data, "auto_backup"),
+        "stalled_seconds": _tm_int(data, "stalled_seconds", nullable=False, top=10**9),
+        "band_check": band_check,
+        "band_detail": _tm_text(data, "band_detail", 200),
+        "band_newest_epoch": _tm_int(data, "band_newest_epoch", top=10**10),
+        "cross_check_ok": _tm_bool(data, "cross_check_ok", nullable=False),
+        "probe_epoch": _tm_int(data, "probe_epoch", nullable=False, top=10**10),
+    }
+
+
+def timemachine_report(config: dict[str, Any], raw: str, now: float) -> int:
+    """Keep one probe report as ``timemachine.json`` (the newest report replaces the last one)."""
+
+    try:
+        report = parse_timemachine(raw)
+    except (ValueError, TypeError) as error:
+        print(f"obs-ctl: unusable timemachine report: {error}", file=sys.stderr)
+        return 2
+    report["epoch"] = int(now)
+    try:
+        with exclusive(TIMEMACHINE_LOCK):
+            # A writer stuck in I/O is killed and left behind after 5 s: the lock never waits for it.
+            path = os.path.join(config["state_dir"], "timemachine.json")
+            write_as(config["sender"]["user"], path, report, grace=5.0)
+    except Busy as busy:
+        print(f"obs-ctl: timemachine report not kept: {busy}", file=sys.stderr)
+        return 3
+    except Unreadable as error:
+        print(f"obs-ctl: timemachine report not kept: {error}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -789,7 +922,7 @@ def queries(config: dict[str, Any], raw: str, now: float, clients: dict[str, Any
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hand-over point for the observability triage")
     parser.add_argument("--config", required=True)
-    parser.add_argument("action", choices=("pack", "deliver", "launchd", "query"))
+    parser.add_argument("action", choices=("pack", "deliver", "launchd", "query", "timemachine"))
     args = parser.parse_args(argv)
     with open(args.config, encoding="utf-8") as handle:
         config = json.load(handle)
@@ -812,6 +945,8 @@ def main(argv: list[str] | None = None) -> int:
         return queries(config, raw, time.time())
     if args.action == "launchd":
         return launchd_report(config, raw, time.time())
+    if args.action == "timemachine":
+        return timemachine_report(config, raw, time.time())
     return deliver(config, raw, time.time())
 
 

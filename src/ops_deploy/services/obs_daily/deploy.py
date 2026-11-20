@@ -15,13 +15,14 @@ so it holds no list of known problems:
 - The LLM triage runs elsewhere (the Studio). It fetches the pack, drills
   down with bounded read-only queries and hands its result back over root
   SSH through ``files/obs_ctl.py`` (``pack``, ``query``, ``deliver``,
-  ``launchd``); ``deliver`` sends the digest as one Telegram message through
+  ``launchd``, ``timemachine``); ``deliver`` sends the digest as one Telegram message through
   Nyxmon's own notifier (``files/obs_daily_send.py`` with Nyxmon's Python and
   environment file) and records the result in ``site_path/triage.json``.
 - ``<service_name>-status.service`` (``files/obs_status.py``) serves
   ``GET /.well-known/obs-daily`` on loopback for Nyxmon: age of the last pack
-  and of the last delivered triage, and systemd units in a restart or failure
-  loop on any log-shipping host (from Loki).
+  and of the last delivered triage, systemd units in a restart or failure
+  loop on any log-shipping host (from Loki), and the last launchd and Time
+  Machine reports from the Studio.
 
 The deploy also provisions the read-only InfluxDB token
 (``files/influx_read_token.py``: ``influx auth create --read-bucket`` inside

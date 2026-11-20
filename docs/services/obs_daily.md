@@ -36,7 +36,7 @@ deploy_obs_daily(ObsDailyConfig(sleeping_hosts=["atlas"]))
 | `/usr/local/lib/obs-daily/obs_daily_send.py` | the sender: Nyxmon's `AsyncTelegramNotifier` |
 | `/etc/obs-daily/config.json` | the shared rendered config (directory `root:nyxmon 0750`) |
 | `/etc/obs-daily/influx-token` | read-only InfluxDB token and its authorization ID (`root:nyxmon 0640`) |
-| `/var/lib/obs-daily/` | `packs/<date>.json` and `packs/latest.json`, `signatures.json`, `status.json`, `triage/<date>-<ns>-<pid>.json`, `triage.json`, `launchd.json` (`nyxmon:adm 2750`, files `0640`) |
+| `/var/lib/obs-daily/` | `packs/<date>.json` and `packs/latest.json`, `signatures.json`, `status.json`, `triage/<date>-<ns>-<pid>.json`, `triage.json`, `launchd.json`, `timemachine.json` (`nyxmon:adm 2750`, files `0640`) |
 | `obs-daily-pack.service` / `.timer` | oneshot as the Nyxmon user at `on_calendar` (default `*-*-* 06:30:00`, `Persistent=true`), `ProtectSystem=strict`, only `site_path` writable, up to an hour (the first run fills the baseline) |
 | `obs-daily-status.service` | the endpoint as the Nyxmon user on `status_listen` (default `127.0.0.1:9123`), read-only system |
 
@@ -194,6 +194,7 @@ a small error pack.
 ssh root@<host> /usr/bin/python3 -I /usr/local/lib/obs-daily/obs_ctl.py --config /etc/obs-daily/config.json pack
 ssh root@<host> /usr/bin/python3 -I /usr/local/lib/obs-daily/obs_ctl.py --config /etc/obs-daily/config.json deliver < result.json
 ssh root@<host> /usr/bin/python3 -I /usr/local/lib/obs-daily/obs_ctl.py --config /etc/obs-daily/config.json launchd < report.json
+ssh root@<host> /usr/bin/python3 -I /usr/local/lib/obs-daily/obs_ctl.py --config /etc/obs-daily/config.json timemachine < report.json
 ssh root@<host> /usr/bin/python3 -I /usr/local/lib/obs-daily/obs_ctl.py --config /etc/obs-daily/config.json query < queries.json
 ```
 
@@ -292,6 +293,30 @@ still root, through `systemd-run` as the Nyxmon user.
   after its own last sighting (`last_seen`), so Nyxmon's polling sees a short
   burst; the endpoint applies the same expiry when it answers. State files are read only when they are regular files, by a child
   with a 20-second limit.
+- `timemachine` reads one Time Machine probe report from a Mac (agent-stuff
+  `tools/tm-guard`, every 5 minutes on the Studio; ops-control
+  `runbooks/time-machine-client-stall.md`): `host`, `tmutil` (`ok`,
+  `timeout`, `hung` for a `tmutil` the probe killed that still has not
+  exited, `error`), `running`, `stopping`, `phase`, `percent`, `bytes`,
+  `files`, `total_bytes`, `total_files`, `auto_backup`, `stalled_seconds`
+  (seconds a running backup went without any progress), `band_check` (`ok`,
+  `failed`, `skipped`) with `band_newest_epoch` (the newest write into the
+  bundle's `bands/` and `mapped/` on the backup server), `cross_check_ok`
+  and `probe_epoch`. Every field is type- and range-checked before it is used
+  (texts must be strings and are cut to printable ASCII, 200 characters;
+  numbers are range-checked before any conversion); a report whose `tmutil`
+  answered needs `running`. It replaces `timemachine.json` (one report at a
+  time, `/run/obs-daily-timemachine.lock`, written as the Nyxmon user by a
+  child that is killed after 20 seconds and, if it still does not exit,
+  left behind 5 seconds later, so a writer stuck in I/O never holds the
+  lock; a child that may be left behind first closes every inherited
+  descriptor, the lock and the SSH streams included) with its arrival time.
+  The endpoint reads the times from it only as plain integers: an unusable
+  arrival `epoch` reads as no report, an unusable `stalled_seconds` as
+  `999999999` (its rules fail), an unusable `band_newest_epoch` as a null
+  `band_age_seconds`; the other fields pass only as strings, booleans or
+  finite numbers (anything else becomes null). Exit 0 kept, 1 not
+  written, 2 unusable input, 3 another report held the lock.
 
 ## The status endpoint
 
@@ -302,9 +327,22 @@ still root, through `systemd-run` as the Nyxmon user.
   "pack": {"date": "2026-11-18", "errors": 0, "age_seconds": 3600},
   "triage": {"date": "2026-11-18", "status": "ok", "delivered": true, "age_seconds": 60, "delivery_age_seconds": 60},
   "unit_loops": {"ok": true, "error": null, "window_seconds": 3600, "count": 0, "loops": []},
-  "launchd": {"host": "studio", "checked": 22, "count": 0, "loops": [], "age_seconds": 120}
+  "launchd": {"host": "studio", "checked": 22, "count": 0, "loops": [], "age_seconds": 120},
+  "timemachine": {"host": "studio", "state": "disabled", "tmutil": "ok", "tmutil_ok": true, "running": false,
+                  "auto_backup": false, "stalled_seconds": 0, "cross_check_ok": true, "band_check": "ok",
+                  "band_age_seconds": 7200, "age_seconds": 90, "...": "phase, percent, bytes, files, totals, details"}
 }
 ```
+
+`timemachine` is the last probe report: `tmutil_ok` is true only when
+`tmutil status` answered in time, `stalled_seconds` is the probe's count of
+seconds a running backup went without progress (0 when none runs),
+`cross_check_ok` is false when a backup runs and the band read on the backup
+server failed, and `state` (`no report`, `tmutil <timeout|hung|error|unknown>`,
+`running <phase>`, `disabled`, `idle`) is for the reader only: `disabled`
+(automatic backups off, none running) is a normal state, not a failure.
+Without a report `age_seconds` is `999999999` and the other rules' fields
+are missing.
 
 `triage.age_seconds` is the age of the last triage that ran (status `ok`)
 and reached the owner; a day that was `skipped` or `failed` is delivered as

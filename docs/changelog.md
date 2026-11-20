@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- obs_daily: `obs_ctl.py timemachine` keeps the Studio's Time Machine probe
+  report (agent-stuff `tools/tm-guard`: whether `tmutil status` answered,
+  phase, progress, seconds a running backup went without progress, the
+  cross-check against the newest band write in its bundle on fractal) as
+  `timemachine.json`, and the status endpoint reports it as `timemachine`
+  (`tmutil_ok`, `stalled_seconds`, `cross_check_ok`, `age_seconds`, and a
+  `state` for the reader, where `disabled` is a normal state). Follow-up of
+  the stall of 2026-11-19/20 (ops-control
+  `runbooks/time-machine-client-stall.md`); ops-control registers the Nyxmon
+  check.
 - logyard: the Vector producer ships log files beside journald (`files`,
   docs/services/logyard.md "Log files"), each under its own `service` label
   with `source_type="file"` through a second Loki sink, read from the end on

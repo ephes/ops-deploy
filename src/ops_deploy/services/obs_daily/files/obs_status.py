@@ -22,7 +22,15 @@
   ``sleeping_hosts`` excepted), or a host hit the line
   limit. Host activity comes from a bounded ``count_over_time`` query;
 - ``launchd``: age and crash loops of the last launchd report from the
-  Studio (``launchd.json``, written by ``obs_ctl.py launchd``).
+  Studio (``launchd.json``, written by ``obs_ctl.py launchd``);
+- ``timemachine``: the last Time Machine probe report from the Studio
+  (``timemachine.json``, written by ``obs_ctl.py timemachine``): its age,
+  ``tmutil_ok`` (``tmutil status`` answered in time), ``stalled_seconds``
+  (a running backup without any progress: no change of phase, bytes, files
+  or percent and no new band write on the backup server; 0 when no backup
+  runs), ``cross_check_ok`` (the band read on the server worked, or no
+  backup runs) and, for the reader only, ``state`` (``disabled`` when
+  automatic backups are off and none runs: OK, information only).
 
 A missing file reads as age ``999999999``, so a threshold check fails instead
 of passing on a missing value.
@@ -33,6 +41,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import os
 import stat
 import sys
@@ -178,7 +187,7 @@ def _read(path: str) -> dict[str, Any]:
         os.close(fd)
     try:
         data = json.loads(raw) if len(raw) <= MAX_STATE else None
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: nesting deeper than the parser allows
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -269,6 +278,53 @@ def unit_loops(config: dict[str, Any], now: float, loki: Any) -> dict[str, Any]:
     }
 
 
+TM_INFO = (
+    "host", "tmutil", "tmutil_detail", "running", "stopping", "phase", "percent", "bytes", "files",
+    "total_bytes", "total_files", "auto_backup", "band_check", "band_detail",
+)  # fmt: skip
+
+
+def timemachine_section(report: dict[str, Any], now: float) -> dict[str, Any]:
+    """The Time Machine probe report for Nyxmon; a missing report fails every rule (age, booleans absent)."""
+
+    def whole(value: Any) -> int | None:
+        # Integers only (obs_ctl.py writes no others), in a sane range: never a float that overflows.
+        return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10**10 else None
+
+    epoch = whole(report.get("epoch"))
+    if epoch is None:
+        return {"age_seconds": NEVER, "state": "no report"}
+
+    def plain(value: Any) -> Any:
+        # What strict JSON carries: no nesting, no Infinity or NaN (obs_ctl.py wrote checked values).
+        if value is None or isinstance(value, str | bool):
+            return value[:200] if isinstance(value, str) else value
+        if isinstance(value, int) and -(10**16) < value < 10**16:
+            return value
+        if isinstance(value, float) and math.isfinite(value):
+            return value
+        return None
+
+    section: dict[str, Any] = {key: plain(report.get(key)) for key in TM_INFO}
+    stalled = whole(report.get("stalled_seconds"))
+    section["stalled_seconds"] = NEVER if stalled is None else stalled
+    section["tmutil_ok"] = report.get("tmutil") == "ok"
+    section["cross_check_ok"] = report.get("cross_check_ok") is True
+    band = whole(report.get("band_newest_epoch"))
+    section["band_age_seconds"] = None if band is None else int(now - band)
+    section["age_seconds"] = int(now - epoch)
+    if not section["tmutil_ok"]:
+        tmutil = report.get("tmutil")
+        section["state"] = f"tmutil {tmutil}" if tmutil in ("timeout", "hung", "error") else "tmutil unknown"
+    elif report.get("running"):
+        section["state"] = f"running {section['phase'] or '?'}"
+    elif report.get("auto_backup") is False:
+        section["state"] = "disabled"
+    else:
+        section["state"] = "idle"
+    return section
+
+
 class Status:
     """Local freshness at request time; the Loki part from a background refresher, never waited for."""
 
@@ -344,6 +400,7 @@ class Status:
                 "loops": held[:20],
                 "age_seconds": int(now - launchd_epoch) if isinstance(launchd_epoch, int | float) else NEVER,
             },
+            "timemachine": timemachine_section(_read(os.path.join(state, "timemachine.json")), now),
         }
 
 
