@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- logyard: file sources take `fingerprint: checksum` by default (was
+  `inode`). With `device_and_inode` a log created by logrotate can get the
+  inode of the `.1` file that `delaycompress` compressed and removed a moment
+  earlier; Vector then matched that file's stale checkpoint and resumed at its
+  offset, so macmini's rspamd log shipped nothing after the rotation of
+  2026-11-21 (it would have resumed only once the new file passed 1.78 MB).
+  The checksum of the first line follows both `create` and `copytruncate`.
+  The next `logyard_vector` deploy re-keys the checkpoints: each file source
+  starts again at the end of its file (lines written during the restart are
+  not shipped). `fingerprint: inode` stays available for files whose first
+  line repeats.
+
 - obs_daily: `non_systemd_hosts` names hosts that ship logs but run no
   systemd (the macOS Studio, whose log files Logyard ships since
   2026-11-19). The status endpoint's `unit_loops` neither queries them for

@@ -467,7 +467,7 @@ def test_file_sources_reach_the_fragment_with_their_own_sink() -> None:
                 "kind": "traefik",
                 "sample_rate": 50,
             },
-            {"service": "agent", "paths": ("/Users/example/Library/Logs/agent.log",), "fingerprint": "checksum"},
+            {"service": "agent", "paths": ("/Users/example/Library/Logs/agent.log",), "fingerprint": "inode"},
         )
     )
 
@@ -476,8 +476,8 @@ def test_file_sources_reach_the_fragment_with_their_own_sink() -> None:
     source = fragment["sources"]["logyard_file_traefik_2daccess"]
     assert source["include"] == ["/var/log/traefik/access.log"]
     assert source["read_from"] == "end"
-    assert source["fingerprint"] == {"strategy": "device_and_inode"}
-    assert fragment["sources"]["logyard_file_agent"]["fingerprint"] == {"strategy": "checksum"}
+    assert source["fingerprint"] == {"strategy": "checksum"}
+    assert fragment["sources"]["logyard_file_agent"]["fingerprint"] == {"strategy": "device_and_inode"}
     sample = fragment["transforms"]["logyard_file_traefik_2daccess_sample"]
     assert sample["rate"] == 50
     assert sample["exclude"] == {"type": "vrl", "source": ".logyard_keep == true"}

@@ -81,9 +81,15 @@ class FileSource(Part):
     the start of the line, else info). ``drop`` adds patterns whose lines are
     not shipped; ``min_level`` is a floor like ``min_levels``.
 
-    ``fingerprint``: ``inode`` follows rename-and-create rotation (logrotate
-    ``create``); ``checksum`` (the first line) follows copy-and-truncate
-    (darwin_log_trim, logrotate ``copytruncate``), which ``inode`` misreads.
+    ``fingerprint``: ``checksum`` (the default, the first line) follows both
+    rename-and-create (logrotate ``create``) and copy-and-truncate rotation
+    (darwin_log_trim, logrotate ``copytruncate``). ``inode`` misreads
+    copy-and-truncate, and after rename-and-create it can match a stale
+    checkpoint when the new file gets a freed inode back (logrotate's
+    ``delaycompress`` frees the ``.1`` file's inode just before it creates the
+    new log): Vector then resumes at the old file's offset and ships nothing
+    until the new file grows past it. Use ``inode`` only for files whose
+    first line repeats across rotations.
     ``acl``: grant the Vector user read access with POSIX ACLs, ``dir`` on
     the parent directory only (traverse and list), ``files`` also on the
     files and as the directory's default for files created there later.
@@ -94,7 +100,7 @@ class FileSource(Part):
     kind: FileKind = "plain"
     min_level: Level | None = None
     drop: tuple[DropPattern, ...] = ()
-    fingerprint: Literal["inode", "checksum"] = "inode"
+    fingerprint: Literal["inode", "checksum"] = "checksum"
     acl: Literal["none", "dir", "files"] = "none"
     # traefik only: one in ``sample_rate`` ordinary requests is shipped.
     sample_rate: int = Field(default=1, ge=1, le=100000)
