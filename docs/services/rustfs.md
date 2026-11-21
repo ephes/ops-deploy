@@ -190,6 +190,12 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   `parity_breach_seconds`; the journal gets one line per job that is not ok
   or has a warning reason. The service exits 2 when a required job is
   critical. File-age checks on the markers are the operator's alerting hook.
+  With `status_port` (below) the unit sets `RUSTFS_MONITOR_CRITICAL_EXIT=0`
+  and a run that wrote every status file exits 0 with a critical job: the
+  endpoint reports it, and a unit failing on every critical run read as a
+  restart loop to the journal checks (obs_daily `unit_loops`, 2026-11-20).
+  Without the endpoint a critical run still fails the unit; a crash, a
+  failed readiness check or an unwritable state root fails it either way.
 - `replica` with `status_port`: `rustfs-replication-status.service` serves
   `GET /.well-known/rustfs-replication` on `127.0.0.1:<status_port>` for a
   Nyxmon json-metrics check on the same host. It computes per request, from

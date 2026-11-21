@@ -176,6 +176,9 @@ def test_units_bind_the_right_credentials_and_arguments() -> None:
         assert "ExecStartPre=/usr/bin/curl " in unit
         assert "--retry-all-errors http://" in unit
     assert "--retry-all-errors http://100.64.0.10:9020/health/ready\n" in replica
+    # Without a status endpoint a critical job's exit 2 fails the unit (the alert).
+    assert "RUSTFS_MONITOR_CRITICAL_EXIT" not in source
+    assert "RUSTFS_MONITOR_CRITICAL_EXIT" not in replica
     timer = render("rustfs-replication-monitor.timer.j2", REPLICA)
     assert "OnUnitActiveSec=300" in timer
     assert "OnBootSec=120" in timer
@@ -759,6 +762,32 @@ def test_the_other_roles_units_are_removed_when_present(cfg: RustfsConfig, facts
     assert "/var/lib/rustfs-replication-monitor" not in removal
     assert cfg.monitor is not None
     assert cfg.monitor.unit not in removal
+
+
+def test_probe_with_status_endpoint_reports_critical_without_failing_the_unit() -> None:
+    """The endpoint carries the level, so the probe exits 0 with a critical job."""
+    unit = render("rustfs-replication-monitor.service.j2", STATUS)
+    assert "\nEnvironment=RUSTFS_MONITOR_CRITICAL_EXIT=0\n" in unit
+    # Readiness and interpreter failures keep failing the unit.
+    assert "SuccessExitStatus" not in unit
+
+
+def test_critical_exit_follows_the_unit_setting(
+    monitor: types.ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    FakeApi.objects = {
+        ("backups", "_replication-health/heartbeat.json"): (
+            heartbeat_object("backups", parity_ok=False, object_delta=300),
+            stamp(timedelta()),
+        ),
+        ("backups", "_replication-health/jobs/obsidian.json"): (heartbeat_object("obsidian"), stamp(timedelta())),
+    }
+    monkeypatch.setenv("RUSTFS_MONITOR_CRITICAL_EXIT", "0")
+    assert monitor.probe(monitor.library(), "http://100.64.0.10:9020", str(tmp_path), rows()) == 0
+    assert json.loads((tmp_path / "backups/status.json").read_text())["level"] == "critical"
+    monkeypatch.setenv("RUSTFS_MONITOR_CRITICAL_EXIT", "1")
+    with pytest.raises(SystemExit, match="must be 0 or 2"):
+        monitor.probe(monitor.library(), "http://100.64.0.10:9020", str(tmp_path), rows())
 
 
 def test_status_unit_is_loopback_only_and_read_only() -> None:

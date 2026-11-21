@@ -227,7 +227,21 @@ PARITY_FIELDS = (
 )  # fmt: skip
 
 
+def critical_exit():
+    """Exit code of a probe run that wrote every status file and found a critical job.
+
+    2 by default: the failed unit is the alert (Fractal Backup reads it). A
+    replica whose status endpoint reports the level sets 0, so the unit does
+    not fail on every critical run.
+    """
+    value = os.environ.get("RUSTFS_MONITOR_CRITICAL_EXIT", "2")
+    if value not in ("0", "2"):
+        raise SystemExit("RUSTFS_MONITOR_CRITICAL_EXIT must be 0 or 2")
+    return int(value)
+
+
 def probe(iam, local_endpoint, state_root, jobs):
+    critical = critical_exit()
     monitor = credentials("RUSTFS_MONITOR_")
     api = iam.Api(local_endpoint, REGION)
     exit_code = 0
@@ -299,7 +313,7 @@ def probe(iam, local_endpoint, state_root, jobs):
                 file=sys.stderr,
             )  # fmt: skip
         if job["required"] and status["level"] == "critical":
-            exit_code = 2
+            exit_code = critical
     return exit_code
 
 

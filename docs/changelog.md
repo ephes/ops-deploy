@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- rustfs: with `status_port` the replica probe unit
+  (`rustfs-replication-lag-check.service`) sets
+  `RUSTFS_MONITOR_CRITICAL_EXIT=0`, so a probe run that wrote every status
+  file exits 0 with a critical job (was 2) and no longer fails the unit; the
+  status endpoint already reports the level to Nyxmon. On 2026-11-20 a four-hour replication queue on
+  macmini (version purges released by the replicator policy fix) failed the
+  unit 36-49 times and put obs_daily's "Systemd restart loops" critical next
+  to "RustFS Replica macmini": one cause, two pages. A crash or a failed
+  readiness check still fails the unit; a replica without the endpoint keeps
+  the failed unit as its alert. Takes effect with the `rustfs_replica` deploy.
+
 - macos_ssh_tunnel: `ThrottleInterval` 300 s (was 60 s). While the relay
   (Atlas) was offline, the Studio's `eu.coreso.emerge.uat-tunnel` exited 255
   after its 10-second connect timeout about eight times per ten minutes and

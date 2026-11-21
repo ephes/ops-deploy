@@ -19,6 +19,13 @@ EnvironmentFile={{ cfg.env_file }}
 {% endif %}
 EnvironmentFile={{ monitor.env_file }}
 Environment=RUSTFS_MONITOR_LIBRARY={{ monitor.library_dir }}
+{% if monitor.role == "replica" and monitor.status_port is not none %}
+# The status endpoint reports a critical job, so a probe run that wrote every
+# status file exits 0 with one; as a failed unit it read as a restart loop to
+# the journal checks (obs_daily unit_loops, 2026-11-20). Any other failure
+# still fails the unit. Without the endpoint the failed unit stays the alert.
+Environment=RUSTFS_MONITOR_CRITICAL_EXIT=0
+{% endif %}
 ExecStartPre=/usr/bin/curl -fsS -o /dev/null --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 3 --retry-max-time 180 --retry-all-errors {{ cfg.endpoint }}/health/ready
 {% if monitor.role == "source" %}
 ExecStart=/usr/bin/python3 -I -B {{ monitor.script_path }} heartbeat {{ cfg.endpoint }} {{ monitor.replica_endpoint }} {{ monitor.jobs_path }}
