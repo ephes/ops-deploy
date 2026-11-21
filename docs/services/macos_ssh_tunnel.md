@@ -28,7 +28,11 @@ refusal remain strict.
 
 Set the actual local `owner`, `home`, relay `host`/`user` and forwarded `target`.
 The connection runs as that owner locally and requires the existing GUI launchd
-domain. `manage_identity=True` selects the original identity management;
+domain. launchd keeps the SSH process alive (`KeepAlive`) and starts it again
+at most every 300 seconds (`ThrottleInterval`) when it exits sooner: an offline
+relay costs two attempts per ten minutes, under the crash-loop threshold of
+obs-triage `launchd-check` (5 runs). A connection that lived longer is
+restarted at once. `manage_identity=True` selects the original identity management;
 `relay_home` additionally preserves the existing unprivileged relay authorization
 step. Authorization failure occurs before stopping a previously loaded tunnel.
 `state="absent"` unloads and removes only the tunnel's named files, preserving

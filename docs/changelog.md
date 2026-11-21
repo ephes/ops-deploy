@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- macos_ssh_tunnel: `ThrottleInterval` 300 s (was 60 s). While the relay
+  (Atlas) was offline, the Studio's `eu.coreso.emerge.uat-tunnel` exited 255
+  after its 10-second connect timeout about eight times per ten minutes and
+  held Nyxmon's "Studio launchd crash loops" check critical (889 runs by
+  2026-11-21). A tunnel that was up longer than 300 s still reconnects at once.
 - logyard: file sources take `fingerprint: checksum` by default (was
   `inode`). With `device_and_inode` a log created by logrotate can get the
   inode of the `.1` file that `delaycompress` compressed and removed a moment
