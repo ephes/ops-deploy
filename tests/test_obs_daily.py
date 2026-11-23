@@ -218,7 +218,8 @@ class Loki:
 
     def __init__(self) -> None:
         self.volume: dict[float, dict[str, dict[str, float]]] = {}  # end -> host -> service -> count
-        self.problem: dict[str, list[tuple[float, str]]] = {}  # host -> [(epoch, raw line)]
+        self.problem: dict[str, list[Any]] = {}  # host -> [(epoch, raw line[, service label])]
+        self.honour_limit = False
         self.restarts: dict[str, list[tuple[float, str]]] = {}
         self.untrusted: dict[str, dict[str, float]] = {}
         self.calls: list[tuple[str, dict[str, str]]] = []
@@ -251,16 +252,21 @@ class Loki:
         start, end = int(params["start"]) / NS, int(params["end"]) / NS
         source = self.restarts if "Scheduled restart" in query else self.problem
         hosts = [host] if host else list(source)
-        return {
-            "result": [
-                {
-                    "stream": {"host": h, "service": "svc"},
-                    "values": [[str(int(t * NS)), raw] for t, raw in lines if start <= t < end],
-                }
-                for h in hosts
-                for lines in [source.get(h, [])]
-            ]
-        }
+        selector = query.split("}")[0]
+        without = {part.split('"')[1] for part in selector.split("service!=")[1:]}
+        limit = int(params.get("limit", 0)) if self.honour_limit else 0
+        result = []
+        for h in hosts:
+            streams: dict[str, list[list[str]]] = {}
+            for line in source.get(h, []):
+                t, raw, service = (*line, "svc")[:3]
+                if start <= t < end and service not in without:
+                    streams.setdefault(service, []).append([str(int(t * NS)), raw])
+            if limit:  # Loki keeps the newest ``limit`` lines across all streams
+                newest = sorted((v for vs in streams.values() for v in vs), key=lambda v: -int(v[0]))[:limit]
+                streams = {k: [v for v in vs if v in newest] for k, vs in streams.items()}
+            result += [{"stream": {"host": h, "service": k}, "values": vs} for k, vs in streams.items()]
+        return {"result": result}
 
 
 def journald(message: str, identifier: str = "app", pid: str = "77", unit: str = "app.service") -> str:
@@ -340,7 +346,10 @@ def test_a_window_at_the_line_limit_is_split(tmp_path: Path, monkeypatch: pytest
     found = pack.problem_lines(ctx, "web", NOW - 6 * 3600, NOW)
 
     assert len(found) >= 16
-    assert any("limit reached" in note for note in ctx.notes)
+    # Split down to the last level, then read without the one loud stream: nothing is skipped.
+    assert len([c for c in loki.calls if c[0] == "query_range"]) > 8
+    assert ctx.crowded[("web", "svc")] > 0
+    assert ctx.skipped_windows == 0
 
 
 def test_unit_restarts_skip_transient_units(tmp_path: Path) -> None:
@@ -1075,7 +1084,7 @@ def test_pack_hosts_and_notes_keep_their_real_names(tmp_path: Path, monkeypatch:
     result = pack.build_pack(ctx)
 
     assert result["log_hosts"] == ["odd host", "web"]
-    assert any(note.startswith("odd host: 2-line limit") for note in result["notes"])
+    assert any(note.startswith('odd host: service="svc" filled ') for note in result["notes"])
 
 
 def test_a_replayed_old_result_does_not_refresh_the_triage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1651,11 +1660,103 @@ def test_a_window_still_at_the_line_limit_keeps_the_day_out_of_the_baseline(
     monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
     monkeypatch.setattr(pack, "MAX_SPLIT", 0)
     loki = Loki()
-    loki.problem = {"web": [(NOW - 100 - i, journald("boom failed")) for i in range(9)]}
+    # Four loud streams: after leaving out MAX_CROWDING (3) of them, the fourth still fills the window.
+    loki.problem = {"web": [(NOW - 100 - i, journald("boom failed"), f"svc{i % 4}") for i in range(16)]}
     ctx = context(tmp_path, loki)
     pack.section_signatures(ctx, ["web"])
     assert pack.day_of(NOW) not in json.loads((tmp_path / "signatures.json").read_text())["covered_days"]
-    assert any("today incomplete" in e for e in ctx.errors)
+    assert any("today incomplete" in e and "line limit" in e for e in ctx.errors)
+    assert any("2-line limit reached" in note and "sampled" in note for note in ctx.notes)
+
+
+def test_a_loud_stream_is_sampled_and_the_others_read_in_full(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 5)
+    monkeypatch.setattr(pack, "MAX_SPLIT", 0)
+    loki = Loki()
+    loki.honour_limit = True
+    storm = [
+        (NOW - 10 - i, journald("Replication failed for object", unit="rustfs.service"), "rustfs") for i in range(50)
+    ]
+    # Older than the storm: a newest-first answer at the limit never reaches it.
+    quiet = [(NOW - 5 * 3600 - i, journald("disk error on sda", unit="smartd.service"), "smartd") for i in range(3)]
+    loki.problem = {"fractal": storm + quiet}
+    ctx = context(tmp_path, loki)
+
+    section = pack.section_signatures(ctx, ["fractal"])
+
+    templates = {(e["source"], e["template"]): e["count"] for e in section["new"]}
+    assert templates[("smartd.service", "disk error on sda")] == 3
+    # The storm's count is what the sample held: a lower bound.
+    assert 0 < templates[("rustfs.service", "Replication failed for <id>")] <= 5
+    assert not [e for e in ctx.errors if "incomplete" in e]
+    assert pack.day_of(NOW) in json.loads((tmp_path / "signatures.json").read_text())["covered_days"]
+    assert any(
+        note.startswith('fractal: service="rustfs" filled ') and "lower-bound counts" in note for note in ctx.notes
+    )
+    assert any('service!="rustfs"' in c[1]["query"] for c in loki.calls if c[0] == "query_range")
+
+
+def test_streams_without_a_service_label_are_left_out_together(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
+    monkeypatch.setattr(pack, "MAX_SPLIT", 0)
+    queries = []
+
+    def loki(path: str, params: dict[str, str]) -> Any:
+        queries.append(params["query"])
+        line = journald("boom failed")
+        if 'service!=""' in params["query"]:
+            return {"result": [{"stream": {"host": "web", "service": "worker\U0001f600"}, "values": [["1", line]]}]}
+        return {"result": [{"stream": {"host": "web"}, "values": [["1", line], ["2", line]]}]}
+
+    ctx = context(tmp_path, loki)
+    assert len(pack.problem_lines(ctx, "web", NOW - 600, NOW)) == 3
+    assert ctx.skipped_windows == 0
+    assert ctx.crowded[("web", "")] == 1
+
+
+def test_a_service_matcher_keeps_utf_8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 1)
+    loki = Loki()
+    ctx = context(tmp_path, loki)
+    pack._problem_answer(ctx, "web", NOW - 600, NOW, ["worker\U0001f600"])
+    assert 'service!="worker\U0001f600"' in loki.calls[0][1]["query"]
+
+
+def test_a_label_left_out_that_comes_back_is_not_counted_twice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
+    monkeypatch.setattr(pack, "MAX_SPLIT", 0)
+
+    def loki(path: str, params: dict[str, str]) -> Any:
+        line = journald("boom failed")
+        # Loki still returns ``api`` lines: the label is structured metadata on another stream.
+        values = [["1", line]] if 'service!="api"' in params["query"] else [["1", line], ["2", line]]
+        return {"result": [{"stream": {"host": "web", "service": "api"}, "values": values}]}
+
+    ctx = context(tmp_path, loki)
+    assert len(pack.problem_lines(ctx, "web", NOW - 600, NOW)) == 2
+    assert ctx.skipped_windows == 0
+
+
+def test_a_window_read_again_without_a_loud_stream_may_still_be_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pack, "PROBLEM_LINES", 2)
+    monkeypatch.setattr(pack, "MAX_SPLIT", 0)
+    calls = []
+
+    def loki(path: str, params: dict[str, str]) -> Any:
+        calls.append(params["query"])
+        if "service!=" in params["query"]:
+            raise pack.Dropped("closed")
+        line = journald("boom failed")
+        return {"result": [{"stream": {"host": "web", "service": "loud"}, "values": [["1", line], ["2", line]]}]}
+
+    ctx = context(tmp_path, loki)
+    assert pack.problem_lines(ctx, "web", NOW - 600, NOW) == []
+    assert ctx.skipped_windows == 1
+    assert ctx.dropped_windows == 1
+    assert not ctx.crowded  # the skipped window reports no sample
+    assert any("connection closed without an answer" in note for note in ctx.notes)
 
 
 def test_a_new_host_is_not_measured_against_days_before_it_shipped(tmp_path: Path) -> None:

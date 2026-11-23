@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- obs_daily: a signature window that is still at the 2,000-line limit after
+  five halvings (about 11 minutes) is read again without its loudest
+  `service` stream, up to three streams. That stream's lines from the first
+  answer stay as a sample (lower-bound counts); every other stream is read
+  in full, and the day enters the baseline. One note per host and stream
+  says how many windows that took. Before, every such window kept its day
+  out of the baseline: RustFS replication resync errors on fractal and
+  macmini (2026-11-19/20, `remove_object failed: AccessDenied`, up to
+  28,000 lines per 5 minutes) and short scanner bursts on production
+  (2026-11-20/21) left 2026-11-19..22 incomplete, so the baseline stopped
+  growing and every pack had `logs.signatures` errors. Only a window still
+  at the limit after three streams (or whose answer at the limit holds only
+  streams already left out), or one too large or unanswered, keeps a day
+  incomplete now.
 - obs_daily docs: the triage on the Studio now runs on Claude
   (`claude-opus-5-5`, claude-katharina account) instead of Codex (owner
   2026-11-21: no OpenAI use); raw log text from the pack and the `query`
@@ -19,6 +33,7 @@
   readiness check still fails the unit; a replica without the endpoint keeps
   the failed unit as its alert. Takes effect with the `rustfs_replica` deploy.
 
+||||||| parent of 713e0c00 (obs_daily: a signature window flooded by one stream is read again without it; the day still enters the baseline)
 - macos_ssh_tunnel: `ThrottleInterval` 300 s (was 60 s). While the relay
   (Atlas) was offline, the Studio's `eu.coreso.emerge.uat-tunnel` exited 255
   after its 10-second connect timeout about eight times per ten minutes and

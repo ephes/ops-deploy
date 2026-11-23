@@ -80,6 +80,9 @@ MAX_DROPPED = 40
 MASK_INPUT = 1000
 MAX_BODY = 64 * 1024 * 1024
 MAX_SPLIT = 5  # a 6-hour window halves down to about 11 minutes
+# Streams a window still at the line limit after MAX_SPLIT may be read without, loudest first
+# (RustFS replication errors on fractal and macmini, 2026-11-19/20, up to 28,000 lines in 5 minutes).
+MAX_CROWDING = 3
 EXAMPLES = 2  # raw example lines per template
 EXAMPLE_CHARS = 400  # of each raw line shown
 DAY = 86400
@@ -164,6 +167,8 @@ class Context:
     notes: list[str] = field(default_factory=list)
     skipped_windows: int = 0
     dropped_windows: int = 0
+    # (host, raw service label) -> windows whose lines of that stream were only sampled (see problem_lines)
+    crowded: Counter[tuple[str, str]] = field(default_factory=Counter)
     # host -> day -> whether the host shipped any log line that day (from logs.volume)
     activity: dict[str, dict[str, bool]] = field(default_factory=dict)
 
@@ -473,10 +478,16 @@ def section_volume(ctx: Context, hosts: list[str]) -> dict[str, Any]:
     }
 
 
-def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int = 0) -> list[tuple[str, str]]:
-    """(source, message) of problem-like lines; a window that hits the line limit is split."""
+def _problem_answer(
+    ctx: Context, host: str, start: float, end: float, without: list[str]
+) -> list[tuple[str, str, str]]:
+    """(``service`` label, source, message) of one problem-line query; streams whose ``service``
+    label is in ``without`` are left out in Loki. Raises ``TooLarge`` like the client."""
 
-    query = f"{{host={lit(host)}}}{excluded(ctx)} |~ {lit(PROBLEM_PATTERN)}"
+    # Raw UTF-8: Loki reads a \u surrogate pair in a selector as two replacement characters.
+    # ``service!=""`` leaves out the streams without a service label.
+    matchers = "".join(f", service!={json.dumps(service, ensure_ascii=False)}" for service in without)
+    query = f"{{host={lit(host)}{matchers}}}{excluded(ctx)} |~ {lit(PROBLEM_PATTERN)}"
     params = {
         "query": query,
         "start": str(int(start * NS)),
@@ -486,19 +497,12 @@ def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int 
     }
     try:
         data = ctx.loki("query_range", params)
-    except TooLarge as error:
-        if isinstance(error, Dropped):
-            ctx.dropped_windows += 1
-            if ctx.dropped_windows > MAX_DROPPED:
-                raise RuntimeError(f"{error} ({MAX_DROPPED} windows not answered; giving up)") from None
-        if depth < MAX_SPLIT and end - start > 5 * 60:
-            middle = start + (end - start) / 2
-            return problem_lines(ctx, host, start, middle, depth + 1) + problem_lines(ctx, host, middle, end, depth + 1)
-        what = "connection closed without an answer" if isinstance(error, Dropped) else "answer too large"
-        ctx.notes.append(f"{host}: {what} in {iso(start)}..{iso(end)}; skipped")
-        ctx.skipped_windows += 1
-        return []
-    found: list[tuple[str, str]] = []
+    except Dropped as error:
+        ctx.dropped_windows += 1
+        if ctx.dropped_windows > MAX_DROPPED:
+            raise RuntimeError(f"{error} ({MAX_DROPPED} windows not answered; giving up)") from None
+        raise
+    found: list[tuple[str, str, str]] = []
     for stream in data.get("result", []):
         labels = dict(stream.get("stream", {}))
         for _ts, raw in stream.get("values", []):
@@ -518,17 +522,61 @@ def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int 
                 source = UNTRUSTED + source
             # Only the start of a message is ever masked or shown; keep no more of it in memory.
             # Lone surrogates (from escaped JSON) become visible escapes, so the pack always encodes.
-            found.append((clean(source), clean(message[: 4 * MASK_INPUT])))
-    if len(found) >= PROBLEM_LINES:
-        if depth < MAX_SPLIT and end - start > 5 * 60:
-            middle = start + (end - start) / 2
-            return problem_lines(ctx, host, start, middle, depth + 1) + problem_lines(ctx, host, middle, end, depth + 1)
-        # A sampled window cannot count as a complete day: it stays out of the baseline.
-        ctx.notes.append(
-            f"{host}: {PROBLEM_LINES}-line limit reached in {iso(start)}..{iso(end)}; sampled"
-        )
-        ctx.skipped_windows += 1
+            found.append((str(labels.get("service") or ""), clean(source), clean(message[: 4 * MASK_INPUT])))
     return found
+
+
+def problem_lines(ctx: Context, host: str, start: float, end: float, depth: int = 0) -> list[tuple[str, str]]:
+    """(source, message) of problem-like lines; a window that hits the line limit is split.
+
+    A window still at the limit when it cannot be split further is read again without its
+    loudest ``service`` stream (up to ``MAX_CROWDING`` streams): that stream's lines from the
+    answer stay as a sample (its counts are lower bounds), and the rest of the window is read
+    again. Only a window still at the limit after that leaves the day incomplete.
+    """
+
+    def split() -> list[tuple[str, str]]:
+        middle = start + (end - start) / 2
+        return problem_lines(ctx, host, start, middle, depth + 1) + problem_lines(ctx, host, middle, end, depth + 1)
+
+    def skip(error: TooLarge) -> list[tuple[str, str]]:
+        what = "connection closed without an answer" if isinstance(error, Dropped) else "answer too large"
+        ctx.notes.append(f"{host}: {what} in {iso(start)}..{iso(end)}; skipped")
+        ctx.skipped_windows += 1
+        return []
+
+    can_split = depth < MAX_SPLIT and end - start > 5 * 60
+    try:
+        answer = _problem_answer(ctx, host, start, end, [])
+    except TooLarge as error:
+        return split() if can_split else skip(error)
+    if len(answer) < PROBLEM_LINES:
+        return [(source, message) for _service_label, source, message in answer]
+    if can_split:
+        return split()
+    sampled: list[tuple[str, str]] = []
+    without: list[str] = []
+    while True:
+        # A label already left out can come back (as structured metadata on another stream):
+        # its lines are never counted twice, the sample of that label stays a lower bound.
+        kept = [line for line in answer if line[0] not in without]
+        if len(answer) < PROBLEM_LINES:
+            break
+        if len(without) >= MAX_CROWDING or not kept:
+            # A sampled window cannot count as a complete day: it stays out of the baseline.
+            ctx.notes.append(f"{host}: {PROBLEM_LINES}-line limit reached in {iso(start)}..{iso(end)}; sampled")
+            ctx.skipped_windows += 1
+            break
+        loudest, _lines = Counter(label for label, _s, _m in kept).most_common(1)[0]
+        sampled += [(source, message) for label, source, message in kept if label == loudest]
+        without.append(loudest)
+        try:
+            answer = _problem_answer(ctx, host, start, end, without)
+        except TooLarge as error:
+            return skip(error)
+    for service in without:  # only for windows that return their samples
+        ctx.crowded[(host, service)] += 1
+    return sampled + [(source, message) for _service_label, source, message in kept]
 
 
 def signature_key(host: str, source: str, template: str) -> str:
@@ -545,6 +593,7 @@ def day_signatures(ctx: Context, hosts: list[str], end: float) -> tuple[dict[str
 
     found: dict[str, dict[str, Any]] = {}
     skipped_before = ctx.skipped_windows
+    ctx.crowded.clear()
     for host in hosts:
         for chunk in range(4):
             start = end - DAY + chunk * 6 * HOUR
@@ -557,6 +606,12 @@ def day_signatures(ctx: Context, hosts: list[str], end: float) -> tuple[dict[str
                 entry["count"] += 1
                 if len(entry["examples"]) < EXAMPLES:
                     entry["examples"].append(message[:EXAMPLE_CHARS])
+    for (host, service), windows in sorted(ctx.crowded.items()):
+        stream = f"service={json.dumps(service, ensure_ascii=False)}" if service else "streams without a service label"
+        ctx.notes.append(
+            f"{host}: {stream} filled {windows} windows to the {PROBLEM_LINES}-line limit in the day before "
+            f"{iso(end)}; its lines there are sampled (lower-bound counts) and the window read again without it"
+        )
     return found, ctx.skipped_windows == skipped_before
 
 
@@ -639,7 +694,7 @@ def section_signatures(ctx: Context, hosts: list[str]) -> dict[str, Any]:
                     backfilled.append(day)
                 else:
                     # An incomplete day never enters the baseline; the next run tries it again.
-                    ctx.errors.append(f"logs.signatures: {day} incomplete (a window was too large or not answered); not in the baseline")
+                    ctx.errors.append(f"logs.signatures: {day} incomplete (a window was too large, not answered or still at the line limit; see the notes); not in the baseline")
         if backfilled:
             ctx.notes.append(f"signature baseline filled from {len(backfilled)} earlier days ({backfilled[0]}..)")
         found, complete_today = day_signatures(ctx, hosts, ctx.now)
@@ -650,7 +705,7 @@ def section_signatures(ctx: Context, hosts: list[str]) -> dict[str, Any]:
         _save_signatures(path, store, oldest)
         raise
     if not complete_today:
-        ctx.errors.append("logs.signatures: today incomplete (a window was too large or not answered); not added to the baseline")
+        ctx.errors.append("logs.signatures: today incomplete (a window was too large, not answered or still at the line limit; see the notes); not added to the baseline")
     known = store.get("signatures", {})
     baseline_days = len([d for d in store.get("covered_days", []) if oldest <= d < today])
     new, surging = [], []
