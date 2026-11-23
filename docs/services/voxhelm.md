@@ -53,7 +53,7 @@ Batch URL inputs (`VOXHELM_BATCH_MAX_DOWNLOAD_BYTES`, `VOXHELM_BATCH_URL_FETCH_T
 | `voxhelm_whisperkit_script_path` | `"{{ voxhelm_app_dir }}/whisperkit.sh"` |
 | `voxhelm_prune_script_path` | `"{{ voxhelm_app_dir }}/prune.sh"` |
 | `voxhelm_uv_bin` | `"/usr/local/bin/uv"` |
-| `voxhelm_python_version` | `"3.14.8"` |
+| `voxhelm_python_version` | `"3.14.10"` |
 | `voxhelm_bind_host` | `"0.0.0.0"` |
 | `voxhelm_app_port` | `8787` |
 | `voxhelm_uvicorn_log_level` | `"info"` |

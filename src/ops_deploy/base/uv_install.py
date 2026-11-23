@@ -59,11 +59,11 @@ class UvInstallConfig(RoleConfig):
     # Explicit opt-in: Linux defaults and its existing installation path remain unchanged.
     darwin: bool = False
     # Version and checksums change together (the role's defaults).
-    version: Version = "0.13.5"
+    version: Version = "0.13.9"
     checksums: dict[str, Sha256] = Field(
         default_factory=lambda: {
-            "x86_64-unknown-linux-gnu": "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f",
-            "aarch64-unknown-linux-gnu": "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403",
+            "x86_64-unknown-linux-gnu": "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5",
+            "aarch64-unknown-linux-gnu": "0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d",
         }
     )
     # Must be world-readable: every service user runs uv from here.

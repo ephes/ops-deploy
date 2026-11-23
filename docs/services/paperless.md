@@ -85,15 +85,15 @@ environment is also tested. These local checks do not qualify systemd, database,
 scanner or application behavior on Linux. The runtime remains pinned to the
 declared 3.4.2 release and Python 3.14.
 
-Paperless's uv dependency uses the original role's 0.13.5 checksums and defaults
-through `PaperlessUvConfig`; the independent shared `UvInstallConfig` default
-now also selects 0.13.5. Callers may supply that dependency's original version,
+Paperless's uv dependency pins uv 0.13.9 with its checksums through
+`PaperlessUvConfig`; the independent shared `UvInstallConfig` default
+selects the same release. Callers may supply that dependency's original version,
 checksum, owner/group, update/force and deprecated compatibility-link settings.
 Its install directory must match `PaperlessConfig.uv_install_dir`; the original
 `uv_binary` setting selects every Paperless environment/package command. The
 private adapter retains generic `uv_*` inventory names and the role-level
-`paperless_uv_install_dir` precedence. This avoids the demonstrated 0.13.5 to
-0.13.4 downgrade in the first owned typed attempt.
+`paperless_uv_install_dir` precedence. Keeping both on one release avoids a downgrade of the shared
+`/usr/local/bin/uv` (the first owned typed attempt demonstrated 0.13.5 to 0.13.4).
 
 Prerequisite package admission reuses the existing installed-package/`Provides`
 lookup, matching Ansible's treatment of virtual packages. An installed provider

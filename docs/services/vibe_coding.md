@@ -36,11 +36,11 @@ The role's variables without the `vibe_coding_` prefix, with its defaults.
 | `shell_basics_extra_packages` | `gh`, `zoxide` | |
 | `shell_basics` | `ShellBasicsConfig()` | shell_basics' own settings (host vars); the include's five variables are applied on top |
 | `install_node`, `node_major_version` | `True`, `22` | NodeSource |
-| `neovim_version`, `lazygit_version` | `0.12.5`, `0.65.1` | with the role's checksums per architecture |
-| `install_rust`, `rustup_version` | `True`, `1.29.2` | |
+| `neovim_version`, `lazygit_version` | `0.12.6`, `0.66.3` | with the role's checksums per architecture |
+| `install_rust`, `rustup_version` | `True`, `1.29.3` | |
 | `npm_prefix` | `<home>/.npm-global` | |
 | `npm_tools` | the role's four tools | package names only; non-empty needs `install_node` (the role's assert) |
-| `zellij_install`, `zellij_version` | `True`, `0.45.1` | archive and binary checksums |
+| `zellij_install`, `zellij_version` | `True`, `0.46.0` | archive and binary checksums |
 | `sshd_hardening` | `True` | |
 | `secrets` | `None` | file with `github_username` and `github_token` |
 

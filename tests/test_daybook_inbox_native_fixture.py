@@ -68,7 +68,7 @@ def test_native_config_substitutions_keep_all_managed_resources_owned_and_activa
     assert all(Path(path).is_relative_to(owned.root) for path in paths)
     assert cfg.daybook_voice_memo_inbox_launchd_enabled is False
     assert cfg.daybook_voice_memo_inbox_long_label_enabled is False
-    assert cfg.daybook_voice_memo_inbox_python_version == "3.14.7"
+    assert cfg.daybook_voice_memo_inbox_python_version == "3.14.10"
     assert cfg.daybook_voice_memo_inbox_launchd_label.startswith("com.example.ops-mac-apps.")
     assert cfg.daybook_voice_memo_inbox_long_launchd_label.startswith("com.example.ops-mac-apps.")
     assert not list(tmp_path.iterdir())

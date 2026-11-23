@@ -27,13 +27,13 @@ class HomeAssistantUvConfig(UvInstallConfig):
     The include disables deprecated symlinks, so this component creates none.
     """
 
-    version: Version = "0.13.5"
+    version: Version = "0.13.9"
     checksums: dict[str, Sha256] = Field(
         default_factory=lambda: {
-            "x86_64-unknown-linux-gnu": "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f",
-            "aarch64-unknown-linux-gnu": "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403",
-            "x86_64-apple-darwin": "b0f52b0e3945b4107d89024ea38e625683011fbfc05a0d98f9fa2d6dcee28c66",
-            "aarch64-apple-darwin": "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73",
+            "x86_64-unknown-linux-gnu": "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5",
+            "aarch64-unknown-linux-gnu": "0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d",
+            "x86_64-apple-darwin": "617a3211261b0fc739562f0071aa34e9739797c510208ede8e2977c30903d041",
+            "aarch64-apple-darwin": "5aeca67f2283f75235de40d0bd9c0a5bbc5fce23b6d48b3bf9fa1b2db08382ca",
         }
     )
 

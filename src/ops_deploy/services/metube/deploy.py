@@ -214,7 +214,7 @@ def _node(cfg: MetubeConfig) -> None:
 def deploy_metube(cfg: MetubeConfig, basic_auth: BasicAuth | None = None) -> None:
     if cfg.traefik_enabled and basic_auth is None:
         raise ValueError("MeTube Traefik exposure requires basic auth")
-    if cfg.uv_version != "0.13.4":
+    if cfg.uv_version != "0.13.9":
         raise ValueError("MeTube uv selection needs matching reviewed release checksums")
     # Resolve exactly once with the established source verifier, before any
     # host operation; neither a moving branch nor a stale lock can slip in.
@@ -257,14 +257,14 @@ def deploy_metube(cfg: MetubeConfig, basic_auth: BasicAuth | None = None) -> Non
         update=True,
         cache_time=3600,
     )
-    # This staged API explicitly selects 0.13.4 above. Do not silently inherit
+    # This staged API explicitly selects 0.13.9 above. Do not silently inherit
     # a newer shared default or pair this URL with that release's checksums.
     deploy_uv_install(
         cfg=UvInstallConfig(
             version=cfg.uv_version,
             checksums={
-                "x86_64-unknown-linux-gnu": "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f",
-                "aarch64-unknown-linux-gnu": "1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab",
+                "x86_64-unknown-linux-gnu": "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5",
+                "aarch64-unknown-linux-gnu": "0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d",
             },
         )
     )

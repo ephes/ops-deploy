@@ -148,8 +148,8 @@ def test_pipeline_failure_stops_live_configuration_and_rollout(tmp_path: Path) -
     (tmp_path / "uv.lock").write_text("version = 1\n")
     responses = {
         "apply stage": {"success": False, "stderr": "owned staged build failure"},
-        "/usr/local/bin/uv --version": ["uv 0.13.4 (x86_64-unknown-linux-gnu)"],
-        "/usr/local/bin/uvx --version": ["uvx 0.13.4 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uv --version": ["uv 0.13.9 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uvx --version": ["uvx 0.13.9 (x86_64-unknown-linux-gnu)"],
         "node --version": ["v24.22.1"],
         **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
         **fakehost.file("/usr/local/bin/uvx", "binary", mode="-rwxr-xr-x"),
@@ -211,6 +211,6 @@ def test_explicit_metube_uv_pin_keeps_its_matching_checksums(tmp_path: Path) -> 
         run = run_deploy_fake(deploy_metube, MetubeConfig(extra_groups=()), AUTH, responses=responses)
     assert run.succeeded, run.error
     install = next(command for command in run.executed_commands if "release.tar.gz" in command)
-    assert "/download/0.13.4/uv-x86_64-unknown-linux-gnu.tar.gz" in install
-    assert "2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f" in install
-    assert "/download/0.13.5/" not in install
+    assert "/download/0.13.9/uv-x86_64-unknown-linux-gnu.tar.gz" in install
+    assert "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5" in install
+    assert "/download/0.13.4/" not in install

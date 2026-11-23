@@ -33,7 +33,7 @@ name=Path(sys.argv[0]).name
 args=sys.argv[1:]
 with (Path(sys.argv[0]).parents[2]/'calls.jsonl').open('a') as stream:stream.write(json.dumps([name,*args])+'\\n')
 if name=='hass':print('2026.10.2');sys.exit(0)
-if args==['--version']:print('Python 3.14.8');sys.exit(0)
+if args==['--version']:print('Python 3.14.10');sys.exit(0)
 if args==['-m','pip','--version']:print('pip synthetic');sys.exit(0)
 if args==['-m','pip','show','python-matter-server']:
  print('Version: 8.1.2');sys.exit({0 if matter else 1})
@@ -70,7 +70,7 @@ def test_actual_encoded_current_homeassistant_observation(tmp_path: Path, monkey
     venv, log = fixture(tmp_path, monkeypatch)
     cfg = HomeAssistantRuntimeConfig(virtualenv_path=str(venv), package_spec="homeassistant==2026.10.2")
     result = observation.inspect_environment(cfg, "homeassistant")
-    assert result.python_stdout == "Python 3.14.8"
+    assert result.python_stdout == "Python 3.14.10"
     assert result.installed_version == "2026.10.2"
     assert not homeassistant_decision(cfg, result).replace
     assert not homeassistant_decision(cfg, result).install_application

@@ -26,7 +26,7 @@ def config(**overrides: Any) -> DaybookPhotosOffloadConfig:
 
 def test_original_paths_and_disabled_install_are_distinct_from_activation() -> None:
     cfg = config()
-    assert cfg.daybook_photos_offload_python_version == "3.14.7"
+    assert cfg.daybook_photos_offload_python_version == "3.14.10"
     assert cfg.ansible_become_flags == "-H -i"
     assert cfg.daybook_photos_offload_service_home == "/Users/fixture"
     assert cfg.daybook_photos_offload_checkout_attestation_path.endswith("/photos-offload/managed-v1")

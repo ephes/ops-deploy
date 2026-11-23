@@ -43,7 +43,7 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     virtualenv_path: AbsolutePath = "/home/homeassistant/site/.venv"
     virtualenv_link: AbsolutePath = "/home/homeassistant/site/venv"
     virtualenv_version_file: AbsolutePath = "/home/homeassistant/site/.venv/.ansible-python-version"
-    python_version: Version = "3.14.8"
+    python_version: Version = "3.14.10"
     manage_uv: StrictBool = True
     uv: HomeAssistantUvConfig = Field(default_factory=HomeAssistantUvConfig)
     uv_path: AbsolutePath = "/usr/local/bin/uv"

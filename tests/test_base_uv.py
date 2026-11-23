@@ -11,14 +11,14 @@ from tests import fakehost
 from tests.fakehost import LINUX
 
 X86 = {**LINUX, "uname -m": ["x86_64"], **fakehost.directory("/usr/local/bin")}
-SHA_X86 = "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
+SHA_X86 = "a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5"
 LEGACY = "legacy uv 0.13.4 bytes"
 
 
 def installed(
-    version: str | None = "0.13.5",
+    version: str | None = "0.13.9",
     *,
-    uvx: str | None = "0.13.5",
+    uvx: str | None = "0.13.9",
     user: str = "root",
     mode: str = "-rwxr-xr-x",
 ) -> dict[str, Any]:
@@ -49,13 +49,13 @@ def legacy_sha() -> str:
 def test_installs_verified_pair_when_missing() -> None:
     command = install_command(run_deploy_fake(deploy_uv_install, UvInstallConfig(), responses=X86))
 
-    assert "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-unknown-linux-gnu.tar.gz" in command
+    assert "https://github.com/astral-sh/uv/releases/download/0.13.9/uv-x86_64-unknown-linux-gnu.tar.gz" in command
     assert f"echo {SHA_X86}'  '\"$tmp/release.tar.gz\" | sha256sum -c --quiet -" in command
     # Checksum first, then each binary staged and renamed into place, then both versions checked.
     assert command.index("sha256sum") < command.index("install -o root -g root -m 0755")
     for name in ("uv", "uvx"):
         assert f"&& mv -f /usr/local/bin/.{name}.ops-deploy-new /usr/local/bin/{name}" in command
-        assert f'test "$(/usr/local/bin/{name} --version | cut -d " " -f 2)" = 0.13.5' in command
+        assert f'test "$(/usr/local/bin/{name} --version | cut -d " " -f 2)" = 0.13.9' in command
 
 
 def test_same_pair_changes_nothing() -> None:
@@ -89,8 +89,8 @@ def test_other_version_is_replaced_unless_updates_are_off() -> None:
 
 @pytest.mark.parametrize("update_existing", [True, False])
 def test_a_consistent_newer_pair_is_kept_not_downgraded(update_existing: bool) -> None:
-    # metube pins 0.13.4 on a host whose shared uv is 0.13.5: keep the newer pair.
-    responses = {**X86, **installed("0.13.6", uvx="0.13.6")}
+    # an older pin on a host whose shared uv is newer: keep the newer pair.
+    responses = {**X86, **installed("0.13.10", uvx="0.13.10")}
 
     run = run_deploy_fake(deploy_uv_install, UvInstallConfig(update_existing=update_existing), responses=responses)
 
@@ -100,14 +100,14 @@ def test_a_consistent_newer_pair_is_kept_not_downgraded(update_existing: bool) -
 
 @pytest.mark.parametrize(
     ("uv", "uvx", "force"),
-    [("0.13.5", "0.13.6", False), ("0.13.6", None, False), ("0.13.6", "0.13.6", True)],
+    [("0.13.9", "0.13.10", False), ("0.13.10", None, False), ("0.13.10", "0.13.10", True)],
 )
 def test_refuses_a_reinstall_that_would_downgrade(uv: str, uvx: str | None, force: bool) -> None:
     run = run_deploy_fake(
         deploy_uv_install, UvInstallConfig(force_reinstall=force), responses={**X86, **installed(uv, uvx=uvx)}
     )
 
-    assert "newer than the pinned 0.13.5 and the pair needs a reinstall; refusing to downgrade" in str(run.error)
+    assert "newer than the pinned 0.13.9 and the pair needs a reinstall; refusing to downgrade" in str(run.error)
     assert run.executed_commands == []
 
 

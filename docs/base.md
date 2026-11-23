@@ -321,7 +321,7 @@ in `after` that did not succeed (such as a failed soft pin) skips the prune.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `0.13.5` | change together with `checksums` |
+| `version` | `0.13.9` | change together with `checksums` |
 | `checksums` | the role's sha256 for x86_64 and aarch64 Linux | keyed by release target |
 | `install_dir` | `/usr/local/bin` | not `/` |
 | `owner`, `group` | `root` | |
@@ -361,7 +361,7 @@ The default path and commands remain Linux-only. `darwin=True` explicitly
 selects the native Darwin installer; callers must supply the selected native
 version, matching `aarch64-apple-darwin`/`x86_64-apple-darwin` checksums, and the
 native ownership (normally `root:wheel`). The Mac application roles select
-`0.13.5`; Linux defaults now select the same release with their own checksums.
+`0.13.9`; Linux defaults now select the same release with their own checksums.
 The Darwin branch uses the target's `/usr/bin/python3`, verifies the archive
 and both staged executables before publication, and retains the installed
 binaries when validation fails. An already-current installation creates no
@@ -406,7 +406,7 @@ last owns the file.
 | `packages` | the role's list | `extra_packages` adds more |
 | `switch_shell` | `True` | `usermod -s`, after checking the shell exists on the host |
 | `manage_fish_config` | `True` | `fish_extra_config` lines go into the block |
-| `manage_chezmoi` | `True` | `chezmoi_version` `2.73.1`, `chezmoi_install_dir` `/usr/local/bin`, `chezmoi_checksums` |
+| `manage_chezmoi` | `True` | `chezmoi_version` `2.74.2`, `chezmoi_install_dir` `/usr/local/bin`, `chezmoi_checksums` |
 | `apt_cache_valid_time` | `3600` | |
 | `fix_resolv_conf` | `True` | `resolv_fallback_nameservers` (IP addresses) |
 | `set_default_editor` | `True` | `default_editor_path` `/usr/bin/vim.basic` |

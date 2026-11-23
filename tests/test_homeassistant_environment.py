@@ -22,7 +22,7 @@ from ops_deploy.testing import run_deploy_fake
 @pytest.fixture
 def fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     values: dict[str, Any] = {
-        "current": EnvironmentState(True, "Python 3.14.8"),
+        "current": EnvironmentState(True, "Python 3.14.10"),
         "present": True,
         "observations": [],
         "stops": [],
@@ -124,7 +124,7 @@ def test_execution_rechecks_after_prior_interpreter_link_update(
     def command(self: FakeConnector, cmd: Any, *args: Any, **kwargs: Any) -> Any:
         text = cmd if isinstance(cmd, str) else cmd.get_raw_value()
         if text == "synthetic-update-python-link":
-            fixture["current"] = EnvironmentState(True, "Python 3.14.8")
+            fixture["current"] = EnvironmentState(True, "Python 3.14.10")
             return True, CommandOutput([])
         return original(self, cmd, *args, **kwargs)
 

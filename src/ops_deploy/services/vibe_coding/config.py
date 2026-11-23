@@ -23,24 +23,24 @@ BranchName = Annotated[str, Field(pattern=r"^[A-Za-z0-9._/-]+$", max_length=255)
 # vibe_coding_deploy/defaults/main.yml (ops-library 8c5060e2, 2.75.x).
 NPM_TOOLS = ("@anthropic-ai/claude-code", "@openai/codex", "opencode-ai", "@mariozechner/pi-coding-agent")
 NEOVIM_CHECKSUMS = {
-    "x86_64": "bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875",
-    "arm64": "1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725",
+    "x86_64": "474430d53e6264f6d6dd18db42d6dc9df3a1b56ca9e88a325bbf860e1a811d87",
+    "arm64": "8f1f64a0bdb97247034038c3823c6cbad5bdf9ecd5751b85494b71c3ee04c815",
 }
 LAZYGIT_CHECKSUMS = {
-    "x86_64": "02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6",
-    "arm64": "49abecdf6adf4f2dfdb11bf7b9bfada267ea523612ed809d1c6d87f6c04000a7",
+    "x86_64": "0a23f429a95f0d09db298b3c291536d818de066aa5a85c255806f0490ff6656b",
+    "arm64": "ac0b48237f3d0283813e7154ec063237e519532feb0470c0881a1793ee78fd42",
 }
 ZELLIJ_CHECKSUMS = {
-    "x86_64": "40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc",
-    "aarch64": "05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b",
+    "x86_64": "a8ee599eb357b6142443c91506a4ece3aa8811cb75dcf2b28d194bd66853c79d",
+    "aarch64": "c416b3d29ec9c71baf8754fe66663afe4f615395895e3f9b8b6e3bd0f7042427",
 }
 ZELLIJ_BINARY_CHECKSUMS = {
-    "x86_64": "d006c521dcb475a6005d741e9dd7c5758e5a23b28dd60a5c10cebfa4876319dd",
-    "aarch64": "2a2c0621e6f3b11ecbb05d66939a48000a2508604620aa20727a5fd61c49f451",
+    "x86_64": "afb6bfb5f9fdc3d9e9d094ce21866bc99d37073a5fbe75bb612e21fc9b96033d",
+    "aarch64": "09cc9f60eb122987c10221fa559aa00c441333a23ba53d727c807f36c5222147",
 }
 RUSTUP_CHECKSUMS = {
-    "x86_64": "5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4",
-    "aarch64": "a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697",
+    "x86_64": "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55",
+    "aarch64": "9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282",
 }
 
 
@@ -93,15 +93,15 @@ class VibeCodingConfig(BaseServiceConfig):
     shell_basics: ShellBasicsConfig = Field(default_factory=ShellBasicsConfig)
     install_node: bool = True
     node_major_version: Version = "22"
-    neovim_version: Version = "0.12.5"
-    lazygit_version: Version = "0.65.1"
+    neovim_version: Version = "0.12.6"
+    lazygit_version: Version = "0.66.3"
     install_rust: bool = True
-    rustup_version: Version = "1.29.2"
+    rustup_version: Version = "1.29.3"
     # None: ``<home>/.npm-global``.
     npm_prefix: PurePosixPath | None = None
     npm_tools: tuple[NpmPackage, ...] = NPM_TOOLS
     zellij_install: bool = True
-    zellij_version: Version = "0.45.1"
+    zellij_version: Version = "0.46.0"
     sshd_hardening: bool = True
     neovim_checksums: dict[str, Sha256] = Field(default_factory=lambda: dict(NEOVIM_CHECKSUMS))
     lazygit_checksums: dict[str, Sha256] = Field(default_factory=lambda: dict(LAZYGIT_CHECKSUMS))

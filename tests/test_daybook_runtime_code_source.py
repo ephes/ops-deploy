@@ -43,7 +43,7 @@ def helper(monkeypatch: Any) -> Any:
 class RuntimeProbes(SessionProbes):
     loaded = False
     serving = False
-    pinned = "/owned/uv/python/cpython-3.14.7-owned/bin/python3.14"
+    pinned = "/owned/uv/python/cpython-3.14.10-owned/bin/python3.14"
 
     def run(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         if argv[0] == "/bin/launchctl":

@@ -52,12 +52,12 @@ class ShellBasicsConfig(RoleConfig):
     manage_fish_config: bool = True
     fish_extra_config: tuple[FishLine, ...] = ()
     manage_chezmoi: bool = True
-    chezmoi_version: Version = "2.73.1"
+    chezmoi_version: Version = "2.74.2"
     chezmoi_install_dir: AbsolutePath = "/usr/local/bin"
     chezmoi_checksums: dict[str, Sha256] = Field(
         default_factory=lambda: {
-            "amd64": "a3f958acb7d0e5d53fa43c2eec9bc8ae3b4fba8bcbfdce29a8881ca3ffc20a53",
-            "arm64": "e60275b27f505ae2086bfb87b144eacf7377a89803120f6bd933d1852a93b0c6",
+            "amd64": "5f2024119a1860f18f2243b892dd43a79f0fefe2ebef9786ee143f4d5fd69ccb",
+            "arm64": "bb1521dd02aff3967d61937213110e79ddd6e181e0856cf51e80dba01fda245f",
         }
     )
     apt_cache_valid_time: int = Field(default=3600, ge=0)

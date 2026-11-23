@@ -12,7 +12,7 @@
   "daybook_photos_offload_repo_bundle_path": "{{ daybook_photos_offload_checkout_path | dirname }}/source.bundle",
   "daybook_photos_offload_repo_ref": "CHANGEME",
   "daybook_photos_offload_uv_bin": "/opt/homebrew/bin/uv",
-  "daybook_photos_offload_python_version": "3.14.7",
+  "daybook_photos_offload_python_version": "3.14.10",
   "daybook_photos_offload_venv_path": "{{ daybook_photos_offload_checkout_path }}/.venv",
   "daybook_photos_offload_path": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
   "daybook_photos_offload_system_group": "wheel",

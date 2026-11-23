@@ -40,7 +40,7 @@ def test_fresh_disabled_declaration_needs_no_secrets_or_source() -> None:
 
 def test_default_disabled_first_runtime_preserves_original_versions_and_policy() -> None:
     cfg = config()
-    assert cfg.daybook_voice_memo_inbox_python_version == "3.14.7"
+    assert cfg.daybook_voice_memo_inbox_python_version == "3.14.10"
     assert cfg.daybook_voice_memo_inbox_launchd_enabled is False
     assert cfg.daybook_voice_memo_inbox_long_lane_enabled is False
     assert cfg.daybook_voice_memo_inbox_long_label_enabled is True

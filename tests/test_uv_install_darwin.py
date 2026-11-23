@@ -18,7 +18,7 @@ from ops_deploy.base import uv_install_darwin as native
 from ops_deploy.testing import run_deploy_fake
 
 TARGET = "aarch64-apple-darwin"
-SHA = "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73"
+SHA = "5aeca67f2283f75235de40d0bd9c0a5bbc5fce23b6d48b3bf9fa1b2db08382ca"
 
 
 def config(tmp_path: Path) -> dict[str, Any]:
@@ -26,14 +26,14 @@ def config(tmp_path: Path) -> dict[str, Any]:
         "install_dir": str(tmp_path / "bin"),
         "owner": pwd.getpwuid(os.getuid()).pw_name,
         "group": grp.getgrgid(os.getgid()).gr_name,
-        "version": "0.13.5",
+        "version": "0.13.9",
         "checksums": {TARGET: SHA},
         "force_reinstall": False,
         "update_existing": True,
     }
 
 
-def binaries(directory: Path, version: str = "0.13.5") -> None:
+def binaries(directory: Path, version: str = "0.13.9") -> None:
     directory.mkdir(exist_ok=True)
     for name in ("uv", "uvx"):
         path = directory / name
@@ -41,7 +41,7 @@ def binaries(directory: Path, version: str = "0.13.5") -> None:
         path.chmod(0o755)
 
 
-def archive(version: str = "0.13.5", *, invalid_uvx: bool = False) -> bytes:
+def archive(version: str = "0.13.9", *, invalid_uvx: bool = False) -> bytes:
     result = io.BytesIO()
     with tarfile.open(fileobj=result, mode="w:gz") as bundle:
         for name in ("uv", "uvx"):
@@ -92,11 +92,11 @@ def test_fresh_release_and_repeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     urls = fixture_release(monkeypatch, cfg, archive())
     assert native.needed(cfg)
     native.install(cfg)
-    assert native.version(Path(cfg["install_dir"]) / "uv") == "0.13.5"
+    assert native.version(Path(cfg["install_dir"]) / "uv") == "0.13.9"
     before = snapshot(tmp_path)
     native.install(cfg)
     assert snapshot(tmp_path) == before
-    assert urls == ["https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-apple-darwin.tar.gz"]
+    assert urls == ["https://github.com/astral-sh/uv/releases/download/0.13.9/uv-aarch64-apple-darwin.tar.gz"]
 
 
 @pytest.mark.parametrize("failure", ["checksum", "version", "uvx", "archive"])
@@ -107,7 +107,7 @@ def test_invalid_release_retains_both_old_binaries(
     directory = Path(cfg["install_dir"])
     binaries(directory, "0.12.0")
     old = {name: (directory / name).read_bytes() for name in ("uv", "uvx")}
-    content = archive("0.12.9" if failure == "version" else "0.13.5", invalid_uvx=failure == "uvx")
+    content = archive("0.12.9" if failure == "version" else "0.13.9", invalid_uvx=failure == "uvx")
     if failure == "archive":
         content = b"not a tar archive"
     fixture_release(monkeypatch, cfg, content)
@@ -147,10 +147,10 @@ def test_unknown_platform_requires_explicit_pin(tmp_path: Path, monkeypatch: pyt
 
 def test_darwin_is_explicit_and_linux_defaults_are_unchanged() -> None:
     cfg = UvInstallConfig()
-    assert cfg.version == "0.13.5"
+    assert cfg.version == "0.13.9"
     assert cfg.group == "root"
     assert cfg.darwin is False
-    native_cfg = UvInstallConfig(darwin=True, version="0.13.5", group="wheel", checksums={TARGET: SHA})
+    native_cfg = UvInstallConfig(darwin=True, version="0.13.9", group="wheel", checksums={TARGET: SHA})
     run = run_deploy_fake(deploy_uv_install, native_cfg)
     assert run.succeeded, run.error
     assert len(run.changed_ops) == 1

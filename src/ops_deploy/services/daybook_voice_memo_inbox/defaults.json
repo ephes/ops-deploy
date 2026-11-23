@@ -13,7 +13,7 @@
   "daybook_voice_memo_inbox_checkout_path": "{{ daybook_voice_memo_inbox_install_root }}/daybook",
   "daybook_voice_memo_inbox_repo_bundle_path": "{{ daybook_voice_memo_inbox_install_root }}/source.bundle",
   "daybook_voice_memo_inbox_uv_bin": "/opt/homebrew/bin/uv",
-  "daybook_voice_memo_inbox_python_version": "3.14.7",
+  "daybook_voice_memo_inbox_python_version": "3.14.10",
   "daybook_voice_memo_inbox_python_install_dir": "/Library/Application Support/Daybook/python",
   "daybook_voice_memo_inbox_python": "{{ daybook_voice_memo_inbox_checkout_path }}/.venv/bin/python",
   "daybook_voice_memo_inbox_source_dir": "{{ daybook_voice_memo_inbox_service_home }}/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings",

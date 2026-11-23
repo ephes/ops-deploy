@@ -243,11 +243,11 @@ def test_fresh_host_converges_and_repeats_without_changes(box: Box, dotfiles: Do
         "Vibe coding | Initialize chezmoi and apply the dotfiles",
         f"Vibe coding | Write {HOME}/.config/gh/hosts.yml",
         "Vibe coding | Install Node.js",
-        "Vibe coding | Install Neovim 0.12.5 into /opt",
-        "Vibe coding | Install lazygit 0.65.1",
-        "Vibe coding | Install rustup 1.29.2 for vibe",
+        "Vibe coding | Install Neovim 0.12.6 into /opt",
+        "Vibe coding | Install lazygit 0.66.3",
+        "Vibe coding | Install rustup 1.29.3 for vibe",
         "Vibe coding | Install or update npm tools (system-wide copies removed)",
-        "Vibe coding | Install zellij 0.45.1",
+        "Vibe coding | Install zellij 0.46.0",
         "Vibe coding | Install /etc/ssh/sshd_config after sshd -t and reload ssh",
     ):
         assert expected in changed, (expected, changed)
@@ -293,9 +293,9 @@ def test_fresh_host_converges_and_repeats_without_changes(box: Box, dotfiles: Do
         assert box.out(f"grep -c '^github.com ssh-ed25519 ' {known}") == "1"
     assert box.stat(f"{HOME}/.ssh/known_hosts") == "vibe:vibe 644"
     # Tools.
-    assert box.out("nvim --version | head -n 1").startswith("NVIM v0.12.5")
-    assert "0.65.1" in box.out("lazygit --version")
-    assert box.out("zellij --version") == "zellij 0.45.1"
+    assert box.out("nvim --version | head -n 1").startswith("NVIM v0.12.6")
+    assert "0.66.3" in box.out("lazygit --version")
+    assert box.out("zellij --version") == "zellij 0.46.0"
     assert box.stat("/usr/local/bin/zellij") == "root:root 755"
     assert box.out("readlink /usr/local/bin/nvim").startswith("/opt/nvim-linux-")
     assert box.out("node --version").startswith("v22.")

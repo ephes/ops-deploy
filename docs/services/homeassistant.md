@@ -44,9 +44,8 @@ steps and the public normal deployment entry point. Ordinary private original
 context binding and full application/lifecycle qualification remain open.
 No physical no-op or application acceptance follows from template/input tests.
 
-The prepared UV component uses the original Home Assistant 0.13.5 version and
-complete checksum defaults, preserving the shared installer's independently adopted 0.13.5 defaults
-unchanged. Its nested `uv` settings represent the resolved original include:
+The prepared UV component pins uv 0.13.9 with complete Linux and Darwin
+checksum defaults, the same release as the shared installer's Linux defaults. Its nested `uv` settings represent the resolved original include:
 HA version/path/update/force settings are distinct from generic checksum/owner/
 group settings. The original `homeassistant_uv_install_user` is inert in the
 dependency role and gains no new ownership authority. Deprecated symlinks remain

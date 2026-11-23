@@ -49,7 +49,7 @@ Configuration retains the original public variable names. Computed defaults belo
 | `voxhelm_remote_worker_install_transcript_path` | `"{{ voxhelm_remote_worker_log_dir }}/install-transcript.log"` |
 | `voxhelm_remote_worker_launcher_path` | `"{{ voxhelm_remote_worker_config_dir }}/worker-launcher.sh"` |
 | `voxhelm_remote_worker_uv_bin` | `"/usr/local/bin/uv"` |
-| `voxhelm_remote_worker_python_version` | `"3.14.8"` |
+| `voxhelm_remote_worker_python_version` | `"3.14.10"` |
 | `voxhelm_remote_worker_public_index_url` | `"https://pypi.org/simple"` |
 | `voxhelm_remote_worker_package_name` | `"voxhelm"` |
 | `voxhelm_remote_worker_package_version` | `"0.1.0"` |

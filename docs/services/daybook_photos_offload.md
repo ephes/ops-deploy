@@ -21,7 +21,7 @@ recreates only this state-free directory when its interpreter is wrong or
 cannot start. Privileged tree checks exclude its descendants. Interpreter and
 UV dependency observations run as the GUI user without a login profile;
 managed UV sync retains the original `-H -i` transition and
-`--frozen --no-config --no-dev --no-install-project --python 3.14.7`. Only UV's
+`--frozen --no-config --no-dev --no-install-project --python 3.14.10`. Only UV's
 dry `--check` predicate uses offline/no-download/no-cache settings. Missing
 managed Python may be installed by the original managed sync; no root execution
 of the user-writable environment or incidental version upgrade is introduced.

@@ -67,8 +67,8 @@ def test_default_resolves_original_paths_python_and_separate_auth() -> None:
     cfg = config()
     assert cfg.daybook_sessions_service_home == "/Users/fixture"
     assert cfg.daybook_sessions_checkout_path == "/Users/fixture/.local/share/daybook/sessions/daybook"
-    assert cfg.daybook_sessions_python_version == "3.14.7"
-    assert cfg.daybook_sessions_uv_sync_args == ["sync", "--frozen", "--no-dev", "--python", "3.14.7"]
+    assert cfg.daybook_sessions_python_version == "3.14.10"
+    assert cfg.daybook_sessions_uv_sync_args == ["sync", "--frozen", "--no-dev", "--python", "3.14.10"]
     assert cfg.daybook_weeknotes_reconcile_pi_auth_rotate is False
     assert (
         cfg.daybook_weeknotes_reconcile_pi_auth_source == "/Users/fixture/.config/daybook-weeknotes-reconcile/auth.json"

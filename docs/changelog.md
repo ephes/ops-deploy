@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Toolchain pins (2026-11-23): uv 0.13.9 everywhere ops-deploy pins uv
+  (`UvInstallConfig`, `HomeAssistantUvConfig`, `PaperlessUvConfig`, MeTube's
+  explicit selection, which was 0.13.4; checksums from the release's
+  `.sha256` files, equal to the GitHub asset digests). Python 3.14.10 for
+  the daybook services, Home Assistant, MeTube (was 3.14.0), Voxhelm and the
+  Voxhelm remote worker; uv 0.13.5 has no 3.14.10 download, so these deploys
+  need uv 0.13.9 (the Homebrew uv on the Macs, the pinned uv elsewhere).
+  shell_basics chezmoi 2.74.2 (checksums from `chezmoi_2.74.2_checksums.txt`).
+  vibe_coding: Neovim 0.12.6, lazygit 0.66.3, rustup 1.29.3, zellij 0.46.0
+  (archive and binary checksums from the release; zellij and rustup are
+  installed only when missing, so an existing host keeps its version).
+
 - obs_daily: a signature window that is still at the 2,000-line limit after
   five halvings (about 11 minutes) is read again without its loudest
   `service` stream, up to three streams. That stream's lines from the first

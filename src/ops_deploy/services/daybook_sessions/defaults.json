@@ -19,7 +19,7 @@
   "daybook_sessions_state_path": "{{ daybook_sessions_service_home }}/.daybook/sessions-shipped.json",
   "daybook_sessions_uv_install_dir": "/usr/local/bin",
   "daybook_sessions_uv_bin": "{{ daybook_sessions_uv_install_dir }}/uv",
-  "daybook_sessions_python_version": "3.14.7",
+  "daybook_sessions_python_version": "3.14.10",
   "daybook_sessions_uv_sync_args": [
     "sync",
     "--frozen",

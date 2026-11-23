@@ -88,7 +88,7 @@ def converged(config: VibeCodingConfig, **extra: Any) -> dict[str, Any]:
             f"vibe:x:1001:1001::{home}:/usr/bin/fish|vibe|vibe||!",
         ],
         "awk '/^nameserver/": ["192.168.178.1"],
-        "/usr/local/bin/chezmoi --version": ["chezmoi version v2.73.1, commit abc, built at 2026-01-01T00:00:00Z"],
+        "/usr/local/bin/chezmoi --version": ["chezmoi version v2.74.2, commit abc, built at 2026-01-01T00:00:00Z"],
         "update-alternatives --query editor": ["Name: editor", "Status: manual", "Value: /usr/bin/vim.basic"],
         **fakehost.apt_cache_fresh(),
         **fakehost.deb_installed(*config.effective_shell_basics().all_packages, "nodejs"),
@@ -110,10 +110,10 @@ def converged(config: VibeCodingConfig, **extra: Any) -> dict[str, Any]:
         "! -user vibe -print -quit": [],
         "bash -c 'set -o pipefail; C=/usr/local/bin/chezmoi": ["current"],
         "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin nvim --version": [
-            "NVIM v0.12.5",
+            "NVIM v0.12.6",
             "Build type: Release",
         ],
-        "lazygit --version": ["commit=abc, build date=x, version=0.65.1, os=linux, arch=amd64"],
+        "lazygit --version": ["commit=abc, build date=x, version=0.66.3, os=linux, arch=amd64"],
         "/.cargo/bin/rustup || test -L": ["yes"],
         "component list --installed": ["rust-analyzer-x86_64-unknown-linux-gnu", "rustc-x86_64-unknown-linux-gnu"],
         "npm config get prefix": [f"{home}/.npm-global"],
@@ -173,8 +173,8 @@ def test_defaults_are_the_roles() -> None:
         "opencode-ai",
         "@mariozechner/pi-coding-agent",
     )
-    assert (config.node_major_version, config.neovim_version, config.lazygit_version) == ("22", "0.12.5", "0.65.1")
-    assert (config.rustup_version, config.zellij_version) == ("1.29.2", "0.45.1")
+    assert (config.node_major_version, config.neovim_version, config.lazygit_version) == ("22", "0.12.6", "0.66.3")
+    assert (config.rustup_version, config.zellij_version) == ("1.29.3", "0.46.0")
     assert config.dotfiles is None
 
 
@@ -410,19 +410,19 @@ def test_fresh_host_plan(tmp_path: Path) -> None:
         "Vibe coding | Initialize chezmoi and apply the dotfiles",
         f"Vibe coding | Write {HOME}/.config/gh/hosts.yml",
         "Vibe coding | Install Node.js",
-        "Vibe coding | Install Neovim 0.12.5 into /opt",
-        "Vibe coding | Install lazygit 0.65.1",
-        "Vibe coding | Install rustup 1.29.2 for vibe",
+        "Vibe coding | Install Neovim 0.12.6 into /opt",
+        "Vibe coding | Install lazygit 0.66.3",
+        "Vibe coding | Install rustup 1.29.3 for vibe",
         "Vibe coding | Ensure rust-analyzer is installed",
         "Vibe coding | Install or update npm tools (system-wide copies removed)",
-        "Vibe coding | Install zellij 0.45.1",
+        "Vibe coding | Install zellij 0.46.0",
         "Vibe coding | Install /etc/ssh/sshd_config after sshd -t and reload ssh",
     ]
     assert [name for name in changed if name in order] == order
     # arm64 assets, as the role's arch maps pick them.
     commands = "\n".join(run.executed_commands)
     assert "nvim-linux-arm64.tar.gz" in commands
-    assert "lazygit_0.65.1_linux_arm64.tar.gz" in commands
+    assert "lazygit_0.66.3_linux_arm64.tar.gz" in commands
     assert "zellij-aarch64-unknown-linux-musl.tar.gz" in commands
     assert "aarch64-unknown-linux-gnu/rustup-init" in commands
     assert TOKEN not in run.all_text()

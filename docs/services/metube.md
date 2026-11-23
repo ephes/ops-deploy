@@ -20,8 +20,8 @@ the systemd rollout. An incomplete rollout retains its pending marker so a retry
 cannot incorrectly skip the restart. The marker is removed after HTTP health
 passes. The route reuses a matching bcrypt hash and Traefik's watched provider.
 
-The current supported runtime selection uses checksum-pinned uv 0.13.4. Python
-is selected explicitly (default 3.14.0). Existing Node.js 24 releases meeting
+The current supported runtime selection uses checksum-pinned uv 0.13.9. Python
+is selected explicitly (default 3.14.10). Existing Node.js 24 releases meeting
 24.15.0 are retained; missing/wrong-major/older Node installs use the role's
 MeTube NodeSource key and repository paths. Changing a uv version requires
 reviewed matching checksums. No deployment-time lock overlay disables a stale
@@ -80,6 +80,6 @@ must survive every pass. It never downloads real media.
 
 ## Explicit uv selection
 
-The staged MeTube API retains its reviewed `uv_version=0.13.4` selection and
+The staged MeTube API selects `uv_version=0.13.9` and
 matching Linux checksums. It passes these explicitly to the uv installer;
-the shared installer's `0.13.5` default does not change this selected toolchain.
+the shared installer's default (also `0.13.9` today) does not change this selected toolchain.

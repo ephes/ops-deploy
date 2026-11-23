@@ -27,8 +27,8 @@ class MetubeConfig(BaseServiceConfig):
     build_root: PurePosixPath = PurePosixPath("/var/cache/metube")
     env_dir: PurePosixPath = PurePosixPath("/etc/metube")
     source: GitSource = GitSource(repo="https://github.com/alexta69/metube.git", ref="master")
-    python_version: Annotated[str, Field(pattern=r"^3\.[0-9]+(?:\.[0-9]+)?$")] = "3.14.0"
-    uv_version: Annotated[str, Field(pattern=r"^0\.[0-9]+\.[0-9]+$")] = "0.13.4"
+    python_version: Annotated[str, Field(pattern=r"^3\.[0-9]+(?:\.[0-9]+)?$")] = "3.14.10"
+    uv_version: Annotated[str, Field(pattern=r"^0\.[0-9]+\.[0-9]+$")] = "0.13.9"
     node_major: int = Field(default=24, ge=1)
     node_min_version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")] = "24.15.0"
     ui_build_configuration: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")] = "production"

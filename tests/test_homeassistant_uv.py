@@ -48,10 +48,10 @@ def test_disabled_dependency_does_not_probe_install_or_verify() -> None:
 @pytest.mark.parametrize(
     ("version", "update", "force", "expected"),
     [
-        ("0.13.5", True, False, False),
+        ("0.13.9", True, False, False),
         ("0.13.4", True, False, True),
         ("0.13.4", False, False, False),
-        ("0.13.5", False, True, True),
+        ("0.13.9", False, True, True),
     ],
 )
 def test_actual_component_install_gate_and_post_checks(version: str, update: bool, force: bool, expected: bool) -> None:
@@ -70,7 +70,7 @@ def test_actual_component_install_gate_and_post_checks(version: str, update: boo
     assert bool(downloads) is expected
     assert run.executed_commands[-1] == "/usr/local/bin/uv --version && /usr/local/bin/uv --help >/dev/null"
     if expected:
-        assert "/download/0.13.5/" in downloads[0]
+        assert "/download/0.13.9/" in downloads[0]
         assert cfg.checksums["x86_64-unknown-linux-gnu"] in downloads[0]
     else:
         assert run.mutating_changed_ops == []
@@ -84,7 +84,7 @@ def test_update_disabled_does_not_invent_uv_or_uvx_repair(broken: bool) -> None:
         "/usr/local/bin/uv --version &&": {"success": not broken},
         **fakehost.LINUX,
         "uname -m": ["x86_64"],
-        "/usr/local/bin/uv --version": [] if broken else ["uv 0.13.5 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uv --version": [] if broken else ["uv 0.13.9 (x86_64-unknown-linux-gnu)"],
         **fakehost.directory("/usr/local/bin"),
         **fakehost.file("/usr/local/bin/uv", "binary", mode="-rwxr-xr-x"),
         # uvx is deliberately absent. Original role does not inspect it.
@@ -121,7 +121,7 @@ def test_foreign_owned_uv_is_never_run_and_gets_fresh_bytes() -> None:
         "uname -m": ["x86_64"],
         **fakehost.directory("/usr/local/bin"),
         **fakehost.file("/usr/local/bin/uv", "binary", user="cast", mode="-rwxr-xr-x"),
-        "/usr/local/bin/uv --version": ["uv 0.13.5 (x86_64-unknown-linux-gnu)"],
+        "/usr/local/bin/uv --version": ["uv 0.13.9 (x86_64-unknown-linux-gnu)"],
     }
 
     run = run_deploy_fake(lambda: install_uv(HomeAssistantUvConfig(), manage=True), responses=responses)

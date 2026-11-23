@@ -31,7 +31,7 @@ An installed old revision is not an alternative pin. A change to active Inbox
 runtime source needs its guarded update and attended window. Legacy Sessions
 checkout convergence retains its original scoped guards; shared environment
 effects are assessed against the active adapters separately. Python stays at the declared
-3.14.7 unless a separate reviewed declaration changes it. The existing classifier
+3.14.10 unless a separate reviewed declaration changes it. The existing classifier
 command/model selection is opaque operator configuration and remains unchanged.
 Its original synthetic `Return exactly OK.` probe is an actual external command
 when enabled; rendering or metadata inspection never invokes that command.

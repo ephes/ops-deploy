@@ -29,7 +29,7 @@ def test_replacement_and_install_predicates(matter: bool) -> None:
         for wrong_application in (False, True):
             state = EnvironmentState(
                 python_exists=exists,
-                python_stdout="Python 3.13.0" if wrong_python else "Python 3.14.8",
+                python_stdout="Python 3.13.0" if wrong_python else "Python 3.14.10",
                 pip_status=int(broken_pip),
                 application_exists=app_exists,
                 installed_version="old" if wrong_application else version,
@@ -72,7 +72,7 @@ def test_replacement_and_install_predicates(matter: bool) -> None:
 
 def test_stop_legacy_matter_even_when_management_disabled() -> None:
     cfg = HomeAssistantRuntimeConfig(manage_matter_server=False)
-    state = EnvironmentState(True, "Python 3.14.8", legacy_matter_status=0)
+    state = EnvironmentState(True, "Python 3.14.10", legacy_matter_status=0)
     actual = homeassistant_decision(cfg, state, unit_exists=True, matter_unit_exists=True)
     assert actual.stop_services == ("matter-server", "homeassistant")
 
@@ -80,7 +80,7 @@ def test_stop_legacy_matter_even_when_management_disabled() -> None:
 @pytest.mark.parametrize("spec", ["homeassistant", "homeassistant>=2026.10.2"])
 def test_unpinned_spec_does_not_implicitly_upgrade(spec: str) -> None:
     cfg = HomeAssistantRuntimeConfig(package_spec=spec)
-    state = EnvironmentState(True, "Python 3.14.8", application_exists=True, installed_version="2026.9.0")
+    state = EnvironmentState(True, "Python 3.14.10", application_exists=True, installed_version="2026.9.0")
     assert not homeassistant_decision(cfg, state).install_application
 
 

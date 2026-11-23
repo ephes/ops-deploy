@@ -200,8 +200,8 @@ def test_paperless_uv_default_tracks_role_and_invalid_mapping_refuses() -> None:
     from ops_deploy.base.uv_install import UvInstallConfig
     from ops_deploy.services.paperless import PaperlessUvConfig
 
-    assert UvInstallConfig().version == "0.13.5"
-    assert PaperlessUvConfig().version == "0.13.5"
+    assert UvInstallConfig().version == "0.13.9"
+    assert PaperlessUvConfig().version == "0.13.9"
     cfg = PaperlessConfig(traefik_domain="home.example.test")
     run = run_deploy_fake(
         deploy_paperless,

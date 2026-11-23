@@ -14,7 +14,7 @@
   "daybook_photos_archive_sync_timeout_bin": "/opt/homebrew/bin/timeout",
   "daybook_photos_archive_sync_timeout_seconds": 5400,
   "daybook_photos_archive_sync_photos_access_timeout_seconds": 15,
-  "daybook_photos_archive_sync_python_version": "3.14.7",
+  "daybook_photos_archive_sync_python_version": "3.14.10",
   "daybook_photos_archive_sync_path": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
   "daybook_photos_archive_sync_library_path": "{{ daybook_photos_archive_sync_service_home }}/Pictures/Photos Library.photoslibrary",
   "daybook_photos_archive_sync_source_root": "{{ daybook_photos_archive_sync_service_home }}/Pictures/Nikon Transfer 2",

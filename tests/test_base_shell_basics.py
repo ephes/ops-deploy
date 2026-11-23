@@ -24,7 +24,7 @@ def host(
         "uname -m": ["x86_64"],
         "cat /etc/passwd | cut": [f"root:x:0:0:root:/root:{shell}|root|root||!"],
         "awk '/^nameserver/": ["192.168.178.1"],
-        CHEZMOI: ["chezmoi version v2.73.1, commit abc, built at 2026-01-01T00:00:00Z"],
+        CHEZMOI: ["chezmoi version v2.74.2, commit abc, built at 2026-01-01T00:00:00Z"],
         "update-alternatives --query editor": ["Name: editor", "Status: manual", "Value: /usr/bin/vim.basic"],
         **fakehost.apt_cache_fresh(),
         **fakehost.deb_installed(*ShellBasicsConfig().all_packages),
@@ -64,7 +64,7 @@ def test_fresh_host_installs_everything() -> None:
     assert 'mv -f "$tmp" /etc/resolv.conf' in commands
     assert "nameserver 1.1.1.1" in commands
     assert "apt-get update" in commands
-    assert "chezmoi_2.73.1_linux_amd64.tar.gz" in commands
+    assert "chezmoi_2.74.2_linux_amd64.tar.gz" in commands
     assert "ln -s /usr/bin/batcat /root/.local/bin/bat" in commands
     assert "ln -s /usr/bin/fdfind /root/.local/bin/fd" in commands
     assert run.upload(CONFIG).decode() == BLOCK
@@ -97,7 +97,7 @@ def test_other_chezmoi_version_is_replaced() -> None:
         deploy_shell_basics, ShellBasicsConfig(), responses=host({CHEZMOI: ["chezmoi version v2.73.0, x"]})
     )
 
-    assert run.changed_ops == ["Shell basics | Install chezmoi 2.73.1"]
+    assert run.changed_ops == ["Shell basics | Install chezmoi 2.74.2"]
 
 
 def test_fish_block_is_replaced_in_place_and_other_lines_kept() -> None:
