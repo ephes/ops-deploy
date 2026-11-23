@@ -15,7 +15,8 @@ known problems. Three parts:
    InfluxDB queries (`query`), decides what is new, and hands back one
    digest, which goes out as a Telegram message through Nyxmon's notifier.
    The triage itself is not part of this module (the estate runs it on the
-   Studio with Codex).
+   Studio with Claude, `claude-opus-5-5` on the claude-katharina account,
+   since 2026-11-23; with Codex before).
 3. **Status endpoint** (`obs-daily-status.service`): a loopback JSON endpoint
    for Nyxmon checks (pack and triage freshness, systemd restart loops,
    launchd crash loops reported from a Mac).
@@ -125,7 +126,8 @@ down itself, because a filtered or anonymised view cannot show problems
 nobody knows about yet. The pack and the `query` answers therefore carry
 log text unchanged (hosts, services, users, paths, addresses, and any
 secret a program wrongly logged) to the triage machine and from there to
-the model provider (Codex, `gpt-6.2-sol`). There is no word list, no
+the model provider (Anthropic, `claude-opus-5-5`, since 2026-11-23; OpenAI,
+`gpt-6.2-sol`, before). There is no word list, no
 anonymisation of names and no scrubbing pass. Secrets that show up in logs
 are a finding to fix at the source (the triage reports them with a
 fingerprint marker: the length and at most four first characters, never

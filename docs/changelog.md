@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- obs_daily docs: the triage on the Studio now runs on Claude
+  (`claude-opus-5-5`, claude-katharina account) instead of Codex (owner
+  2026-11-21: no OpenAI use); raw log text from the pack and the `query`
+  answers therefore reaches Anthropic instead of OpenAI. Docs only; the
+  module itself is unchanged.
+
 - rustfs: with `status_port` the replica probe unit
   (`rustfs-replication-lag-check.service`) sets
   `RUSTFS_MONITOR_CRITICAL_EXIT=0`, so a probe run that wrote every status
