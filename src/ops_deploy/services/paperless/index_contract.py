@@ -1,7 +1,7 @@
 """Release-bound index expectations; no application/backend import or database I/O.
 
-The schema fingerprint is derived from unmodified 3.4.2 release source with its
-locked whoosh-compat types (tests/fixtures/paperless/index-schema-3.4.2.json).
+The schema fingerprint is derived from unmodified 3.5.1 release source with its
+locked whoosh-compat types (tests/fixtures/paperless/index-schema-3.5.1.json).
 Actual full-application/native validation remains part of the deployment fixture.
 """
 
@@ -15,7 +15,7 @@ SCHEMA_FINGERPRINT = (
     "cac16f9170382fd53b4ac9d854878783811c87c772ee23363692a2e3bf639b0f"
     "2959b4e978fae617830b43df24ca07dfee8d2f9f77eb7943e20c90b3a764a469"
 )
-# paperless.settings._get_search_language_setting, exact 3.4.2 mapping.
+# paperless.settings._get_search_language_setting, exact 3.5.1 mapping (unchanged since 3.4.2).
 OCR_TO_SEARCH = {
     "ara": "ar",
     "dan": "da",
@@ -42,7 +42,7 @@ OCR_TO_SEARCH = {
 # configured OCR language exactly as upstream does; do not silently consult the
 # controller's environment or import the installed application's index backend.
 def expected_index_sentinels(version: str, ocr_language: str) -> dict[str, str | int | None]:
-    if version != "3.4.2":
+    if version != "3.5.1":
         raise ValueError("Paperless index expectations require the supported release contract")
     if not ocr_language or not re.fullmatch(r"[A-Za-z_]+(?:\+[A-Za-z_]+)*", ocr_language):
         raise ValueError("invalid OCR language list")

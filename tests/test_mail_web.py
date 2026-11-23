@@ -471,13 +471,13 @@ def test_recovery_attempts_all_owned_files_and_units_after_restore_error(
     assert units == ["php8.3-fpm", "nginx"]
 
 
-def test_snappy_selects_3_0_0_and_admits_2_38_2_as_previous() -> None:
+def test_snappy_selects_3_1_4_and_admits_older_releases_as_previous() -> None:
     selected, previous = release_records(snappy())
-    assert selected["version"] == "3.0.0"
-    assert selected["sha256"] == "ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000"
+    assert selected["version"] == "3.1.4"
+    assert selected["sha256"] == "8ac2dfa4c79e344b5b043be2cedd5c8e18a3f971395a8c9771fc79b9d2774173"
     assert selected["files"]["index.php"]["sha256"]
     assert not any(name.startswith("data/") for name in selected["files"])
-    assert {r["version"] for r in previous} == {"2.38.0", "2.38.2"}
+    assert {r["version"] for r in previous} == {"2.38.0", "2.38.2", "3.0.0"}
     assert all(r["previous_only"] for r in previous)
 
 
@@ -508,8 +508,8 @@ def test_snappy_nginx_serves_only_selected_release_assets() -> None:
     files = render(snappy(), values())["files"]
     site = files["/etc/nginx/sites-available/snappymail"]
     assert "location ^~ /snappymail/ {\n        deny all;" in site
-    assert "location ^~ /snappymail/v/3.0.0/static/ {\n            allow all;" in site
-    assert "location ^~ /snappymail/v/3.0.0/themes/ {\n            allow all;" in site
+    assert "location ^~ /snappymail/v/3.1.4/static/ {\n            allow all;" in site
+    assert "location ^~ /snappymail/v/3.1.4/themes/ {\n            allow all;" in site
     assert site.count("allow all;") == 2
     # 3.0.0 trusts only HTTPS for force_https; the site is loopback-only behind TLS.
     assert site.count("fastcgi_param HTTPS on;") == 1

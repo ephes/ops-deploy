@@ -10,15 +10,15 @@ from ops_deploy.services.paperless.index_contract import document_count_command,
 
 def test_verified_release_and_thumbnail_dependency() -> None:
     cfg = PaperlessConfig(traefik_domain="home.example.test")
-    assert cfg.version == "3.4.2"
-    assert RELEASE_SHA256 == "599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85"
+    assert cfg.version == "3.5.1"
+    assert RELEASE_SHA256 == "51fcc4e9ca436c46b3253fa84e90a5392625213ce09ce301cbcded679f2009cb"
     packages = importlib.import_module("ops_deploy.services.paperless.deploy").PACKAGES
     assert "poppler-utils" in packages
     assert "imagemagick" not in packages
 
 
 def test_index_contract_counts_only_live_roots() -> None:
-    assert expected_index_sentinels("3.4.2", "eng")["schema_version"] == 4
+    assert expected_index_sentinels("3.5.1", "eng")["schema_version"] == 4
     assert "deleted_at IS NULL AND root_document_id IS NULL" in document_count_command("paperless", 5432)
 
 

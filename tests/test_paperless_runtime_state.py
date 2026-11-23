@@ -19,7 +19,7 @@ MODULE_SPEC.loader.exec_module(MODULE)
 
 
 class Package:
-    version = "3.4.2"
+    version = "3.5.1"
 
     def __init__(self: Any, body: Any) -> None:
         self.body = body

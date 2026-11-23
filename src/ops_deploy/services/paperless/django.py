@@ -68,11 +68,45 @@ def migrations_pending(cfg: PaperlessConfig) -> bool:
     return answer == "pending"
 
 
+def stop_units_command(cfg: PaperlessConfig) -> str:
+    """Stop every loaded Paperless unit and fail unless each one is down.
+
+    Units come from the manager's own state (``LoadState``/``ActiveState``),
+    not from unit files: a unit whose file was removed may still run. Only a
+    unit that is both ``not-found`` and ``inactive`` (first deployment) is
+    skipped; an inspection error fails the step. One ``systemctl stop`` covers
+    all the others, so no failure is masked by a later unit; then each must
+    report ``inactive`` or ``failed`` (``activating``/``deactivating`` fail).
+    """
+    units = " ".join(shlex.quote(unit) for unit in cfg.units)
+    script = (
+        "set -eu; selected=; "
+        f"for unit in {units}; do "
+        'load=$(systemctl show --property=LoadState --value -- "$unit"); '
+        'active=$(systemctl show --property=ActiveState --value -- "$unit"); '
+        '[ -n "$load" ] && [ -n "$active" ] || { echo "cannot inspect $unit" >&2; exit 1; }; '
+        'if [ "$load" = not-found ] && [ "$active" = inactive ]; then continue; fi; '
+        'selected="$selected $unit"; done; '
+        'if [ -z "$selected" ]; then exit 0; fi; '
+        "systemctl stop -- $selected; "
+        "for unit in $selected; do "
+        'state=$(systemctl show --property=ActiveState --value -- "$unit"); '
+        'case "$state" in inactive|failed) ;; '
+        '*) echo "Paperless unit $unit is still $state" >&2; exit 1 ;; esac; done'
+    )
+    return shlex.join(["sh", "-c", script])
+
+
 @operation()
 def migrate(cfg: PaperlessConfig, deferred: bool = False) -> Generator[StringCommand, None, None]:
     if not (deferred and not state.is_executing) and not migrations_pending(cfg):
         return
-    yield StringCommand(manage(cfg, "migrate", quiet=True))
+    # Migrations run only after a confirmed stop of every Paperless unit, in the
+    # same command: a failed stop never reaches `migrate`, even when the run
+    # ignores errors. A retry after an interrupted upgrade (link already
+    # current, migrations pending) stops the old processes the same way. The
+    # rollout restarts the units afterwards (migrations are a restart trigger).
+    yield StringCommand(stop_units_command(cfg) + " && " + manage(cfg, "migrate", quiet=True))
 
 
 def admin_payload(cfg: PaperlessConfig, credentials: PaperlessCredentials) -> SecretStr:

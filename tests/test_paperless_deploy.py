@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import shlex
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -184,7 +187,7 @@ def test_original_restart_dependencies_through_deploy_caller(change: str, monkey
     assert not result.executed_commands
     assert len(readiness_operations) == 1
     expected = {
-        "migration": (False, False, False, False),
+        "migration": (True, True, True, True),
         "static": (False, False, False, False),
         "release": (True, True, True, True),
         "packages": (True, True, True, True),
@@ -231,3 +234,151 @@ def test_original_installed_virtual_provider_avoids_reinstall_but_missing_provid
     installed = installed.replace("libfreetype6-dev (= 2.13.2)", "")
     MODULE.prerequisites()
     assert observed == [{"name": "Install Paperless prerequisite packages", "packages": ["libfreetype6-dev"]}]
+
+
+@pytest.mark.parametrize("release_changed", [False, True])
+def test_release_change_stops_units_before_packages_and_migrations(
+    release_changed: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """3.5.1's documents.0028 drops tag columns that running 3.4.2 processes select."""
+    current = current_dependency_stubs(monkeypatch)
+    release = SimpleNamespace(will_change=release_changed, did_change=lambda: release_changed)
+    order: list[str] = []
+    gates: list[bool] = []
+
+    def release_op(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        order.append("release")
+        return release
+
+    monkeypatch.setattr(MODULE.operations, "release", release_op)
+
+    def shell(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        if kwargs.get("name") == "Stop Paperless units for the release change":
+            order.append("stop")
+            gates.append(kwargs["_if"]())
+            assert kwargs["commands"] == [
+                MODULE.django.stop_units_command(PaperlessConfig(traefik_domain="home.example.test"))
+            ]
+        return current
+
+    def packages(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        order.append("packages")
+        return current
+
+    def migrations(*args: Any, **kwargs: Any) -> None:
+        order.append("migrate")
+        raise DeployError("owned boundary at migrations")
+
+    monkeypatch.setattr(MODULE.server, "shell", shell)
+    monkeypatch.setattr(MODULE.python_runtime, "install_packages", packages)
+    monkeypatch.setattr(MODULE.django, "migrate", migrations)
+    result = run_deploy_fake(
+        deploy_paperless, PaperlessConfig(traefik_domain="home.example.test"), credentials(), responses=fakehost.UBUNTU
+    )
+    assert not result.succeeded
+    assert order == ["release", "stop", "packages", "migrate"]
+    assert gates == [release_changed]
+
+
+def _run_stop(
+    tmp_path: Path, states: dict[str, tuple[str, str]], *, stop_rc: int = 0, after: str = "inactive"
+) -> subprocess.CompletedProcess[str]:
+    """Run the stop script against a fake systemctl: unit -> (LoadState, ActiveState)."""
+    log = tmp_path / "calls"
+    stopped = tmp_path / "stopped"
+    fake = tmp_path / "systemctl"
+    marker = shlex.quote(str(stopped))
+    prop = " ".join(
+        f"{u}:LoadState) echo {s[0]};; {u}:ActiveState) [ -e {marker} ] && echo {after} || echo {s[1]};;"
+        for u, s in states.items()
+    )
+    fake.write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> {shlex.quote(str(log))}\n'
+        'case "$1" in\n'
+        f"  stop) touch {shlex.quote(str(stopped))}; exit {stop_rc};;\n"
+        '  show) prop=${2#--property=}; unit=$5; case "$unit:$prop" in ' + prop + " *) exit 1;; esac;;\n"
+        "esac\n"
+    )
+    fake.chmod(0o755)
+    cmd = MODULE.django.stop_units_command(PaperlessConfig(traefik_domain="home.example.test"))
+    env = {"PATH": f"{tmp_path}:/usr/bin:/bin"}
+    return subprocess.run(shlex.split(cmd), env=env, capture_output=True, text=True, check=False)
+
+
+UNITS = PaperlessConfig(traefik_domain="home.example.test").units
+
+
+def test_stop_script_stops_all_loaded_units_in_one_call(tmp_path: Path) -> None:
+    result = _run_stop(tmp_path, {unit: ("loaded", "active") for unit in UNITS})
+    assert result.returncode == 0, result.stderr
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert [c for c in calls if c.startswith("stop")] == ["stop -- " + " ".join(UNITS)]
+
+
+def test_stop_script_fails_when_stop_fails_or_a_unit_is_not_down(tmp_path: Path) -> None:
+    loaded = {unit: ("loaded", "active") for unit in UNITS}
+    for sub in ("a", "b"):
+        (tmp_path / sub).mkdir()
+    assert _run_stop(tmp_path / "a", loaded, stop_rc=1).returncode != 0
+    failed = _run_stop(tmp_path / "b", loaded, after="deactivating")
+    assert failed.returncode != 0
+    assert "still deactivating" in failed.stderr
+
+
+def test_stop_script_stops_a_running_unit_whose_file_is_gone(tmp_path: Path) -> None:
+    states = {unit: ("not-found", "inactive") for unit in UNITS}
+    states[UNITS[1]] = ("not-found", "active")
+    result = _run_stop(tmp_path, states)
+    assert result.returncode == 0, result.stderr
+    assert "stop -- " + UNITS[1] in (tmp_path / "calls").read_text().splitlines()
+
+
+def test_stop_script_skips_absent_units_and_fails_on_inspection_errors(tmp_path: Path) -> None:
+    for sub in ("a", "b"):
+        (tmp_path / sub).mkdir()
+    result = _run_stop(tmp_path / "a", {unit: ("not-found", "inactive") for unit in UNITS})
+    assert result.returncode == 0
+    assert not any(c.startswith("stop") for c in (tmp_path / "a" / "calls").read_text().splitlines())
+    partial = {unit: ("loaded", "inactive") for unit in UNITS[1:]}
+    assert _run_stop(tmp_path / "b", partial).returncode != 0
+
+
+@pytest.mark.parametrize("ignore_errors", [False, True])
+def test_pending_migrations_run_only_behind_a_confirmed_stop(
+    ignore_errors: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real migrate operation (link already current, migrations pending).
+
+    The stop and `migrate` are one command joined by `&&`, so a failed stop can
+    never reach `migrate`, whether or not the run ignores errors.
+    """
+    from pyinfra.api import Config, deploy
+
+    django = MODULE.django
+    cfg = PaperlessConfig(traefik_domain="home.example.test")
+    monkeypatch.setattr(django, "migrations_pending", lambda _cfg: True)
+
+    @deploy("migrate")
+    def run() -> None:
+        django.migrate(name="migrate", cfg=cfg)
+
+    stop = django.stop_units_command(cfg)
+    result = run_deploy_fake(run, pyinfra_config=Config(IGNORE_ERRORS=ignore_errors))
+    commands = [c for c in result.executed_commands if "migrate" in c]
+    assert commands == [stop + " && " + django.manage(cfg, "migrate", quiet=True)]
+    assert all(c.startswith(stop + " && ") for c in result.executed_commands if "manage.py" in c and "migrate" in c)
+
+
+def test_failed_stop_never_reaches_the_command_after_it(tmp_path: Path) -> None:
+    """Shell semantics of the joined command, with a stop that fails."""
+    marker = tmp_path / "migrated"
+    (tmp_path / "systemctl").write_text('#!/bin/sh\ncase "$1" in show) echo loaded;; stop) exit 1;; esac\n')
+    (tmp_path / "systemctl").chmod(0o755)
+    stop = MODULE.django.stop_units_command(PaperlessConfig(traefik_domain="home.example.test"))
+    command = stop + " && " + shlex.join(["touch", str(marker)])
+    result = subprocess.run(
+        ["sh", "-c", command], env={"PATH": f"{tmp_path}:/usr/bin:/bin"}, capture_output=True, text=True, check=False
+    )
+    assert result.returncode != 0
+    assert not marker.exists()

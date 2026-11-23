@@ -51,7 +51,7 @@ def inspect_runtime(release_dir):
                 url = urlsplit(direct["url"])
                 editable = direct.get("dir_info")
                 application = (
-                    package.version == "3.4.2" and url.scheme == "file" and not url.netloc
+                    package.version == "3.5.1" and url.scheme == "file" and not url.netloc
                     and not url.query and not url.fragment and unquote(url.path) == release_dir
                     and isinstance(editable, dict) and editable.get("editable") is True
                     and (Path(release_dir) / "src/paperless/__init__.py").is_file()

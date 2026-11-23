@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- snappymail 3.1.4 (from 3.0.0; signed archive verified with the release
+  key): a new `_mail_web/releases` manifest built like the earlier ones (the
+  builder reproduces the 3.0.0 manifest), 3.0.0 becomes `previous_only` for
+  the in-place update; every owned `application.ini` key exists in 3.1.4.
+
+- paperless: Paperless-ngx 3.5.1 (from 3.4.2) with the verified release
+  checksum. Migration `documents.0028` drops the derived django-treenode
+  columns (a rollback needs the pre-upgrade database backup); the search
+  schema and fingerprint are unchanged (byte-identical search source), as are
+  the environment template, the psycopg pins and the fido2 1.1.3 pin. See
+  `docs/services/paperless.md`, "Paperless-ngx 3.5.1 upgrade". A release
+  change now stops the active Paperless units before packages and migrations
+  (the rollout restarts them), so old processes never run against the
+  migrated schema.
+
 - Toolchain pins (2026-11-23): uv 0.13.9 everywhere ops-deploy pins uv
   (`UvInstallConfig`, `HomeAssistantUvConfig`, `PaperlessUvConfig`, MeTube's
   explicit selection, which was 0.13.4; checksums from the release's

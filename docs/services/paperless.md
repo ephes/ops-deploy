@@ -1,6 +1,74 @@
 # Paperless deployment and recovery
 
-## Paperless-ngx 3.4.2 upgrade (from 3.2.1)
+## Paperless-ngx 3.5.1 upgrade (from 3.4.2)
+
+Source review (2026-11-23): official releases
+[3.5.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.5.0) and
+[3.5.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.5.1),
+compared with the released 3.4.2 source and lock file.
+
+The official `paperless-ngx-v3.5.1.tar.xz` SHA-256 is
+`51fcc4e9ca436c46b3253fa84e90a5392625213ce09ce301cbcded679f2009cb`
+(downloaded release asset hashed locally, equal to the GitHub release asset
+`digest`; the same check reproduces the pinned 3.4.2 digest).
+
+- **Database:** three new `documents` migrations, run by the existing
+  `manage.py migrate` stage: `0028_replace_tag_tree_fields` drops the 13
+  derived `tn_*` columns of `django-treenode` (tags become an adjacency list
+  on the kept parent field; `django-treenode` leaves the dependencies),
+  `0029_alter_workflowrun_type_alter_workflowtrigger_type` (new manual
+  workflow trigger choice) and `0030_note_format` (`format` field, default
+  `plain`). 0028 is not reversible by running 3.4.2 again: going back needs
+  the database backup taken before the upgrade. No other app has a new
+  migration; PostgreSQL stays at its version.
+- **Search:** `src/documents/search` is byte-identical to 3.4.2, so schema
+  version 4 and the schema fingerprint stay
+  (`tests/fixtures/paperless/index-schema-3.5.1.json`); whoosh-compat 0.3.0
+  and tantivy 0.26.2 are locked as before. The release change still triggers
+  the deploy's index check and rebuild as for every release change.
+- **Settings:** the environment template needs no change. 3.5 reads the same
+  `PAPERLESS_*` names plus the optional `PAPERLESS_SESSION_CLEANUP_TASK_CRON`
+  (new automatic session clearing). The changed `ALLOWED_HOSTS` default
+  (only the `PAPERLESS_URL` host and `localhost` when `PAPERLESS_URL` is set
+  and `PAPERLESS_ALLOWED_HOSTS` is not) does not apply: the template sets
+  `PAPERLESS_ALLOWED_HOSTS` to the domain, `localhost` and `127.0.0.1`.
+- **Runtime:** psycopg/psycopg-c 3.3.4 and psycopg-pool 3.3.3 unchanged
+  (`files/runtime_state.py`); Django 5.2.18 in the lock. django-allauth
+  65.21.1 still requires `fido2>=1.1.2,<3`, so the final `fido2==1.1.3`
+  install stays valid. Python 3.14 and uv 0.13.9 remain suitable.
+- Bulk edit and metadata operations now run asynchronously through Celery
+  (`documents.bulk_operations`), which the existing worker unit runs.
+- **OIDC/social login:** `PAPERLESS_SOCIAL_ACCOUNT_MFA_TRUSTED_AMR` now
+  defaults to `mfa` (3.5.0 "Fix default MFA trusted AMR setting"; in 3.4.2
+  the `"mfa"` literal landed in the separator argument, so no value was
+  trusted). A provider that sends `amr=mfa` then skips Paperless's own second
+  factor. The template sets no social-login settings; a deployment that adds
+  OIDC should check this default against its sign-in policy.
+- **Running processes:** a release change stops the Paperless units right
+  after the release switch, before packages change under them ("Stop
+  Paperless units for the release change"). Independently, every `migrate`
+  run is one command `<stop> && manage.py migrate`: it stops every loaded
+  Paperless unit (from systemd's `LoadState`/`ActiveState`; only a
+  `not-found` and `inactive` unit is skipped) and migrates only when each one
+  reports `inactive` or `failed`, so neither an interrupted earlier run nor
+  ignored errors let migrations run beside live processes. The rollout then
+  restarts all four (a release change or a migration is a restart trigger).
+  Without this the 3.4.2 web and Celery processes would run against a schema
+  whose tag columns 0028 has dropped.
+- **Rollback to 3.4.2:** this module accepts only the 3.5.1 contract, and the
+  3.4.2 runtime cannot start (or reindex) on the migrated schema, nor 3.5.1 on
+  the 3.4.2 one. Order: check that the pre-upgrade archive exists and
+  completed; stop the four units; restore that archive with
+  `deploy_paperless_restore` with `archive` set to that file (not `latest`),
+  `use_importer=False` (the SQL dump and raw data, not the exporter, so the
+  database is exactly the 3.4.2 one), `start_services=()` and
+  `verify_http=False` (database, data and
+  media; the restore does not touch the code); then pin the previous
+  ops-deploy revision (the 3.4.2 contract) with the 3.4.2 release and deploy
+  it. That deploy finds no pending migration, reindexes on the matching
+  schema and starts the units.
+
+## Paperless-ngx 3.4.2 upgrade (from 3.2.1, historical)
 
 Source review: official releases [3.3.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.0),
 [3.3.1](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.1),
@@ -238,8 +306,10 @@ a failure is not evidence of a successful reload.
 
 The four exact original units are loaded before a managed reindex. Normal
 rollout starts/enables them and restarts only for declared relevant changes.
-Migrations and static-file repair do not independently request a restart, matching
-the original role; a reindex still performs its explicitly managed stop/resume.
+Static-file repair does not request a restart, matching the original role.
+Migrations do since the 3.5.1 contract: `migrate` stops all four units first
+(see "Paperless-ngx 3.5.1 upgrade"), so the rollout restarts them; a reindex
+still performs its explicitly managed stop/resume.
 The Traefik route retains the original template and watcher behavior. Final
 health checks require all four units active and the loopback `/api/` response
 to follow only the validated same-origin schema-UI redirect and terminate at

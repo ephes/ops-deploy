@@ -145,5 +145,7 @@ def test_only_migration_status_skips_writing_system_checks(monkeypatch: pytest.M
     commands = list(inspect.unwrap(django.migrate)(config()))
     assert len(commands) == 1
     assert "--skip-checks" not in commands[0].get_raw_value()
-    assert commands[0].get_raw_value() == django.manage(config(), "migrate", quiet=True)
+    assert commands[0].get_raw_value() == (
+        django.stop_units_command(config()) + " && " + django.manage(config(), "migrate", quiet=True)
+    )
     assert "--skip-checks" not in django.shell_command(config())

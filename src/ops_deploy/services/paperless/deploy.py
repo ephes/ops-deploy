@@ -1,4 +1,4 @@
-"""Paperless 3.4.2 composition, prepared for owned native qualification."""
+"""Paperless 3.5.1 composition, prepared for owned native qualification."""
 
 from __future__ import annotations
 
@@ -206,6 +206,15 @@ def deploy_paperless(
         mode="0644",
     )
     release = operations.release(name="Converge Paperless release and current link", cfg=cfg, deferred=new_layout)
+    # A release change brings migrations the running processes may not survive
+    # (3.5.1's documents.0028 drops tag columns the 3.4.2 code still selects).
+    # Stop the units right after the switch, before packages change under them;
+    # The migrate command repeats the stop from database state before migrating.
+    early_stop = server.shell(
+        name="Stop Paperless units for the release change",
+        commands=[django.stop_units_command(cfg)],
+        _if=lambda: bool(release.did_change()),
+    )
     packages = python_runtime.install_packages(
         name="Repair Paperless editable application and dependencies",
         cfg=cfg,
@@ -281,9 +290,10 @@ def deploy_paperless(
         deferred=deferred or migrations.will_change,
     )
     for index, unit in enumerate(cfg.units):
-        # Original migrations/static collection do not notify a restart.
+        # Static collection does not notify a restart; migrations do (they stop the units).
         # Release/package changes already trigger the application rollout.
-        triggers = [*python_changes, env, units[index]]
+        # A unit stopped for migrations comes back through this restart.
+        triggers = [*python_changes, env, units[index], early_stop, migrations]
         if index == 0:
             triggers.append(gunicorn)
         if patch is not None and index in {1, 3}:

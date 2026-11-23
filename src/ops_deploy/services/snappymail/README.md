@@ -1,6 +1,6 @@
 # SnappyMail ordinary deployment
 
-`deploy_snappymail(config, secrets)` manages selected SnappyMail 3.0.0 code,
+`deploy_snappymail(config, secrets)` manages selected SnappyMail 3.1.4 code,
 PHP-FPM pool, nginx loopback site, Traefik route and explicitly owned persistent
 configuration. Supply `admin_password` through `SecretValues`. Matching passwords
 retain the existing hash; a genuine credential change generates a new hash.
@@ -26,8 +26,8 @@ nonempty data without its marker is refused before seeding.
 
 Full archive-owned code bytes and internal link identity are checked against
 verified manifests. A matching version marker alone does not authorize replacing
-local vendor/trust repairs. Current 3.0.0 is the only selected release; the
-previous 2.38.2 and 2.38.0 manifests admit an explicitly qualified update path.
+local vendor/trust repairs. Current 3.1.4 is the only selected release; the
+previous 3.0.0, 2.38.2 and 2.38.0 manifests admit an explicitly qualified update path.
 Unrelated old code files remain untouched, including older
 `snappymail/v/<version>/` trees; the nginx site serves below `/snappymail/`
 only the selected release's `static/` and `themes/` and refuses everything
@@ -36,15 +36,20 @@ else there (`403`), so an old release's `include.php` cannot run its code.
 Release manifests (`_mail_web/releases/snappymail-<version>.json.gz`) record
 the upstream archive URL and SHA-256 and every regular file (mode, SHA-256)
 and link of the archive except `data/`, which only seeds an empty data root.
-The 3.0.0 manifest was built from `snappymail-3.0.0.tar.gz` (SHA-256
-`ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000`) after its
-detached signature verified against the SnappyMail release key
-`1016 E470 7914 5542 F8BA  1335 4820 8BA1 3290 F3EB` (the same key in
-`build/SnappyMail.asc` at tag `v3.0.0` and on keys.openpgp.org); the same
+The 3.1.4 manifest was built from `snappymail-3.1.4.tar.gz` (SHA-256
+`8ac2dfa4c79e344b5b043be2cedd5c8e18a3f971395a8c9771fc79b9d2774173`, equal to the
+GitHub asset digest) after its detached signature verified against the
+SnappyMail release key `1016 E470 7914 5542 F8BA  1335 4820 8BA1 3290 F3EB`
+(the same key in `build/SnappyMail.asc` at tag `v3.1.4`); 3.0.0 (SHA-256
+`ac495fb8eb95a27c3f2bfab74db0d15b12079c35ef1c533dc70504865f21d000`, verified the
+same way) is now `previous_only`; the same
 builder reproduces the 2.38.2 manifest byte for byte (only `previous_only`
 changed). The JSON is `json.dumps(record, sort_keys=True)`, gzip with mtime 0.
 
-SnappyMail 3.0.0 needs PHP 8.2 or newer and the same PHP extensions. Its
+SnappyMail 3.1.4 still needs PHP 8.2 or newer (it carries fallbacks for
+functions of PHP 8.3 to 8.5; macmini runs 8.3) and the same PHP extensions;
+every owned `application.ini` key still exists in 3.1.4, and 3.1 moves only
+the unowned `trusted_authserv_ids` into the per-domain IMAP settings. 3.0.0 needed PHP 8.2 or newer too. Its
 owned `application.ini` keys, domain JSON format, admin bcrypt hash and
 `setup.php` (which writes the `INSTALLED` marker on the first request after
 the version change) are unchanged from 2.38.2. One breaking change:

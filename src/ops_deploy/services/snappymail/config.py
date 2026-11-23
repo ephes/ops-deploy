@@ -15,7 +15,7 @@ from ops_deploy.services._mail_web.config import Domain, MailWebConfig, PathText
 class SnappyMailConfig(MailWebConfig):
     service_name: Literal["snappymail"] = "snappymail"
     site_path: PurePosixPath = PurePosixPath("/opt/snappymail")
-    version: str = "3.0.0"
+    version: str = "3.1.4"
     install_dir: PathText = "/opt/snappymail"
     data_dir: PathText = "/mnt/cryptdata/snappymail"
     user: UnixUser = "snappymail"

@@ -1,5 +1,5 @@
 {
-  "scope": "Unmodified official v3.4.2 release source with whoosh-compat 0.3.0 and tantivy 0.26.0; namespace-only schema loading, no application/database initialization.",
+  "scope": "Unmodified official v3.5.1 release source (src/documents/search byte-identical to v3.4.2) with whoosh-compat 0.3.0 and tantivy 0.26.2 as locked; namespace-only schema loading, no application/database initialization.",
   "schema_version": 4,
   "schema_fingerprint": "cac16f9170382fd53b4ac9d854878783811c87c772ee23363692a2e3bf639b0f2959b4e978fae617830b43df24ca07dfee8d2f9f77eb7943e20c90b3a764a469",
   "field_descriptors": [
@@ -268,6 +268,6 @@
       null
     ]
   ],
-  "release": "3.4.2",
-  "archive_sha256": "599be82cd8fc184436b757f9b193101fb71a90bf0facf5695dcda43152fffc85"
+  "release": "3.5.1",
+  "archive_sha256": "51fcc4e9ca436c46b3253fa84e90a5392625213ce09ce301cbcded679f2009cb"
 }
