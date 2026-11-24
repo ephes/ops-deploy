@@ -45,6 +45,13 @@ errors=0 wan=<IPv4>,<IPv6>`. Any update, error or public mismatch logs the full
 run: the held-back `DDNS run`, `WAN IPv4/6` and `unchanged` lines first, then
 everything else as it happens. `status.json` always holds every record, so a short
 `ddns_interval` does not flood the journal (and Loki) with unchanged records.
+An error that `main()` logs after the run (an unwritable status file, an
+unexpected exception) also writes any lines still held back first. A status
+file that cannot be written always fails after the run's result line, and the
+unit fails. After an otherwise quiet, successful run the journal then shows
+`DDNS result: run_ok=True ...`, the held-back lines and `ERROR: cannot write
+status file`; after a run that already logged its details (an update, an error
+or a public mismatch) only the error follows the result line.
 
 `ddns-update.timer` runs one minute after boot and after every timer (re)start
 (`OnBootSec`/`OnActiveSec`), then every `ddns_interval` (`OnUnitActiveSec`), with

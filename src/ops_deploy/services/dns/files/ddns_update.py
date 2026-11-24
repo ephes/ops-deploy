@@ -372,6 +372,34 @@ class Logger:
             print(f"log file {self.path} not writable: {err}", file=sys.stderr)
 
 
+class HeldLog:
+    """A run that changes nothing and finds every record public logs only its result line.
+
+    Routine detail lines (``detail``) are held back; the first line that matters (``say``)
+    writes them first, and detail lines after it are written as they come.
+    """
+
+    def __init__(self, log: Callable[[str], None]):
+        self.log = log
+        self.held: list[str] = []
+        self.loud = False
+
+    def detail(self, message: str) -> None:
+        if self.loud:
+            self.log(message)
+        else:
+            self.held.append(message)
+
+    def say(self, message: str) -> None:
+        self.loud = True
+        while self.held:
+            self.log(self.held.pop(0))
+        self.log(message)
+
+    def __call__(self, message: str) -> None:
+        self.say(message)
+
+
 def load_previous_status(path: Optional[str]) -> dict:
     if not path:
         return {}
@@ -406,23 +434,8 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     records: dict[str, dict] = {}
     wan: dict[str, Optional[str]] = {"ipv4": None, "ipv6": None}
     statics, static_errors = parse_static_records(config.get("static_records"), names)
-    # A run that changes nothing and finds every record public logs only its result line;
-    # the routine detail lines are held back and written before the first line that matters.
-    held: list[str] = []
-    loud = False
-
-    def detail(message: str) -> None:
-        if loud:
-            log(message)
-        else:
-            held.append(message)
-
-    def say(message: str) -> None:
-        nonlocal loud
-        loud = True
-        while held:
-            log(held.pop(0))
-        log(message)
+    out = log if isinstance(log, HeldLog) else HeldLog(log)
+    detail, say = out.detail, out.say
 
     provider_label = (f"provider={provider}" if len(providers) == 1
                       else f"providers={','.join(providers)}")
@@ -590,7 +603,7 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     }
     summary = status["summary"]
     wan_label = ",".join(v for v in (wan["ipv4"], wan["ipv6"]) if v) or "none"
-    log(
+    out.log(
         f"DDNS result: run_ok={run_ok} updated={summary['records_updated']} "
         f"public_ok={summary['records_public_ok']}/{summary['records_total']} errors={len(errors)} "
         f"wan={wan_label}"
@@ -604,16 +617,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
     with open(args.config, encoding="utf-8") as handle:
         config = json.load(handle)
-    log = Logger(config.get("log_file"), int(config.get("log_max_bytes", 10 * 1048576)))
+    log = HeldLog(Logger(config.get("log_file"), int(config.get("log_max_bytes", 10 * 1048576))))
     try:
         code, status = run(config, dict(os.environ), http=http_request, resolve=dig, log=log)
     except Exception as err:  # noqa: BLE001 - any crash must fail the unit loudly
-        log(f"ERROR: unexpected {type(err).__name__}: {err}")
+        log.say(f"ERROR: unexpected {type(err).__name__}: {err}")
         return 1
     try:
         write_status(config.get("status_path"), status)
     except OSError as err:
-        log(f"ERROR: cannot write status file: {err}")
+        log.say(f"ERROR: cannot write status file: {err}")
         return 1
     return code
 

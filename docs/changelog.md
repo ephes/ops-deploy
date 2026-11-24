@@ -5,13 +5,14 @@
 - dns: the DDNS updater logs one line per run when nothing changed
   (`DDNS result: ... wan=<IPv4>,<IPv6>`) instead of about 13; any update,
   error or public mismatch still logs the whole run. This keeps a short
-  `ddns_interval` (ops-control moves macmini to 1 minute with TTL 60 so heis and
-  marina follow the nightly address change within about two minutes) from
-  flooding the journal. A deploy replaces `/usr/local/bin/ddns-update`.
+  `ddns_interval` (ops-control moves macmini to 1 minute with TTL 60) from
+  flooding the journal. The TTL reaches the records with their next address
+  change, so resolvers may still keep that change's old answer for the former
+  TTL once; the timer itself may also fire up to its accuracy window late. A deploy replaces `/usr/local/bin/ddns-update`.
 
-- django_site: a hardened Django unit gets `RuntimeDirectory=<unit>` and
-  `Environment=XDG_RUNTIME_DIR=/run/<unit>`. Gunicorn 25+ puts its control
-  socket there instead of `~/.gunicorn/`, which `ProtectSystem=strict` keeps
+- django_site: a hardened Django unit gets `RuntimeDirectory=django-site/<unit>`
+  and `Environment=XDG_RUNTIME_DIR=/run/django-site/<unit>`. Gunicorn 25.2+ puts
+  its control socket there instead of `~/.gunicorn/`, which `ProtectSystem=strict` keeps
   read-only: Villa Kunterbunt on staging (Gunicorn 26) logged "Control server
   error: [Errno 30] Read-only file system" at every start. The Next.js and
   worker units are unchanged. A deploy rewrites the unit and restarts the site.

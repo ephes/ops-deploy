@@ -128,11 +128,14 @@ The set is the classic one (marina/heis) with these choices:
   `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `LockPersonality`,
   `RestrictRealtime` and `SystemCallArchitectures=native`. The frontend's
   unit has the same sandbox. A hardened Django unit also gets
-  `RuntimeDirectory=<unit>` and `XDG_RUNTIME_DIR=/run/<unit>`: Gunicorn 25 and
-  later open their control socket (`gunicornc`) at
-  `$XDG_RUNTIME_DIR/gunicorn.ctl`, else at `~/.gunicorn/gunicorn.ctl`, which
-  the sandbox keeps read-only ("Control server error: [Errno 30] Read-only
-  file system" at every start). Older Gunicorn ignores the variable.
+  `RuntimeDirectory=django-site/<unit>` and
+  `XDG_RUNTIME_DIR=/run/django-site/<unit>` (nested, so no unit name can claim
+  a system directory such as `/run/user`): Gunicorn 25.2 and later open their
+  control socket (`gunicornc`) at `$XDG_RUNTIME_DIR/gunicorn.ctl`, else at
+  `~/.gunicorn/gunicorn.ctl`, which the sandbox keeps read-only ("Control
+  server error: [Errno 30] Read-only file system" at every start). Gunicorn
+  25.1 uses `gunicorn.ctl` in the working directory, older Gunicorn has no
+  control socket; both ignore the variable.
 - **The classic route.** Router names (`<fqdn>-router`,
   `<fqdn>-secure-router`), service name (`<fqdn>`) and the middlewares
   (`redirect`, `csrf`, `sslHeaders`, `gzip-compress`, `redirect-www`) stay as

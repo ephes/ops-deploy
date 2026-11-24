@@ -93,3 +93,28 @@ def test_a_public_mismatch_logs_the_details_before_it() -> None:
     assert f"unchanged A home.{ZONE} = {NEW4}" in lines
     assert any(line.startswith(f"public A home.{ZONE} = [['{OLD4}']") for line in lines)
     assert lines[-1].startswith("DDNS result: run_ok=True updated=0 public_ok=2/4")
+
+
+def test_main_writes_the_held_lines_before_its_own_error(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
+    def resolve(name: str, rtype: str, server: str | None) -> list[str] | None:
+        return ["ns-a.example."] if rtype == "NS" else public(NEW4, NEW6).get((name, rtype))
+
+    real_run = ddns.run
+
+    def fake_run(config: Any, env: Any, http: Any, resolve: Any, log: Any) -> Any:
+        return real_run(config, env, FakeGandi(current()), fake_resolve, log)
+
+    fake_resolve = resolve
+    monkeypatch.setattr(ddns, "run", fake_run)
+    monkeypatch.setenv("GANDI_API_TOKEN", "t")
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"provider": "gandi", "zone": "wersdörfer.de", "names": ["home", "*.home"],
+                                  "gandi": {"auth_scheme": "apikey"},
+                                  "status_path": str(tmp_path / "missing" / "status.json")}))  # fmt: skip
+
+    assert ddns.main(["--config", str(config)]) == 1
+    lines = [line.split("] ", 1)[1] for line in capsys.readouterr().out.splitlines()]
+    assert lines[0].startswith("DDNS result: run_ok=True updated=0 public_ok=4/4")
+    assert lines[1].startswith("DDNS run: provider=gandi")
+    assert f"unchanged AAAA *.home.{ZONE} = {NEW6}" in lines
+    assert lines[-1].startswith("ERROR: cannot write status file:")
