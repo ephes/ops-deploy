@@ -17,10 +17,17 @@ Eligibility of a release for a host on patch line ``M.m``:
   releases/download/`` URL, and the checksums text has exactly one
   well-formed sha256 line for that archive.
 
-The newest eligible release is chosen, so a host may skip patches. A newer
-stable minor or major (``3.8.0``, ``4.0.0``) is only reported as
-``minor_available``; it is never a candidate. Releases of an older line (the
+The newest eligible release is chosen, so a host may skip patches. A stable
+minor or major newer than ``policy.line`` (for line 3.7: ``3.8.0``,
+``4.0.0``) is only reported as ``minor_available``; it is never a candidate. Releases of an older line (the
 interleaved ``2.11.x``) are ignored.
+
+Line change: when the owner has moved the policy to the next minor of the
+same major (``3.7`` -> ``3.8``), a host still on the directly preceding line
+(installed ``3.7.19``) may take any release of the new line, ``M.m.0``
+included; every other check (cooldown, assets, checksums) is unchanged. An
+installed version on any other line (older than the preceding minor, another
+major, or newer than the line) is refused.
 """
 
 from __future__ import annotations
@@ -288,14 +295,16 @@ def resolve_patch_release(
     *,
     arch: str = "amd64",
 ) -> Resolution:
-    """Choose the newest eligible patch of ``policy.line`` above ``installed``.
+    """Choose the newest eligible release of ``policy.line`` above ``installed``.
 
-    ``fetch_checksums(url)`` returns the checksums text of one release; it is
-    called only for releases that passed every other check, newest first, and
-    no more once one yields a digest. Whatever it raises propagates unchanged:
-    the caller maps a failed fetch to its ``unavailable`` outcome. An
-    ``installed`` version outside the line, a naive ``now`` or an unknown
-    ``arch`` raises :class:`PolicyError`.
+    ``installed`` is on the line (a higher patch is chosen) or on the directly
+    preceding minor of the same major (the owner's line change: any release of
+    the line, ``M.m.0`` included). ``fetch_checksums(url)`` returns the
+    checksums text of one release; it is called only for releases that passed
+    every other check, newest first, and no more once one yields a digest.
+    Whatever it raises propagates unchanged: the caller maps a failed fetch to
+    its ``unavailable`` outcome. An ``installed`` version on any other line, a
+    naive ``now`` or an unknown ``arch`` raises :class:`PolicyError`.
     """
 
     if arch not in ARCHES:
@@ -304,9 +313,12 @@ def resolve_patch_release(
         raise PolicyError("now must be timezone-aware")
     current = Version.parse(installed)
     line = policy.major_minor
-    if (current.major, current.minor) != line:
+    # The owner's line change (policy one minor ahead) is the only admitted step.
+    preceding = (line[0], line[1] - 1)
+    if (current.major, current.minor) not in (line, preceding):
         raise PolicyError(
-            f"installed {current} is not on patch line {policy.line}; changing the line is an owner decision"
+            f"installed {current} is not on patch line {policy.line} or the line before it;"
+            " changing the line is an owner decision"
         )
 
     stable = [r for r in releases if not r.draft and not r.prerelease]

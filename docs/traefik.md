@@ -987,8 +987,17 @@ if result.status == "update":
 A release is eligible when:
 
 - its tag is exactly `v<line>.<n>` (no suffix such as `-rc.1`, no leading
-  zeros), it is neither a draft nor a prerelease, and `n` is greater than the
-  installed patch: never a downgrade, never a reinstall;
+  zeros), it is neither a draft nor a prerelease, and it is newer than the
+  installed version: never a downgrade, never a reinstall. On the line that
+  means a higher patch; for a host still on the directly preceding minor of
+  the same major (the owner moved the line, for example from 3.7 to 3.8) every
+  release of the new line qualifies, `M.m.0` included, so 3.7.19 may go to
+  3.8.0. After each host's successful line-change transaction its registry
+  floor (`desired_release` in ops-control's `traefik-releases.yml`) must move
+  to the new line before the host's next ordinary deployment: ordinary
+  deployment accepts a newer installed patch on the floor's line but refuses a
+  major/minor mismatch. After a patch update inside one line the floor move
+  is routine registry maintenance, not a precondition;
 - its `published_at` (with a UTC offset) is at least `cooldown_hours` before
   `now`; the boundary counts as old enough;
 - it has the `traefik_v<version>_linux_<arch>.tar.gz` archive and the
@@ -1013,13 +1022,15 @@ archive against it again.
 | `status` | `update` (`target` is set), `cooldown` (nothing is eligible yet, but a newer patch of the line waits out its cooldown) or `current` |
 | `installed` | the parsed installed `Version` |
 | `target` | `Candidate(version, arch, published_at, archive_url, checksums_url, sha256)` or `None` |
-| `minor_available` | a stable release of a newer minor or major (`3.8.0`, `4.0.0`) exists; it is only reported, never a candidate. Changing the line is an owner decision |
+| `minor_available` | a stable release of a minor or major newer than `policy.line` exists (for line 3.7: `3.8.0`, `4.0.0`); it is only reported, never a candidate. Changing the line is an owner decision; after the change the new line's releases are candidates and this flag compares against the new line |
 | `skipped` | newer patches of the line that were passed over, newest first, each with a closed reason: `draft`, `prerelease`, `invalid_published_at`, `cooldown`, `missing_archive_asset`, `missing_checksums_asset`, `unexpected_asset_url`, `checksum_entry_missing`, `checksum_entry_ambiguous`, `checksum_entry_malformed` |
 
 Releases of an older line (the interleaved `2.11.x`) are ignored. Refusals
 raise instead of resolving: `PolicyError` for a patch line that is not
 `major.minor`, a `cooldown_hours` that is not an int in `0..8760`, an
-installed version that is not plain `major.minor.patch` or not on the line,
+installed version that is not plain `major.minor.patch`, or neither on the
+line nor on the directly preceding minor of the same major (two minors
+behind, another major, or newer than the line),
 a naive `now` or an arch other than `amd64`/`arm64`; `ReleaseDataError` for
 a release list that is not the API's shape (a non-string tag or asset field,
 a non-boolean `draft`/`prerelease`, assets that are not a list of objects)

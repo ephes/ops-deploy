@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- traefik_release: the patch-line resolver admits a line change. When the
+  owner moves the policy one minor ahead (`3.7` -> `3.8`), a host still on
+  the directly preceding line takes the newest eligible release of the new
+  line, `M.m.0` included, under the same cooldown, asset and checksum checks.
+  Any other line (older than the preceding minor, another major, newer than
+  the line) is still refused; a downgrade stays impossible.
+
 - homeassistant: optional `matter_server_bluetooth_adapter` (default `None`).
   Set to an adapter id, the Matter unit runs `matter-server --bluetooth-adapter
   <id>`, so the server commissions new Matter devices over BLE itself (the

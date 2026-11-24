@@ -433,10 +433,50 @@ def test_new_minor_tag_with_suffix_is_not_reported() -> None:
 # --- policy and argument validation ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("installed", ["3.8.0", "3.6.9", "2.11.31", "4.7.14"])
+@pytest.mark.parametrize("installed", ["3.8.0", "3.5.9", "2.11.31", "4.7.14", "4.6.0"])
 def test_installed_outside_the_line_is_refused(installed: str) -> None:
-    with pytest.raises(PolicyError, match=r"not on patch line 3\.7"):
+    with pytest.raises(PolicyError, match=r"not on patch line 3\.7 or the line before it"):
         resolve(INTERLEAVED, installed=installed)
+
+
+# --- line change (owner moved the policy one minor ahead) -----------------------------------------
+
+LINE_38 = PatchPolicy(line="3.8", cooldown_hours=72)
+LINE_CHANGE = [
+    gh_release("3.7.20", age=timedelta(days=5)),
+    gh_release("3.8.0", age=timedelta(days=5)),
+    gh_release("3.8.1", age=timedelta(days=1)),
+    gh_release("2.11.64", age=timedelta(days=5)),
+]
+
+
+def test_line_change_takes_the_newest_eligible_release_of_the_new_line() -> None:
+    fetch = Fetcher()
+
+    result = resolve(LINE_CHANGE, installed="3.7.19", policy=LINE_38, fetch=fetch)
+
+    assert result.status == "update"
+    assert result.target is not None
+    assert result.target.version == Version(3, 8, 0)
+    assert result.target.sha256 == digest("3.8.0")
+    # 3.8.1 waits out its cooldown; the old line's 3.7.20 is never a candidate.
+    assert result.skipped == (Skipped(version=Version(3, 8, 1), reason="cooldown"),)
+    assert fetch.calls == [sums_url("3.8.0")]
+
+
+def test_line_change_respects_the_cooldown_of_the_first_release() -> None:
+    fresh = [gh_release("3.7.20", age=timedelta(days=5)), gh_release("3.8.0", age=timedelta(days=1))]
+
+    result = resolve(fresh, installed="3.7.19", policy=LINE_38)
+
+    assert result.status == "cooldown"
+    assert result.target is None
+
+
+@pytest.mark.parametrize("installed", ["3.6.9", "2.11.31", "4.0.0"])
+def test_line_change_admits_only_the_directly_preceding_minor(installed: str) -> None:
+    with pytest.raises(PolicyError, match=r"not on patch line 3\.8 or the line before it"):
+        resolve(LINE_CHANGE, installed=installed, policy=LINE_38)
 
 
 @pytest.mark.parametrize("installed", ["", "3.7", "v3.7.14", "3.7.14-rc.1", "3.07.14", " 3.7.14", "3.7.x"])
