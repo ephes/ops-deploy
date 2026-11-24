@@ -85,6 +85,8 @@ def replace_file(path, value):
 def credential_state(q, apply=False, reconcile=False):
     c = dict(q['credentials'], apply=apply, reconcile_admin=reconcile)
     if q['app'] == 'postfixadmin':
+        c['schema_target'] = schema_target(q)
+        c['schema_admitted'] = schema_admitted(q)
         path = Path(q['root']) / 'config.local.php'
         text = path.read_text() if path.exists() else ''
         matches = re.findall(r"\$CONF\['setup_password'\]\s*=\s*'((?:\\.|[^'\\])*)'\s*;", text)
@@ -110,6 +112,21 @@ def credential_state(q, apply=False, reconcile=False):
     return json.loads(raw)
 
 
+def schema_target(q):
+    # The selected PostfixAdmin manifest names its schema and the schemas its
+    # upstream upgrader may advance from; nothing else is ever admitted.
+    target=q['release'].get('schema')
+    if not isinstance(target,str) or not target.isdigit():raise ValueError('mail web selected release names no schema')
+    return target
+
+
+def schema_admitted(q):
+    upgrade_from=q['release'].get('upgrade_from',[])
+    if not isinstance(upgrade_from,list) or not all(isinstance(v,str) and v.isdigit() and int(v)<int(schema_target(q)) for v in upgrade_from):
+        raise ValueError('mail web selected release upgrade path is invalid')
+    return [schema_target(q),*upgrade_from]
+
+
 def schema_admission(q):
     if q['app'] != 'postfixadmin':return
     c=q['credentials']
@@ -117,7 +134,7 @@ def schema_admission(q):
     exists=run(argv,"BEGIN READ ONLY; SELECT to_regclass('public.config') IS NOT NULL; ROLLBACK;").strip()
     if exists=='t':
         version=run(argv,"BEGIN READ ONLY; SELECT value FROM public.config WHERE name='version'; ROLLBACK;").strip()
-        if version!='1851':raise ValueError('mail web existing schema does not match selected release')
+        if version not in schema_admitted(q):raise ValueError('mail web existing schema does not match selected release')
     elif exists=='f':
         count=run(argv,"BEGIN READ ONLY; SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'; ROLLBACK;").strip()
         if count!='0':raise ValueError('mail web refuses to initialize nonempty unknown database')

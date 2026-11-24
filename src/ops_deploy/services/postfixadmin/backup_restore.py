@@ -89,7 +89,7 @@ class _Database(MountGuard):
 class PostfixAdminBackupConfig(_Database):
     # The manifest's ``hostname`` (Ansible's ``inventory_hostname``).
     host_name: Hostname
-    postfixadmin_version: Annotated[str, Field(pattern=r"^[0-9A-Za-z.+-]+$")] = "4.0.5"
+    postfixadmin_version: Annotated[str, Field(pattern=r"^[0-9A-Za-z.+-]+$")] = "4.0.7"
     include_templates_c: StrictBool = False
     retention_days: int = Field(default=14, ge=1)
     keep_min: int = Field(default=5, ge=1)

@@ -1,6 +1,6 @@
 # PostfixAdmin ordinary deployment
 
-`deploy_postfixadmin(config, secrets)` manages the selected PostfixAdmin 4.0.5
+`deploy_postfixadmin(config, secrets)` manages the selected PostfixAdmin 4.0.7
 php84 release, PHP-FPM pool, nginx loopback site, application configuration,
 Traefik route and configured superadmin. Supply `db_password`, `setup_password`
 and `admin_password` through `SecretValues`; values travel on stdin, never in
@@ -13,13 +13,33 @@ previous release manifest. Archive-owned internal symlinks are checked by target
 unrelated files and local data are retained. Unknown vendor modifications are
 refused before replacement, rather than erased because a version marker matches.
 The exact archive URL, digest and member manifest live in `_mail_web/releases`.
-Only current 4.0.5 is selectable; the previous manifest supports an update fixture
-and admission, not an implicit downgrade.
+Only current 4.0.7 is selectable; the previous manifests (4.0.4, 4.0.5) support
+an update fixture and admission, not an implicit downgrade.
 
-An existing database must already report schema 1851. Ordinary deployment does
-not run the upstream upgrader on it. For an entirely empty application database,
-the selected release's `public/upgrade.php` runs as the configured web user,
-followed by an exact schema check. Missing original role privileges are granted
+The selected PostfixAdmin manifest names its database schema (`schema`, 1852 for
+4.0.7) and the older schemas its upstream upgrader may advance (`upgrade_from`,
+1851). An existing database must report one of those; any other version is
+refused before changes. At an admitted older schema, the apply stops PHP-FPM,
+switches the code, runs the selected release's `public/upgrade.php` once as the
+configured web user and requires the exact target schema afterwards; this also
+happens when the code is already at the selected release. Upstream
+`upgrade.php` exits 0 even when a database step fails, so only that schema check
+decides. For an entirely empty application database the same upgrader performs
+fresh initialization, followed by the same exact schema check. On PostgreSQL the
+1851 to 1852 step only sets `config.version` (`upgrade_1852` exists only for
+MySQL), and 4.0.5 code still runs against a 1852 database. A failure after the
+upgrader restores the owned files and so leaves 4.0.5 code on a 1852 database;
+the retry admits 1852 and finishes the update; nothing needs undoing. After a
+successful apply, 4.0.7 files are on disk and the database is at 1852. A plain
+git revert does not roll that back: the old deployment code admits neither the
+4.0.7 files (no 4.0.7 manifest) nor schema 1852. Roll back forward instead:
+select 4.0.5 again (`version` default), rebuild its manifest with
+`"previous_only": false` and `"schema": "1852"` (a string; 4.0.5 runs on 1852),
+and rebuild the 4.0.7 manifest with `"previous_only": true`, so the ordinary
+deploy replaces the admitted 4.0.7 files; no database change or restore is
+needed. Upstream 4.0.6 changed the
+`password_expiration` default from YES to NO; `config.local.php` does not set
+it. Missing original role privileges are granted
 additively; owners and existing grants are preserved. Fresh schema creation and
 additive grants are not destructively rolled back if later activation fails.
 A retry admits only the exact resulting selected schema; unknown partial schemas

@@ -63,7 +63,9 @@ def test_current_release_is_pinned_with_full_manifest(cfg: Any) -> None:
         assert "php84" in selected["url"]
 
 
-@pytest.mark.parametrize("cfg", [pfa(version="4.0.4"), snappy(version="2.38.0"), snappy(version="2.38.2")])
+@pytest.mark.parametrize(
+    "cfg", [pfa(version="4.0.4"), pfa(version="4.0.5"), snappy(version="2.38.0"), snappy(version="2.38.2")]
+)
 def test_historical_bundle_is_admission_only_not_selected_install(cfg: Any) -> None:
     with pytest.raises(Exception, match="Unsupported selected"):
         release_records(cfg)
@@ -520,3 +522,158 @@ def test_snappy_site_cannot_listen_beyond_loopback() -> None:
     # fastcgi_param HTTPS on is only true behind Traefik's TLS router.
     with pytest.raises(ConfigValidationError):
         snappy(listen_address="0.0.0.0")
+
+
+def test_postfixadmin_selects_4_0_7_with_schema_upgrade_path() -> None:
+    selected, previous = release_records(pfa())
+    assert selected["version"] == "4.0.7"
+    assert selected["sha256"] == "39302590bcda082aea2591b34c13df451621442b98594e730daec6bb419ac5eb"
+    assert (selected["schema"], selected["upgrade_from"]) == ("1852", ["1851"])
+    assert sorted(r["version"] for r in previous) == ["4.0.4", "4.0.5"]
+    assert all(r["previous_only"] for r in previous)
+
+
+def pfa_query(**release: Any) -> dict[str, Any]:
+    return {
+        "app": "postfixadmin",
+        "php": "8.3",
+        "root": "/opt/postfixadmin",
+        "web_user": "www-data",
+        "db_admin_user": "postgres",
+        "credentials": {"db_port": 5432, "db_name": "mail"},
+        "release": {"schema": "1852", "upgrade_from": ["1851"], **release},
+    }
+
+
+@pytest.mark.parametrize(("version", "admitted"), [("1851", True), ("1852", True), ("1850", False), ("1853", False)])
+def test_schema_admission_accepts_only_target_and_upgrade_sources(
+    monkeypatch: pytest.MonkeyPatch, version: str, admitted: bool
+) -> None:
+    m = module()
+    answers = iter(["t\n", version + "\n"])
+    monkeypatch.setattr(m, "run", lambda *_: next(answers))
+    if admitted:
+        m.schema_admission(pfa_query())
+    else:
+        with pytest.raises(ValueError, match="does not match selected release"):
+            m.schema_admission(pfa_query())
+
+
+@pytest.mark.parametrize(
+    "release",
+    [
+        {"schema": None},
+        {"schema": "18x2"},
+        {"upgrade_from": "1851"},
+        {"upgrade_from": ["1852"]},
+        {"upgrade_from": [1851]},
+    ],
+)
+def test_selected_postfixadmin_release_must_name_a_valid_schema_path(
+    monkeypatch: pytest.MonkeyPatch, release: dict[str, Any]
+) -> None:
+    m = module()
+    monkeypatch.setattr(m, "run", lambda *_: pytest.fail("no database probe before the manifest is valid"))
+    with pytest.raises(ValueError, match="selected release"):
+        m.schema_admitted(pfa_query(**release))
+
+
+def converged_pfa(m: ModuleType, monkeypatch: pytest.MonkeyPatch, schemas: list[str]) -> list[dict[str, Any]]:
+    """Code, files and services converged; only the database schema varies."""
+    calls: list[dict[str, Any]] = []
+
+    def credential_state(_: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {
+            "schema": schemas.pop(0) if len(schemas) > 1 else schemas[0],
+            "admin_changed": False,
+            "mapping_changed": False,
+        }
+
+    monkeypatch.setattr(m, "schema_admission", lambda _: None)
+    monkeypatch.setattr(m, "release_needed", lambda _: False)
+    monkeypatch.setattr(m, "needs_seed", lambda _: False)
+    monkeypatch.setattr(m, "credential_state", credential_state)
+    monkeypatch.setattr(m, "app_grants", lambda *_, **__: False)
+    monkeypatch.setattr(m, "desired_files", lambda *_: {"/owned": ("file", b"ok", 0o640, 1, 1)})
+    monkeypatch.setattr(m, "file_state", lambda _: ("file", b"ok", 0o640, 1, 1))
+    monkeypatch.setattr(m, "service_active", lambda _: True)
+    return calls
+
+
+def test_schema_at_target_is_a_noop(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    m = module()
+    converged_pfa(m, monkeypatch, ["1852"])
+    monkeypatch.setattr(m.tempfile, "TemporaryDirectory", lambda **_: pytest.fail("no-op staging"))
+    m.main(pfa_query())
+    assert capsys.readouterr().out == "changed=false\n"
+
+
+def test_pending_schema_is_a_change_even_with_converged_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    m = module()
+    converged_pfa(m, monkeypatch, ["1851"])
+    m.main(pfa_query())
+    assert capsys.readouterr().out == "changed=true\n"
+
+
+def apply_pending(m: ModuleType, monkeypatch: pytest.MonkeyPatch, schemas: list[str]) -> tuple[list[Any], list[Any]]:
+    converged_pfa(m, monkeypatch, schemas)
+    monkeypatch.setattr(m, "peer_health", lambda _: None)
+    monkeypatch.setattr(m, "stage_context", lambda *_: None)
+    monkeypatch.setattr(m, "replace_file", lambda *_: None)
+    units: list[Any] = []
+    upgrades: list[Any] = []
+    monkeypatch.setattr(m, "run", lambda argv, *_: units.append(argv[1:]))
+    monkeypatch.setattr(m, "activate", lambda q, changes, restart, active: units.append(("activate", restart)))
+
+    def upgrader(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        upgrades.append((argv, kwargs["cwd"]))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(m.subprocess, "run", upgrader)
+    return units, upgrades
+
+
+def test_pending_schema_runs_selected_upgrader_once_with_fpm_stopped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    m = module()
+    # Admission, apply re-read, post-upgrade check, reconcile.
+    units, upgrades = apply_pending(m, monkeypatch, ["1851", "1851", "1852", "1852"])
+    m.main({**pfa_query(), "apply": True})
+    assert upgrades == [
+        (["runuser", "-u", "www-data", "--", "/usr/bin/php8.3", "public/upgrade.php"], "/opt/postfixadmin")
+    ]
+    assert units[0] == ["stop", "php8.3-fpm"]
+    assert ("activate", True) in units
+    assert capsys.readouterr().out == "changed=true\n"
+
+
+def test_upgrader_exit_zero_without_target_schema_fails_and_recovers(monkeypatch: pytest.MonkeyPatch) -> None:
+    m = module()
+    # Upstream upgrade.php exits 0 even when the database step failed.
+    units, upgrades = apply_pending(m, monkeypatch, ["1851"])
+    with pytest.raises(ValueError, match="did not reach selected version"):
+        m.main({**pfa_query(), "apply": True})
+    assert len(upgrades) == 1
+    assert ["restart", "php8.3-fpm"] in units
+    assert not any(isinstance(u, tuple) for u in units)
+
+
+def test_fresh_initialization_with_current_code_stops_fpm(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    m = module()
+    units, upgrades = apply_pending(m, monkeypatch, ["1852"])
+    states = iter([None, None, "1852", "1852"])
+    monkeypatch.setattr(
+        m,
+        "credential_state",
+        lambda *_, **__: {"schema": next(states), "admin_changed": True, "mapping_changed": True},
+    )
+    m.main({**pfa_query(), "apply": True})
+    assert len(upgrades) == 1
+    assert units[0] == ["stop", "php8.3-fpm"]
+    assert ("activate", True) in units

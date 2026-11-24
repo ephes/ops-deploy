@@ -16,7 +16,7 @@ class PostfixAdminConfig(MailWebConfig):
     service_name: Literal["postfixadmin"] = "postfixadmin"
     site_path: PurePosixPath = PurePosixPath("/opt/postfixadmin")
     user: UnixUser = "www-data"
-    version: str = "4.0.5"
+    version: str = "4.0.7"
     release_build: Literal["php84"] = "php84"
     install_path: PathText = "/opt/postfixadmin"
     listen_port: Annotated[int, Field(ge=1, le=65535)] = 8082

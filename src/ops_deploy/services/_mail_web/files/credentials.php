@@ -58,7 +58,7 @@ if ($q['app'] === 'snappymail') {
     $r['empty_database'] = false;
     if ($exists) {
         $r['schema'] = pg_fetch_result(pg_query($db, "SELECT value FROM public.config WHERE name='version'"), 0, 0);
-        if ($r['schema'] !== '1851') { throw new RuntimeException('mail web existing schema does not match selected release'); }
+        if (!in_array($r['schema'], $q['schema_admitted'], true)) { throw new RuntimeException('mail web existing schema does not match selected release'); }
         $result = pg_query_params($db, 'SELECT password,active,superadmin FROM public.admin WHERE username=$1', [$q['admin_email']]);
         if (!$result) { throw new RuntimeException('mail web admin inspection failed'); }
         $admin = pg_fetch_assoc($result);
@@ -76,7 +76,7 @@ if ($q['app'] === 'snappymail') {
     }
     if (!pg_query($db, 'ROLLBACK')) { throw new RuntimeException('mail web read transaction closure failed'); }
     if ($q['reconcile_admin'] ?? false) {
-        if ($r['schema'] !== '1851') { throw new RuntimeException('mail web schema prerequisite missing'); }
+        if ($r['schema'] !== $q['schema_target']) { throw new RuntimeException('mail web schema prerequisite missing'); }
         if (!pg_query($db,'BEGIN')) { throw new RuntimeException('mail web admin transaction failed'); }
         $queries = [["INSERT INTO public.domain (domain,description,aliases,mailboxes,transport,backupmx,active) VALUES ('ALL','Superadmin pseudo-domain',0,0,'','0','1') ON CONFLICT (domain) DO NOTHING", []]];
         if ($r['admin_changed']) {

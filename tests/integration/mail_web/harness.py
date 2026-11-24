@@ -190,7 +190,14 @@ def credential_admission(cfg: Any) -> None:
     module = import_module("ops_deploy.services._mail_web.deploy")
     payload = module.render(cfg, SecretValues(SecretRef("fixture.yml"), MATERIAL))
     source = (module.ROOT / "files/credentials.php").read_text().removeprefix("<?php")
-    request = dict(payload["credentials"], apply=True, reconcile_admin=True)
+    selected, _ = module.release_records(cfg)
+    request = dict(
+        payload["credentials"],
+        apply=True,
+        reconcile_admin=True,
+        schema_target=selected["schema"],
+        schema_admitted=[selected["schema"], *selected["upgrade_from"]],
+    )
     setup = Path("/opt/postfixadmin/config.local.php").read_text()
     match = re.search(r"setup_password'\]\s*=\s*'([^']+)'", setup)
     assert match is not None
@@ -203,6 +210,18 @@ def credential_admission(cfg: Any) -> None:
         "{SHA512-CRYPT}$6$salt$" + "A" * 85 + "z",
         "{SHA512-CRYPT}$6$rounds=1000000000$salt$" + "A" * 85 + ".",
     ]
+    # Positive control: the same read-only request admits the original hash, so
+    # each refusal below is the hash admission, not a missing request field.
+    control = subprocess.run(
+        ["/usr/bin/php8.3", "-r", source],
+        input=json.dumps(dict(request, apply=False, reconcile_admin=False)),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert control.returncode == 0, control.stderr
+    assert json.loads(control.stdout)["admin_changed"] is False
+    assert database_identity() == before
     results = []
     try:
         for value in malformed:
@@ -653,9 +672,16 @@ def seed_previous(cfg: Any) -> None:
     from ops_deploy.core.secrets import SecretRef, SecretValues
 
     payload = module.render(cfg, SecretValues(SecretRef("fixture.yml"), MATERIAL))
-    _, previous = module.release_records(cfg)
+    selected, previous = module.release_records(cfg)
+    # The newest previous release is the in-place update source.
+    previous.sort(key=lambda r: tuple(int(x) for x in r["version"].split(".")))
+    previous.reverse()
     payload["release"] = previous[0]
     payload["version"] = previous[0]["version"]
+    if cfg.service_name == "postfixadmin":
+        # The previous code ran at an admitted older schema; the update must
+        # advance it with the selected release's upgrader.
+        sql("UPDATE config SET value='" + selected["upgrade_from"][-1] + "' WHERE name='version';")
     namespace: dict[str, Any] = {"__name__": "fixture_host"}
     for name in ("mail_web_common.py", "mail_web_release.py"):
         exec((module.ROOT / "files" / name).read_text(), namespace)
@@ -747,7 +773,7 @@ def main() -> None:
     # must use this same target, never reset its newly initialized database.
     with patch.object(module, "command", lambda: partial_bootstrap_command(original_command())):
         deploy(pfa, "postfixadmin-partial-bootstrap", fail=True, trace=True)
-    assert sql("SELECT value FROM config WHERE name='version';") == "1851"
+    assert sql("SELECT value FROM config WHERE name='version';") == "1852"
     sql(
         "CREATE TABLE bootstrap_sentinel(id integer PRIMARY KEY, value text); "
         "INSERT INTO bootstrap_sentinel VALUES(42,'preserve');"
@@ -799,7 +825,7 @@ def main() -> None:
     (EVIDENCE / "partial-bootstrap-retry.json").write_text(
         json.dumps(
             {
-                "schema": "1851",
+                "schema": "1852",
                 "catalog_oids_owners_unchanged": True,
                 "unowned_rows_unchanged": True,
                 "upgrader_invocations_on_retry": len(retry_upgrades),
@@ -879,6 +905,7 @@ def main() -> None:
     restart_failure(changed)
     seed_previous(changed)
     deploy(changed, "postfixadmin-update")
+    assert sql("SELECT value FROM config WHERE name='version';") == "1852"
     deploy(changed, "postfixadmin-update-repeat")
     seed_previous(changed_snappy)
     deploy(changed_snappy, "snappymail-update")

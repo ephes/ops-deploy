@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- postfixadmin: PostfixAdmin 4.0.7 (from 4.0.5; security releases 4.0.6 and
+  4.0.7: stored XSS CVE-2026-121551 and CVE-2026-127178, admin username
+  enumeration, MFA/recovery hardening). Archive sha256 equals the GitHub asset
+  digest; its non-vendor files equal the tag's signed commit `199f4980`. A new
+  `_mail_web/releases` manifest built like the earlier ones (the builder
+  reproduces the 4.0.5 manifest byte for byte); 4.0.5 becomes `previous_only`.
+  The selected PostfixAdmin manifest now names its schema (`schema` 1852) and
+  admitted upgrade sources (`upgrade_from` 1851) instead of the hard-coded 1851:
+  at an admitted older schema the apply runs the selected release's
+  `public/upgrade.php` once with PHP-FPM stopped and requires the exact target
+  schema, also when the code is already current. On PostgreSQL 1851 to 1852 only
+  sets `config.version`. The backup manifest default `postfixadmin_version` is
+  4.0.7. Rollback and details: `docs/services/postfixadmin.md`.
+
 - logyard: Loki logs at `warn` instead of `info` (`server.log_level` in
   `loki-config.yml.j2`). Its per-query info lines during obs-daily-pack's
   06:30 run made journald suppress 4,000-11,000 docker.service messages a

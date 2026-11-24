@@ -11,7 +11,10 @@ def main(q):
     desired=desired_files(q,credentials)
     current={p:file_state(p) for p in desired}
     changed=[p for p in desired if desired[p]!=current[p]]
-    database_changed=q['app']=='postfixadmin' and (credentials.get('schema') is None or credentials['admin_changed'] or credentials['mapping_changed'])
+    # An admitted older schema is a pending upstream upgrade, independent of the
+    # code state: code already at the selected release still advances it.
+    schema_pending=q['app']=='postfixadmin' and credentials.get('schema') is not None and credentials['schema']!=schema_target(q)
+    database_changed=q['app']=='postfixadmin' and (credentials.get('schema') is None or schema_pending or credentials['admin_changed'] or credentials['mapping_changed'])
     fpm='php'+q['php']+'-fpm'
     active={u:service_active(u) for u in (fpm,'nginx')}
     needs=bool(seed_needed or code_changed or changed or database_changed or grants_changed or not all(active.values()))
@@ -23,6 +26,11 @@ def main(q):
         return
     q['peer_health']=peer_health(q)
     credentials=credential_state(q,apply=True)
+    schema_pending=q['app']=='postfixadmin' and credentials.get('schema') is not None and credentials['schema']!=schema_target(q)
+    # Fresh initialization or an admitted step; FPM stays stopped while code or
+    # schema moves, and activation restarts it.
+    schema_run=q['app']=='postfixadmin' and (credentials.get('schema') is None or schema_pending)
+    restart_fpm=code_changed or schema_run
     desired=desired_files(q,credentials)
     with tempfile.TemporaryDirectory(prefix='mail-web-') as temporary:
         stage=Path(temporary)
@@ -38,7 +46,7 @@ def main(q):
         # Archive/vendor bytes and all candidate syntax have passed before writes.
         created_dirs=[];installed=[]
         try:
-            if code_changed and active[fpm]:run(['systemctl','stop',fpm])
+            if restart_fpm and active[fpm]:run(['systemctl','stop',fpm])
             for path,value in changes.items():
                 if value is not None:
                     missing=[];parent=Path(path).parent
@@ -50,12 +58,14 @@ def main(q):
                 replace_file(path,value);installed.append(path)
             if q['app']=='postfixadmin':
                 app_grants(q,apply=True)
-                if credentials.get('schema') is None:
+                if schema_run:
+                    # The selected release's own upgrader, as the web user, after
+                    # the code switch: fresh initialization or an admitted step.
                     p=subprocess.run(['runuser','-u',q['web_user'],'--','/usr/bin/php'+q['php'],'public/upgrade.php'],cwd=q['root'],capture_output=True,text=True,timeout=120)
-                    if p.returncode:raise ValueError('mail web upstream fresh schema initialization failed')
+                    if p.returncode:raise ValueError('mail web upstream schema initialization or upgrade failed')
                     check=credential_state(q)
-                    if check.get('schema')!='1851':raise ValueError('mail web schema initialization did not reach selected version')
-            activate(q,changes,code_changed,active)
+                    if check.get('schema')!=schema_target(q):raise ValueError('mail web schema initialization or upgrade did not reach selected version')
+            activate(q,changes,restart_fpm,active)
             if q['app']=='postfixadmin' and database_changed:
                 credential_state(q,reconcile=True)
         except BaseException:

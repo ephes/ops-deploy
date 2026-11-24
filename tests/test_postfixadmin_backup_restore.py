@@ -130,7 +130,7 @@ def backup_settings(**extra: Any) -> dict[str, Any]:
         "stamp": STAMP,
         "created_at": "2026-11-04T11:00:00Z",
         "host_name": "macmini",
-        "postfixadmin_version": "4.0.5",
+        "postfixadmin_version": "4.0.7",
         "include_templates_c": False,
         "retention_days": 14,
         "keep_min": 5,
