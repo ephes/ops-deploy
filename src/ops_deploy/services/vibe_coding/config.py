@@ -31,12 +31,12 @@ LAZYGIT_CHECKSUMS = {
     "arm64": "ac0b48237f3d0283813e7154ec063237e519532feb0470c0881a1793ee78fd42",
 }
 ZELLIJ_CHECKSUMS = {
-    "x86_64": "a8ee599eb357b6142443c91506a4ece3aa8811cb75dcf2b28d194bd66853c79d",
-    "aarch64": "c416b3d29ec9c71baf8754fe66663afe4f615395895e3f9b8b6e3bd0f7042427",
+    "x86_64": "1633211357c236053b51d1ae6415c23f7ff71aaae8e087315e499ceca1b17fa4",
+    "aarch64": "5371af1eae34a22da0fdc0a2d4c4bff648e3e75345adb341f14d93d678487c5c",
 }
 ZELLIJ_BINARY_CHECKSUMS = {
-    "x86_64": "afb6bfb5f9fdc3d9e9d094ce21866bc99d37073a5fbe75bb612e21fc9b96033d",
-    "aarch64": "09cc9f60eb122987c10221fa559aa00c441333a23ba53d727c807f36c5222147",
+    "x86_64": "9310e14d31621ff23fc14bed2244e348f72bafe6c75f2871825d0f4708fb6ce7",
+    "aarch64": "4f22fb5f9afe44af77f512ef19b531359158136c82098419f6281d1e13692c36",
 }
 RUSTUP_CHECKSUMS = {
     "x86_64": "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55",
@@ -101,7 +101,7 @@ class VibeCodingConfig(BaseServiceConfig):
     npm_prefix: PurePosixPath | None = None
     npm_tools: tuple[NpmPackage, ...] = NPM_TOOLS
     zellij_install: bool = True
-    zellij_version: Version = "0.46.0"
+    zellij_version: Version = "0.46.1"
     sshd_hardening: bool = True
     neovim_checksums: dict[str, Sha256] = Field(default_factory=lambda: dict(NEOVIM_CHECKSUMS))
     lazygit_checksums: dict[str, Sha256] = Field(default_factory=lambda: dict(LAZYGIT_CHECKSUMS))

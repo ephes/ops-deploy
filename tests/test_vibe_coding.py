@@ -174,7 +174,7 @@ def test_defaults_are_the_roles() -> None:
         "@mariozechner/pi-coding-agent",
     )
     assert (config.node_major_version, config.neovim_version, config.lazygit_version) == ("22", "0.12.6", "0.66.3")
-    assert (config.rustup_version, config.zellij_version) == ("1.29.3", "0.46.0")
+    assert (config.rustup_version, config.zellij_version) == ("1.29.3", "0.46.1")
     assert config.dotfiles is None
 
 
@@ -415,7 +415,7 @@ def test_fresh_host_plan(tmp_path: Path) -> None:
         "Vibe coding | Install rustup 1.29.3 for vibe",
         "Vibe coding | Ensure rust-analyzer is installed",
         "Vibe coding | Install or update npm tools (system-wide copies removed)",
-        "Vibe coding | Install zellij 0.46.0",
+        "Vibe coding | Install zellij 0.46.1",
         "Vibe coding | Install /etc/ssh/sshd_config after sshd -t and reload ssh",
     ]
     assert [name for name in changed if name in order] == order

@@ -40,7 +40,7 @@ The role's variables without the `vibe_coding_` prefix, with its defaults.
 | `install_rust`, `rustup_version` | `True`, `1.29.3` | |
 | `npm_prefix` | `<home>/.npm-global` | |
 | `npm_tools` | the role's four tools | package names only; non-empty needs `install_node` (the role's assert) |
-| `zellij_install`, `zellij_version` | `True`, `0.46.0` | archive and binary checksums |
+| `zellij_install`, `zellij_version` | `True`, `0.46.1` | archive and binary checksums |
 | `sshd_hardening` | `True` | |
 | `secrets` | `None` | file with `github_username` and `github_token` |
 

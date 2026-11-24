@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- vibe_coding: zellij 0.46.1 (from 0.46.0; patch release of 2026-11-24 with
+  fixes and the new `zellij events` CLI command). Archive digests equal the
+  GitHub asset digests; binary digests equal the release's `.sha256sum` files
+  (musl, x86_64 and aarch64). A deploy replaces the binary.
+
 - postfixadmin: PostfixAdmin 4.0.7 (from 4.0.5; security releases 4.0.6 and
   4.0.7: stored XSS CVE-2026-121551 and CVE-2026-127178, admin username
   enumeration, MFA/recovery hardening). Archive sha256 equals the GitHub asset
