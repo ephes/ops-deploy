@@ -324,7 +324,7 @@ def deploy_homeassistant(*, cfg: HomeAssistantDeployConfig) -> None:
         runtime,
     )
     ensure_service_states(runtime)
-    for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card):
+    for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card, cfg.apexcharts_card):
         pending.homeassistant.append(partial(changed, asset))
     if cfg.areas():
         manage_area_registry(runtime, cfg.api, readiness, cfg.areas(), AreaResult(), app_port=values.app_port)

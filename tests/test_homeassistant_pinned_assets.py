@@ -296,7 +296,7 @@ def test_disabled_registers_nothing(tmp_path: Path) -> None:
 def test_deploy_restarts_home_assistant_only_through_the_pending_handlers() -> None:
     source = Path(str(files("ops_deploy.services.homeassistant").joinpath("deploy.py"))).read_text()
     assert (
-        "for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card):\n"
+        "for asset in install_pinned_assets(runtime, cfg.gps_timeline, cfg.timeline_card, cfg.apexcharts_card):\n"
         "        pending.homeassistant.append(partial(changed, asset))"
     ) in source
     helper_source = Path(str(files("ops_deploy.services.homeassistant").joinpath("files/pinned_assets.py"))).read_text()
@@ -352,3 +352,16 @@ def test_failed_publication_and_rollback_keep_the_retired_copy(tmp_path: Path, m
     (retired,) = component.parent.iterdir()
     assert retired.name.startswith(".ops-ha-old-")
     assert (retired / "keep").read_text() == "installed"
+
+
+def test_apexcharts_card_is_pinned_off_by_default_and_lands_in_www(tmp_path: Path) -> None:
+    from ops_deploy.services.homeassistant.pinned_assets import ApexchartsCardConfig, apexcharts_card_payload
+
+    card = ApexchartsCardConfig()
+    assert card.enabled is False
+    assert card.url() == "https://github.com/RomRider/apexcharts-card/releases/download/v2.2.3/apexcharts-card.js"
+    with pytest.raises(ValueError, match="sha256 together"):
+        ApexchartsCardConfig(version="2.2.4")
+    payload = json.loads(apexcharts_card_payload(runtime(tmp_path), card, "check").get_secret_value())
+    assert payload["dest"].endswith("/config/www/apexcharts-card.js")
+    assert payload["sha256"] == card.sha256

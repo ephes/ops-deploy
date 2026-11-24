@@ -1063,14 +1063,19 @@ while location is about 0.35 MB per 10 days). The custom integration
 [Location Timeline Card](https://github.com/iamyacin/timeline_card) (a fork of
 `konewka17/timeline_card` that adds `history_source: gps_timeline`) shows it.
 
-Both are optional and off by default (`HomeAssistantDeployConfig.gps_timeline`
-and `.timeline_card`, `enabled: true` to install; the Ansible role's
-`homeassistant_gps_timeline_enabled` and `homeassistant_timeline_card_enabled`):
+All are optional and off by default (`HomeAssistantDeployConfig.gps_timeline`,
+`.timeline_card` and `.apexcharts_card`, `enabled: true` to install; the
+Ansible role's `homeassistant_gps_timeline_enabled` and
+`homeassistant_timeline_card_enabled`; the ApexCharts card is pyinfra only).
+The [ApexCharts card](https://github.com/RomRider/apexcharts-card) draws
+history graphs (series from states or attributes, e.g. a thermostat's
+setpoint) in dashboards:
 
 | | Pin | sha256 | Installed as |
 |---|---|---|---|
 | GPS Timeline | tag `0.1.0-beta.3` (commit `688f1b094c58c652bc9a49702486cd9d86b05376`), `https://github.com/iamyacin/gps-timeline/archive/refs/tags/0.1.0-beta.3.tar.gz` | `feb29bc1705181aab9146cacf2c7552a70d969042825734af0435000db1ee34e` | `config/custom_components/gps_timeline/` (only that subtree of the archive), archive kept in `site/downloads/` |
 | Location Timeline Card | release `v1.9.3`, `https://github.com/iamyacin/timeline_card/releases/download/v1.9.3/timeline_card.js` (1,732,646 bytes) | `d81404bc66ef2affcbd701af08a04fcfee199dadfb6b82674576291db50987a5` | `config/www/timeline_card.js` |
+| ApexCharts card | release `v2.2.3`, `https://github.com/RomRider/apexcharts-card/releases/download/v2.2.3/apexcharts-card.js` (1,627,706 bytes) | `346780707773fb90c45e9eeaf8acb010d16a8089e86563a242cc4e1d8995f718` | `config/www/apexcharts-card.js` |
 
 A small helper (`files/pinned_assets.py`, run with the system Python) does the
 work on the host:
@@ -1088,9 +1093,11 @@ work on the host:
   `custom_components/.ops-ha-old-*`, which Home Assistant ignores). A matching
   stamp makes a repeat a no-op. The Ansible role writes the same stamp, so either
   tool sees the other's install as current.
-- The card is `timeline_card.js` (owner `homeassistant`, 0644) in `www/`
+- The cards are `timeline_card.js` and `apexcharts-card.js` (owner `homeassistant`, 0644) in `www/`
   (owner `homeassistant`, 0755). The file name stays the same across upgrades;
-  the dashboard resource carries the version (`/local/timeline_card.js?v=1.9.3`).
+  the dashboard resource carries the version (`/local/timeline_card.js?v=1.9.3`,
+  `/local/apexcharts-card.js?v=2.2.3`); resources are registered in the UI
+  (or its websocket API), not by the deploy.
 - Home Assistant restarts (through the normal pending restart) only when the
   integration or the card changed. It serves `/local` only when `www/` existed
   at startup; the first install's restart covers that.

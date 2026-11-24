@@ -1,4 +1,4 @@
-"""Pinned GPS Timeline integration and Location Timeline Card (both opt-in).
+"""Pinned GPS Timeline integration, Location Timeline Card and ApexCharts card (all opt-in).
 
 GPS Timeline (``iamyacin/gps-timeline``) keeps location history in its own
 SQLite database, ``config/gps_timeline/gps_timeline.db``, independent of the
@@ -12,7 +12,10 @@ Both are pinned downloads verified by sha256 before anything is replaced:
   and a stamp with version and checksum makes a repeat run a no-op;
 - the card is ``config/www/timeline_card.js`` (``www/`` 0755), always the same
   file name, so the dashboard resource ``/local/timeline_card.js?v=<version>``
-  only needs its ``?v=`` bumped.
+  only needs its ``?v=`` bumped;
+- the ApexCharts card (``RomRider/apexcharts-card``) is
+  ``config/www/apexcharts-card.js`` the same way (resource
+  ``/local/apexcharts-card.js?v=<version>``).
 
 Home Assistant restarts only when one of them changed (``/local`` exists only
 if ``www/`` existed at startup, so the first install's restart covers it).
@@ -80,6 +83,16 @@ class TimelineCardConfig(_PinnedConfig):
         return f"https://github.com/iamyacin/timeline_card/releases/download/v{self.version}/timeline_card.js"
 
 
+class ApexchartsCardConfig(_PinnedConfig):
+    version: PinVersion = "2.2.3"
+    sha256: Sha256 = "346780707773fb90c45e9eeaf8acb010d16a8089e86563a242cc4e1d8995f718"
+
+    def url(self) -> str:
+        if self.download_url is not None:
+            return self.download_url.get_secret_value()
+        return f"https://github.com/RomRider/apexcharts-card/releases/download/v{self.version}/apexcharts-card.js"
+
+
 def gps_timeline_payload(cfg: HomeAssistantRuntimeConfig, item: GpsTimelineConfig, action: str) -> SecretStr:
     parent = cfg.config_path + "/custom_components"
     return SecretStr(
@@ -112,6 +125,23 @@ def timeline_card_payload(cfg: HomeAssistantRuntimeConfig, item: TimelineCardCon
                 "sha256": item.sha256,
                 "url": item.url(),
                 "dest": cfg.config_path + "/www/timeline_card.js",
+                "user": cfg.user,
+                "group": cfg.group,
+            }
+        )
+    )
+
+
+def apexcharts_card_payload(cfg: HomeAssistantRuntimeConfig, item: ApexchartsCardConfig, action: str) -> SecretStr:
+    return SecretStr(
+        json.dumps(
+            {
+                "action": action,
+                "kind": "file",
+                "version": item.version,
+                "sha256": item.sha256,
+                "url": item.url(),
+                "dest": cfg.config_path + "/www/apexcharts-card.js",
                 "user": cfg.user,
                 "group": cfg.group,
             }
@@ -172,7 +202,10 @@ def _directory(cfg: HomeAssistantRuntimeConfig, path: str) -> OperationMeta:
 
 
 def install_pinned_assets(
-    cfg: HomeAssistantRuntimeConfig, gps_timeline: GpsTimelineConfig, timeline_card: TimelineCardConfig
+    cfg: HomeAssistantRuntimeConfig,
+    gps_timeline: GpsTimelineConfig,
+    timeline_card: TimelineCardConfig,
+    apexcharts_card: ApexchartsCardConfig | None = None,
 ) -> list[OperationMeta]:
     """Register the enabled installs; Home Assistant needs a restart when one of them changed."""
 
@@ -192,6 +225,7 @@ def install_pinned_assets(
                 _timeout=gps_timeline.command_timeout,
             )
         )
+    www: OperationMeta | None = None
     if timeline_card.enabled:
         www = _directory(cfg, cfg.config_path + "/www")
         changes.append(
@@ -202,6 +236,18 @@ def install_pinned_assets(
                 apply=timeline_card_payload(cfg, timeline_card, "apply"),
                 predecessors=(www,),
                 _timeout=timeline_card.command_timeout,
+            )
+        )
+    if apexcharts_card is not None and apexcharts_card.enabled:
+        www = www or _directory(cfg, cfg.config_path + "/www")
+        changes.append(
+            _pinned_asset(
+                name=f"Install pinned ApexCharts card {apexcharts_card.version}",
+                cfg=cfg,
+                check=apexcharts_card_payload(cfg, apexcharts_card, "check"),
+                apply=apexcharts_card_payload(cfg, apexcharts_card, "apply"),
+                predecessors=(www,),
+                _timeout=apexcharts_card.command_timeout,
             )
         )
     return changes

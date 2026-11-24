@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- homeassistant: optional pinned ApexCharts card (`apexcharts_card`,
+  `RomRider/apexcharts-card` v2.2.3, sha256-checked) installed as
+  `config/www/apexcharts-card.js` like the Location Timeline Card; off by
+  default, Home Assistant restarts only when the file changed.
+
 - chesslab: first conversion of
   [root writes in service homes](plans/root-writes-in-service-homes.md). The
   source sync runs as the service user (no `--chown`), `site` and `data` are
