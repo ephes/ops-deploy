@@ -403,7 +403,10 @@ def _coding_tools(cfg: VibeCodingConfig, dirs: _Dirs) -> None:
 
 
 def _zellij(cfg: VibeCodingConfig) -> None:
-    if output(scripts.secure("which zellij")):
+    # The installed version, not its mere presence: a pin move replaces an
+    # older zellij (macmini kept 0.43.1 under the former ``which zellij``).
+    installed = output(scripts.secure("zellij --version"))
+    if scripts.search("^zellij " + scripts.regex_escape(cfg.zellij_version) + "$", installed.strip()):
         return
     arch = RUST_ARCH.get(_arch(), "unsupported")
     if arch not in cfg.zellij_checksums or arch not in cfg.zellij_binary_checksums:

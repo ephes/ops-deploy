@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- vibe_coding: zellij is replaced when `zellij --version` differs from the
+  pin. The former `which zellij` check only installed it on a host without
+  zellij, so pin moves never reached macmini (it ran 0.43.1).
+
 - vibe_coding: zellij 0.46.1 (from 0.46.0; patch release of 2026-11-24 with
   fixes and the new `zellij events` CLI command). Archive digests equal the
   GitHub asset digests; binary digests equal the release's `.sha256sum` files

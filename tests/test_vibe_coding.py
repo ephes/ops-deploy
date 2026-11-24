@@ -118,7 +118,7 @@ def converged(config: VibeCodingConfig, **extra: Any) -> dict[str, Any]:
         "component list --installed": ["rust-analyzer-x86_64-unknown-linux-gnu", "rustc-x86_64-unknown-linux-gnu"],
         "npm config get prefix": [f"{home}/.npm-global"],
         "python3 -I -c": [],
-        "which zellij": ["/usr/local/bin/zellij"],
+        "zellij --version": ["zellij 0.46.1"],
         "p=$(readlink -f /etc/ssh/sshd_config)": present(sshd),
         **fakehost.file("/etc/apt/keyrings/nodesource.gpg", "key"),
         **fakehost.file(
@@ -515,13 +515,13 @@ def test_optional_parts_can_be_left_out(tmp_path: Path) -> None:
         deploy_vibe_coding,
         config,
         secrets(),
-        responses=converged(config, **{"which zellij": [], "p=$(readlink -f /etc/ssh/sshd_config)": ["absent"]}),
+        responses=converged(config, **{"zellij --version": [], "p=$(readlink -f /etc/ssh/sshd_config)": ["absent"]}),
     )
     assert run.succeeded, run.error
     assert run.mutating_changed_ops == []
     facts = "\n".join(run.fact_commands)
     assert "chezmoi" not in facts.replace("/usr/local/bin/chezmoi --version", "")
-    assert "which zellij" not in facts
+    assert "zellij --version" not in facts
 
 
 def test_unsupported_architecture_fails_planning(tmp_path: Path) -> None:
@@ -592,3 +592,20 @@ def test_chezmoi_step_converges_with_an_unreachable_external(tmp_path: Path) -> 
     assert (home / ".foo").read_text() == "hi\n"
     assert not (home / "projects").exists()
     assert run(scripts.chezmoi_probe(PurePosixPath(src))).stdout.strip() == "current"
+
+
+@pytest.mark.parametrize("installed", [["zellij 0.43.1"], ["zellij 0.46.10"], []])
+def test_zellij_other_or_missing_version_is_replaced(tmp_path: Path, installed: list[str]) -> None:
+    config = cfg(tmp_path)
+    run = run_deploy_fake(
+        deploy_vibe_coding, config, secrets(), responses=converged(config, **{"zellij --version": installed})
+    )
+    assert run.succeeded, run.error
+    assert run.mutating_changed_ops == ["Vibe coding | Install zellij 0.46.1"]
+
+
+def test_zellij_at_the_pinned_version_is_left_alone(tmp_path: Path) -> None:
+    config = cfg(tmp_path)
+    run = run_deploy_fake(deploy_vibe_coding, config, secrets(), responses=converged(config))
+    assert run.succeeded, run.error
+    assert "Vibe coding | Install zellij 0.46.1" not in run.mutating_changed_ops

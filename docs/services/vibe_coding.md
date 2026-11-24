@@ -85,7 +85,7 @@ same resulting bytes, owner and mode.
 | coding_tools: npm prefix dir, `npm config set prefix` | the setting only when `npm config get prefix` differs | see differences |
 | coding_tools: `npm-paths.fish` | `files.put` | byte-identical |
 | coding_tools: system-wide listing, uninstall conflicts, user listing, outdated, install | one host script (`files/npm_tools.py`) with the role's order and rules | see differences |
-| zellij: `which zellij`, verified archive, binary checksum, install | same checks, staged and renamed into place | same |
+| zellij: `zellij --version` equals the pin (otherwise replaced), verified archive, binary checksum, install | same checks, staged and renamed into place | same |
 | sshd: `blockinfile` with `validate: sshd -t -f %s`, handler `reload sshd` | the same block and markers; checked, then installed and reloaded in one step with rollback | byte-identical; see differences |
 
 Commands the role runs as `become_user` run through `sudo -H -n -u <user>`,
