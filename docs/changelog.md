@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- traefik_deploy: the default release is 3.8.0 (from 3.7.19; owner decision
+  2026-11-24 for the 3.8 line). Archive digests checked against the release's
+  checksums file and the GitHub asset digests (amd64 `266f4b02…`, arm64
+  `3c85f6f4…`). heis takes it with its ordinary deploy and
+  `heis_traefik_checksum`; the smoke VM provisions 3.8.0. No 3.8.0 migration
+  item applies to the configurations here (review in ops-control's
+  `docs/TRAEFIK_UPDATES.md`).
+
 - postgres_install: refuses before any change when `version` is not the newest
   major of the host's `cluster_name` in `pg_lsclusters` (the cluster still on an
   older major: upgrade it first; a newer major holds it: deploy that one), when

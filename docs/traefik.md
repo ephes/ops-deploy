@@ -805,7 +805,7 @@ That historical smoke does not establish dynamic-route recovery.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `"3.7.19"` | the repository's default release (ops-library is archived) |
+| `version` | `"3.8.0"` | the repository's default release (ops-library is archived) |
 | `checksum` | required | `sha256:<hex>` of the release archive; the role allows none |
 | `arch` | `None` | `None`: from `uname -m` (`x86_64`, `aarch64`, `armv7l`, `armv6l`) |
 | `letsencrypt_email` | required | the role refuses its `CHANGEME@` placeholder; here a plain address is required |

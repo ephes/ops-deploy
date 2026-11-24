@@ -69,7 +69,7 @@ class FileCertificate(RoleConfig):
 
 
 class TraefikDeployConfig(RoleConfig):
-    version: Version = "3.7.19"
+    version: Version = "3.8.0"
     # The release's ``sha256:<hex>``. The role skips the check when it is empty;
     # here it is required, so nothing unverified is ever installed.
     checksum: Checksum

@@ -374,21 +374,21 @@ def test_host_files_are_golden(name: str) -> None:
 
 
 def test_default_release_upgrades_old_binary_with_verified_checksum() -> None:
-    checksum = "sha256:97534a68335a087137d0f2adecefe37c8216ac10114dc7e5b510f2a8a12f89be"
+    checksum = "sha256:266f4b02a3c9d16880c6d913053c6358df8163e296b6f0899ed4544d0a742bd6"
     cfg = TraefikDeployConfig(checksum=checksum, letsencrypt_email="ops@example.org", arch="amd64")
-    assert cfg.version == "3.7.19"
+    assert cfg.version == "3.8.0"
     result = ok(converged(cfg), cfg)
-    install = next(command for command in result.executed_commands if "traefik_v3.7.19_linux_amd64.tar.gz" in command)
-    assert "traefik_v3.7.19_linux_amd64.tar.gz" in install
+    install = next(command for command in result.executed_commands if "traefik_v3.8.0_linux_amd64.tar.gz" in command)
+    assert "traefik_v3.8.0_linux_amd64.tar.gz" in install
     assert checksum.removeprefix("sha256:") in install
-    assert "Traefik | Check the installed Traefik is 3.7.19" in result.mutating_changed_ops
+    assert "Traefik | Check the installed Traefik is 3.8.0" in result.mutating_changed_ops
 
 
 @pytest.mark.parametrize(
     ("machine", "arch", "checksum"),
     [
-        ("x86_64", "amd64", "97534a68335a087137d0f2adecefe37c8216ac10114dc7e5b510f2a8a12f89be"),
-        ("aarch64", "arm64", "6d796c41b8d3c8c31bb2faf1bfff1b5fcf603676ad9a773b29ffa7efa678881a"),
+        ("x86_64", "amd64", "266f4b02a3c9d16880c6d913053c6358df8163e296b6f0899ed4544d0a742bd6"),
+        ("aarch64", "arm64", "3c85f6f40ef10eddcdcce6f5416b2ba9a818ddcd900b1f9e4955b7bbb744a9fc"),
     ],
 )
 def test_smoke_bootstrap_selects_the_verified_patch(machine: str, arch: str, checksum: str) -> None:
@@ -405,4 +405,4 @@ def test_smoke_bootstrap_selects_the_verified_patch(machine: str, arch: str, che
         capture_output=True,
         check=True,
     )
-    assert result.stdout.splitlines() == ["3.7.19", arch, checksum]
+    assert result.stdout.splitlines() == ["3.8.0", arch, checksum]
