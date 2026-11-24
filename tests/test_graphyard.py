@@ -37,6 +37,7 @@ READ_ONLY = {
     "Require the Grafana provisioning assets",
     "Wait for the InfluxDB API",
     "Verify Grafana InfluxDB v1 auth",
+    "Require Docker Compose 2.24 or later",
     "Require pyproject.toml in the site",
     "Require uv.lock in the site",
     "Require the InfluxDB container to be running",
@@ -119,6 +120,7 @@ def converged(cfg: GraphyardConfig, secrets: SecretValues | None = None, /, **dr
         "stat -c '%u %g %a' /var/lib/graphyard/grafana": ["472 472 755"],
         "docker network inspect graphyard-monitoring": ["present"],
         "influx v1 auth list": ["present"],
+        "graphyard-grafana check": ["ok"],
         "influx bucket list": ["0123abcd 15552000"],
         f"test -e {SITE}/.venv/bin/python": ["present"],
         f"test -e {DB}": ["present"],
@@ -186,8 +188,12 @@ def test_second_run_changes_nothing(cfg: GraphyardConfig) -> None:
     assert {name.removeprefix(PREFIX) for name in run.changed_ops} <= READ_ONLY
     assert run.uploaded_paths == []
     assert [call for call in rsync.calls if "--dry-run" not in call] == []
-    # Only the read-only check of Grafana's InfluxDB login reads a secret (on stdin).
-    assert [command.rsplit(" ", 1)[1] for command, _ in run.stdin] == ["check"]
+    # Only the read-only checks of Grafana's InfluxDB login and of its Flux read
+    # token read a secret (on stdin).
+    flux = [stdin for command, stdin in run.stdin if "graphyard-grafana check" in command]
+    assert flux == [f"{SECRETS['influx_token']}\n"]
+    others = [command for command, _ in run.stdin if "graphyard-grafana check" not in command]
+    assert [command.rsplit(" ", 1)[1] for command in others] == ["check"]
     assert_no_secret_leaks(run)
 
 
@@ -270,6 +276,10 @@ def test_unmanaged_container_is_removed_and_the_runtime_restarted(cfg: Graphyard
         "Restart graphyard-runtime.service",
     ]
     assert "docker rm -f graphyard-grafana" in run.executed_commands
+    commands = run.executed_commands
+    version_check = next(i for i, c in enumerate(commands) if "Docker Compose 2.24.0" in c)
+    removal = commands.index("docker rm -f graphyard-grafana")
+    assert version_check < removal, "the Compose version is checked before the takeover"
 
 
 def test_unmanaged_containers_stay_when_the_migration_is_off(source: Path) -> None:
@@ -401,6 +411,95 @@ def test_retention_drift_updates_the_bucket(cfg: GraphyardConfig) -> None:
 
     assert mutating(run) == ["Update bucket retention when it drifts"]
     assert any("influx bucket update --id" in c for c in run.executed_commands)
+
+
+def test_missing_grafana_flux_token_is_created_on_the_host(cfg: GraphyardConfig) -> None:
+    responses = converged(cfg)
+    responses["graphyard-grafana check"] = ["missing"]
+
+    run = deploy(cfg, responses)
+
+    assert mutating(run) == [
+        "Create Grafana's Flux read token when missing",
+        "Restart the Graphyard runtime for the Flux read token",
+    ]
+    ensure, stdin = next((command, stdin) for command, stdin in run.stdin if "graphyard-grafana ensure" in command)
+    assert stdin == f"{SECRETS['influx_token']}\n"
+    assert SECRETS["influx_token"] not in ensure
+    assert ensure.endswith(
+        "http://127.0.0.1:8086 graphyard graphyard graphyard-grafana-flux-read /etc/graphyard/grafana-flux.env"
+        " graphyard-grafana ensure"
+    )
+    assert any("systemctl restart graphyard-runtime" in c for c in run.executed_commands)
+    assert_no_secret_leaks(run)
+
+
+def test_grafana_without_the_recorded_flux_token_is_restarted_only(cfg: GraphyardConfig) -> None:
+    responses = converged(cfg)
+    responses["graphyard-grafana check"] = ["stale"]
+
+    run = deploy(cfg, responses)
+
+    assert mutating(run) == ["Restart the Graphyard runtime for the Flux read token"]
+    assert not any("graphyard-grafana ensure" in command for command, _ in run.stdin)
+
+
+def test_flux_env_file_follows_env_dir(source: Path) -> None:
+    cfg = macmini_core_config(source, env_dir="/srv/graphyard-env")
+
+    assert str(cfg.grafana_flux_env_path) == "/srv/graphyard-env/grafana-flux.env"
+    compose = core_module.render("docker-compose.yml.j2", cfg, secrets_values())
+    assert '- path: "/srv/graphyard-env/grafana-flux.env"' in compose
+
+
+def test_flux_env_file_is_not_configurable(source: Path) -> None:
+    with pytest.raises(ConfigValidationError):
+        macmini_core_config(source, grafana={"flux_env_path": "/etc/graphyard/graphyard.env"})
+
+
+@pytest.mark.parametrize(
+    ("stdout", "status", "accepted"),
+    [
+        ("2.24.0\n", 0, True),
+        ("v5.8.0\n", 0, True),
+        ("2.24.0\n", 1, False),
+        ("2.23.9\n", 0, False),
+        ("2.25.3\n\n", 0, False),
+        ("2.24.0-rc.1\n", 0, False),
+        ("\u0662.\u0662\u0664.\u0660\n", 0, False),
+        ("", 0, False),
+    ],
+)
+def test_compose_version_preflight(
+    cfg: GraphyardConfig, tmp_path: Path, stdout: str, status: int, accepted: bool
+) -> None:
+    import os
+    import shlex
+    import subprocess
+
+    run = deploy(cfg, converged(cfg))
+    preflight = next(c for c in run.executed_commands if "Docker Compose 2.24.0" in c)
+    stub = tmp_path / "bin" / "docker"
+    stub.parent.mkdir()
+    (tmp_path / "out").write_bytes(stdout.encode())
+    stub.write_text(f"#!/bin/sh\ncat {shlex.quote(str(tmp_path / 'out'))}\nexit {status}\n")
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub.parent}:{os.environ['PATH']}"}
+    result = subprocess.run(["sh", "-c", preflight], env=env, capture_output=True)
+    assert (result.returncode == 0) is accepted
+
+
+def test_token_file_aliases_and_env_dir_in_the_site_are_refused(source: Path) -> None:
+    with pytest.raises(ConfigValidationError, match="compose path"):
+        macmini_core_config(source, runtime={"compose_path": "//etc/graphyard/grafana-flux.env"})
+    with pytest.raises(ConfigValidationError, match="env_dir"):
+        macmini_core_config(source, env_dir="/opt/apps/graphyard/site/env")
+
+
+def test_compose_hands_grafana_the_optional_flux_env_file(cfg: GraphyardConfig) -> None:
+    compose = core_module.render("docker-compose.yml.j2", cfg, secrets_values())
+
+    assert '- path: "/etc/graphyard/grafana-flux.env"\n        required: false' in compose
 
 
 def test_retention_left_alone_when_not_applied(source: Path) -> None:

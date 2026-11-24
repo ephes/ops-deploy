@@ -49,6 +49,24 @@
   as the service user, root-owned files move out. No behaviour changes with
   this entry; chesslab is the pilot and follows separately.
 
+- graphyard core: Grafana gets a read-only InfluxDB v2 token for its Flux
+  datasource (graphyard's `Graphyard InfluxDB (Flux)`). A small Python script
+  on the host checks the token recorded in `<env_dir>/grafana-flux.env` (`0600 root`,
+  not configurable) and that Grafana runs with it,
+  every run (read-only). Without a working token it reuses or creates the
+  read-only authorization `grafana.flux_token_description` (default
+  `graphyard-grafana-flux-read`, read on the bucket only) with the admin token
+  on stdin, deletes only its own other authorizations (active, that description and
+  exactly `read` on the bucket; no other credential is touched) and writes the
+  env file;
+  then, or when Grafana lacks the recorded token, the runtime restarts. Requests
+  bypass proxies and refuse redirects. Compose passes the file to Grafana as an
+  optional `env_file` (`GRAPHYARD_INFLUX_FLUX_TOKEN`), which needs Docker
+  Compose 2.24.0 or later (now checked before the container takeover). Proving
+  that a recorded token is Graphyard's needs InfluxDB to list token values
+  (2.7; with hashed tokens the deploy stops with a message instead). The
+  token never reaches the controller.
+
 - dns: the DDNS updater logs one line per run when nothing changed
   (`DDNS result: ... wan=<IPv4>,<IPv6>`) instead of about 13; any update,
   error or public mismatch still logs the whole run. This keeps a short

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import re
 import shlex
 from collections.abc import Sequence
@@ -190,6 +191,129 @@ call("POST", "/private/legacy/authorizations/%s/password" % created["id"], {"pas
 if not works():
     sys.exit("the new InfluxDB v1 login for Grafana does not work")
 """
+# Grafana's read-only InfluxDB v2 token for its Flux datasource, kept on the host.
+# Both modes read the admin token on stdin. Only an authorization with the
+# description *and* exactly ``read`` on the bucket counts as ours. ``check``
+# accepts the token in the env file only when it is such an authorization's
+# token and lists the bucket, then compares it with the running Grafana
+# container's environment: ``ok``, ``missing`` or ``stale`` (Grafana does not
+# run with it). ``ensure`` reuses or creates one of ours, deletes our other
+# ones (never another credential) and writes the env file (0600, atomically).
+# The token never leaves the host and is in no process's arguments; the requests go straight to the local API (no proxy,
+# no redirects).
+INFLUX_FLUX_TOKEN = """\
+import json, os, subprocess, sys, tempfile, urllib.error, urllib.parse, urllib.request
+base, org, bucket, description, env_path, container, mode = sys.argv[1:8]
+KEY = "GRAPHYARD_INFLUX_FLUX_TOKEN="
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+
+
+def call(method, path, token, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    headers = {"Content-Type": "application/json", "Authorization": "Token " + token}
+    request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+    with opener.open(request, timeout=10) as response:
+        text = response.read()
+    return json.loads(text) if text else None
+
+
+def recorded():
+    try:
+        with open(env_path) as handle:
+            for line in handle:
+                if line.startswith(KEY):
+                    return line[len(KEY) :].strip()
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def works(token):
+    if not token:
+        return False
+    try:
+        found = call("GET", "/api/v2/buckets?" + urllib.parse.urlencode({"org": org, "name": bucket}), token)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403, 404):
+            return False
+        raise
+    return len(found.get("buckets") or []) == 1
+
+
+def loaded(token):
+    shown = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .State.Running}} {{json .Config.Env}}", container],
+        capture_output=True,
+        text=True,
+    )
+    if shown.returncode != 0:
+        return False
+    running, _, env = shown.stdout.partition(" ")
+    return json.loads(running) is True and KEY + token in json.loads(env or "[]")
+
+
+admin = sys.stdin.readline().rstrip("\\n")
+org_id = call("GET", "/api/v2/orgs?" + urllib.parse.urlencode({"org": org}), admin)["orgs"][0]["id"]
+query = urllib.parse.urlencode({"name": bucket, "orgID": org_id})
+buckets = call("GET", "/api/v2/buckets?" + query, admin)["buckets"]
+if len(buckets) != 1:
+    sys.exit("expected exactly one bucket named %s, found %d" % (bucket, len(buckets)))
+wanted = [{"action": "read", "resource": {"type": "buckets", "id": buckets[0]["id"], "orgID": org_id}}]
+listing = "/api/v2/authorizations?" + urllib.parse.urlencode({"orgID": org_id})
+
+
+# Ours: the description and exactly read on the bucket (never another credential).
+def owned(auth):
+    return (
+        auth.get("description") == description
+        and auth.get("status") == "active"
+        and [
+            {"action": p["action"], "resource": {k: p["resource"].get(k) for k in ("type", "id", "orgID")}}
+            for p in auth.get("permissions") or []
+        ]
+        == wanted
+    )
+
+
+ours = [a for a in call("GET", listing, admin)["authorizations"] if owned(a)]
+# Ownership of the recorded token is proven by comparing it with our
+# authorizations' tokens; InfluxDB that hashes tokens (2.9+ default) hides
+# them, so stop instead of replacing a working token on every run.
+if any(not a.get("token") for a in ours):
+    sys.exit("InfluxDB does not list token values (hashed tokens?); cannot verify the Grafana Flux read token")
+if mode == "check":
+    token = recorded()
+    valid = bool(token) and any(a.get("token") == token for a in ours) and works(token)
+    print("missing" if not valid else "ok" if loaded(token) else "stale")
+    sys.exit(0)
+keep = next((a for a in ours if works(a.get("token", ""))), None)
+if keep is None:
+    body = {"orgID": org_id, "description": description, "permissions": wanted}
+    keep = call("POST", "/api/v2/authorizations", admin, body)
+for auth in ours:
+    if auth["id"] != keep["id"]:
+        call("DELETE", "/api/v2/authorizations/" + auth["id"], admin)
+token = keep["token"]
+if not works(token):
+    sys.exit("the Grafana Flux read token does not work")
+directory = os.path.dirname(env_path)
+os.makedirs(directory, mode=0o750, exist_ok=True)
+handle, temporary = tempfile.mkstemp(dir=directory, prefix=".grafana-flux.")
+try:
+    os.fchmod(handle, 0o600)
+    os.write(handle, (KEY + token + "\\n").encode())
+    os.fsync(handle)
+finally:
+    os.close(handle)
+os.replace(temporary, env_path)
+"""
 # The bucket's retention in seconds, from ``influx bucket list --json`` on stdin.
 BUCKET_RETENTION = """\
 import json, sys
@@ -273,6 +397,10 @@ class Grafana(Part):
         "/etc/grafana/provisioning/dashboards-json/overview/graphyard-home.json"
     )
     influx_username: Word = "grafana"
+    # The description of the read-only InfluxDB v2 authorization behind
+    # Grafana's Flux datasource; the token lives in ``<env_dir>/grafana-flux.env``
+    # (not configurable), created on the host, never on the controller.
+    flux_token_description: Word = "graphyard-grafana-flux-read"
     # None: the Influx bucket.
     influx_database: Word | None = None
     # The app's links to Grafana (``GRAFANA_BASE_URL``).
@@ -483,6 +611,16 @@ class GraphyardConfig(BaseServiceConfig):
             raise ValueError("the web, agent and runtime units need distinct names")
         if self.metric_specs is not None and self.metric_specs.prune and not self.metric_specs.specs:
             raise ValueError("pruning metric collection specs needs at least one spec")
+
+        def target(path: PurePosixPath) -> str:
+            # How Linux resolves the spelling: "//x" and "/x" are one file.
+            return "/" + posixpath.normpath(str(path)).lstrip("/")
+
+        if target(self.compose_path) == target(self.grafana_flux_env_path):
+            raise ValueError("the compose path must not be <env_dir>/grafana-flux.env")
+        env_dir, site = target(self.env_dir), target(self.site_path)
+        if env_dir == site or env_dir.startswith(site.rstrip("/") + "/"):
+            raise ValueError("env_dir must not lie inside site_path (the source sync owns it)")
         return self
 
     @property
@@ -500,6 +638,12 @@ class GraphyardConfig(BaseServiceConfig):
     @property
     def env_path(self) -> PurePosixPath:
         return self.env_dir / "graphyard.env"
+
+    @property
+    def grafana_flux_env_path(self) -> PurePosixPath:
+        """The env file with Grafana's Flux read token: always ``<env_dir>/grafana-flux.env``."""
+
+        return self.env_dir / "grafana-flux.env"
 
     @property
     def db_path(self) -> PurePosixPath:
@@ -671,6 +815,7 @@ def role_vars(cfg: GraphyardConfig, secrets: SecretValues) -> dict[str, Any]:
         "graphyard_grafana_default_home_dashboard_path": str(grafana.default_home_dashboard_path),
         "graphyard_grafana_influx_database": grafana.influx_database or influx.bucket,
         "graphyard_grafana_influx_username": grafana.influx_username,
+        "graphyard_grafana_flux_env_path": str(cfg.grafana_flux_env_path),
         "graphyard_grafana_influx_password": secrets.get("grafana_influx_password", ""),
         "graphyard_grafana_provisioning_path": str(cfg.provisioning_path),
         "graphyard_grafana_dashboards_path": str(cfg.dashboards_path),
@@ -741,6 +886,26 @@ def _numeric_directory(path: PurePosixPath, owner: str, group: str, mode: str) -
 
 def _runtime(cfg: GraphyardConfig, runtime: Runtime, compose: SecretContent, secrets: SecretValues) -> None:
     influx, grafana = cfg.influx, cfg.grafana
+    # The compose file's optional ``env_file`` (``required: false``) needs Compose
+    # 2.24.0: checked before the runtime step changes anything (storage, network,
+    # the container takeover). Exactly one plain release version is accepted.
+    mark_read_only(
+        server.shell(
+            name="Require Docker Compose 2.24 or later",
+            commands=[
+                # Docker must succeed and print exactly "X.Y.Z" or "vX.Y.Z" (ASCII
+                # digits) plus one newline.
+                "python3 -I -c "
+                + shlex.quote(
+                    "import re, subprocess, sys; "
+                    "r = subprocess.run(['docker', 'compose', 'version', '--short'], capture_output=True); "
+                    "m = r.returncode == 0 and re.fullmatch(rb'v?([0-9]+)[.]([0-9]+)[.]([0-9]+)\\n', r.stdout); "
+                    "sys.exit(0 if m and tuple(map(int, m.groups())) >= (2, 24, 0) else "
+                    "'Graphyard needs Docker Compose 2.24.0 or later')"
+                )
+            ],
+        )
+    )
     files.directory(name="Ensure /var/lib/graphyard", path="/var/lib/graphyard", user="root", group="root", mode="0755")
     _numeric_directory(influx.data_dir, influx.data_dir_owner, influx.data_dir_group, influx.data_dir_mode)
     _numeric_directory(influx.config_dir, influx.config_dir_owner, influx.config_dir_group, "0775")
@@ -796,6 +961,7 @@ def _runtime(cfg: GraphyardConfig, runtime: Runtime, compose: SecretContent, sec
         )
     )
     _grafana_influx_auth(cfg, secrets)
+    _grafana_flux_token(cfg, runtime, secrets)
 
 
 def _if_container(container: str, command: str, *, otherwise: str) -> str:
@@ -834,6 +1000,70 @@ def _grafana_influx_auth(cfg: GraphyardConfig, secrets: SecretValues) -> None:
     if state != "present":
         secret_stdin(name="Create Grafana InfluxDB v1 auth when missing", command=api("ensure"), content=stdin)
     mark_read_only(secret_stdin(name="Verify Grafana InfluxDB v1 auth", command=api("check"), content=stdin))
+
+
+def _grafana_flux_token(cfg: GraphyardConfig, runtime: Runtime, secrets: SecretValues) -> None:
+    """Grafana's read-only Flux token (:data:`INFLUX_FLUX_TOKEN`); created only when the recorded one fails.
+
+    Compose reads the env file as an optional ``env_file`` of the Grafana
+    service, so a first start without it works (the Flux datasource then has
+    no token). A new token, or a Grafana container that does not run with the
+    recorded one (an earlier run stopped before the restart), restarts the
+    runtime; then the InfluxDB API is awaited again for the steps after this.
+    """
+
+    influx, grafana = cfg.influx, cfg.grafana
+    container = shlex.quote(influx.container_name)
+    host = "127.0.0.1" if influx.host_bind_address == "0.0.0.0" else influx.host_bind_address
+    base = f"http://{host}:{influx.host_port}"
+
+    def command(mode: str) -> str:
+        args = [
+            base,
+            influx.org,
+            influx.bucket,
+            grafana.flux_token_description,
+            str(cfg.grafana_flux_env_path),
+            grafana.container_name,
+            mode,
+        ]
+        return shlex.join(["python3", "-I", "-c", INFLUX_FLUX_TOKEN, *args])
+
+    admin = f"{secrets['influx_token']}\n"
+    probed = strict_probe(
+        _if_container(container, command("check"), otherwise="missing"), name="Grafana Flux read token", stdin=admin
+    )
+    state = (probed or "missing").strip()
+    if state == "ok":
+        return
+    if state != "stale":
+        secret_stdin(
+            name="Create Grafana's Flux read token when missing",
+            command=command("ensure"),
+            content=SecretContent(admin),
+        )
+    unit = shlex.quote(runtime.service_name)
+    check = f'printf "%s\\n" "$admin" | {command("check")}'
+    # Checked again when it runs: a compose change earlier in this deploy may
+    # already have restarted the runtime with the recorded token. Afterwards
+    # Grafana must run with our token, or the step fails. The admin token
+    # stays in a shell variable (stdin, builtin printf), never in arguments.
+    secret_stdin(
+        name="Restart the Graphyard runtime for the Flux read token",
+        command=(
+            "IFS= read -r admin; "
+            f"state=$({check}) || {{ echo 'The Grafana Flux read token check failed' >&2; exit 1; }}; "
+            '[ "$state" = ok ] && exit 0; '
+            'case "$state" in stale|missing) ;; '
+            "*) echo 'The Grafana Flux read token check failed' >&2; exit 1 ;; esac; "
+            f"systemctl restart {unit} || exit 1; i=0; "
+            f"until docker exec {container} influx ping >/dev/null 2>&1; do i=$((i+1)); "
+            "[ $i -ge 20 ] && { echo 'InfluxDB did not answer' >&2; exit 1; }; sleep 3; done; "
+            f'state=$({check}) && [ "$state" = ok ] || '
+            "{ echo 'Grafana does not run with the Flux read token' >&2; exit 1; }"
+        ),
+        content=SecretContent(admin),
+    )
 
 
 # -- the role: influx_retention.yml ---------------------------------------------------

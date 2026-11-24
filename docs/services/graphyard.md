@@ -38,7 +38,8 @@ and, on request, [`uv_install`](../base.md).
 
 Role templates are shipped unchanged, so the files are byte-identical to what
 the retired roles wrote (`tests/test_graphyard_golden.py` keeps them so,
-against goldens in `tests/golden/graphyard`). Unlike the roles, steps
+against goldens in `tests/golden/graphyard`), except the compose file, whose
+Grafana service also reads the optional Flux token env file (2026-11-24). Unlike the roles, steps
 that would change nothing are skipped. The core, Vector, ingress and auth
 configuration paths retain their existing no-file-write/no-restart repeat proof.
 The separate conditions deployment below distinguishes zero managed changes
@@ -115,7 +116,9 @@ each deploy.
 2. The source sync (`--checksum`, `--delete`, owned by `graphyard`), then the
    role's recursive owner fix of the site, only when a file has another owner
    or group.
-3. Docker Engine and Compose; `/var/lib/graphyard` and the InfluxDB and
+3. Docker Engine and Compose (Compose 2.24.0 or later, a plain release
+   version, checked read-only before the container takeover: the compose
+   file's optional `env_file` needs it); `/var/lib/graphyard` and the InfluxDB and
    Grafana data directories with their numeric owners (compared by id); the
    Grafana provisioning assets must exist; the Docker network; containers with
    the runtime's names that Compose does not own are removed (the role's
@@ -130,6 +133,29 @@ each deploy.
    published port (the endpoints `influx v1 auth create` calls) from a small
    Python script on the host, with the admin token and the password on stdin;
    the role passes the password on the `influx` command line.
+   Grafana's Flux read token: a host-side script checks the token in
+   `<env_dir>/grafana-flux.env` (`0600 root`; not configurable, so it can
+   never be another Graphyard file)
+   against the bucket and against the running Grafana container's
+   environment on every run (read-only). No working token: it reuses or
+   creates the read-only InfluxDB authorization
+   `grafana.flux_token_description` (default `graphyard-grafana-flux-read`,
+   `read` on the bucket only, admin token on stdin), deletes its own other
+   authorizations (active, that description, exactly `read` on the bucket)
+   and writes the file atomically.
+   Then, or when the Grafana container is not running with the recorded
+   token (an earlier run stopped before the restart), the runtime unit
+   restarts and `influx ping` is awaited again; the restart checks once more
+   first and is skipped when a compose change in the same run already
+   started Grafana with the token, and afterwards fails unless Grafana runs
+   with a working token. Only an authorization with that description and
+   exactly `read` on the bucket counts as Graphyard's: a recorded token must
+   be one of those (checked with the admin token on stdin), and no other
+   credential is ever reused or deleted. This needs InfluxDB to list token
+   values (2.7); with hashed tokens the deploy stops with a message. The requests go straight to the local
+   API (no proxy, no redirects). Compose hands the file to Grafana as an
+   optional `env_file` (`GRAPHYARD_INFLUX_FLUX_TOKEN` for the Flux
+   datasource); the token never leaves the host.
 5. `uv_install` when configured, the venv (created once), `uv sync` when its dry run finds
    work or the source sync or owner fix touched the site (uv decides whether
    to reinstall the project from file metadata both change).

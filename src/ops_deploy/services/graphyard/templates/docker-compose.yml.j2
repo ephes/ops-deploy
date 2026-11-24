@@ -53,6 +53,10 @@ services:
       GRAPHYARD_INFLUX_DB: {{ graphyard_grafana_influx_database | to_json }}
       GRAPHYARD_INFLUX_USER: {{ graphyard_grafana_influx_username | to_json }}
       GRAPHYARD_INFLUX_PASSWORD: {{ graphyard_grafana_influx_password | to_json }}
+    env_file:
+      # GRAPHYARD_INFLUX_FLUX_TOKEN for the Flux datasource; written by the deploy.
+      - path: {{ graphyard_grafana_flux_env_path | to_json }}
+        required: false
     volumes:
 {% if graphyard_ca_store_root | default('') %}
       - type: bind

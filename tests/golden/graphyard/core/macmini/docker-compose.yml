@@ -37,6 +37,10 @@ services:
       GRAPHYARD_INFLUX_DB: "graphyard"
       GRAPHYARD_INFLUX_USER: "grafana"
       GRAPHYARD_INFLUX_PASSWORD: "graphyard-fixture-grafana-influx"
+    env_file:
+      # GRAPHYARD_INFLUX_FLUX_TOKEN for the Flux datasource; written by the deploy.
+      - path: "/etc/graphyard/grafana-flux.env"
+        required: false
     volumes:
       - "/opt/apps/graphyard/site/deploy/grafana/provisioning:/etc/grafana/provisioning"
       - "/opt/apps/graphyard/site/deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards-json"
