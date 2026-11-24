@@ -19,6 +19,16 @@
   Lets a host move its cluster to PostgreSQL 19 with `pg_upgradecluster` and
   then deploy `version="19"` (ops-control `postgres_install_version`).
 
+||||||| parent of 77e3696a (docs: design for root writes in service homes)
+- docs: design and class-B plan for root writes in service homes
+  (`docs/plans/root-writes-in-service-homes.md`). During a deploy root writes
+  by path into directories a service user owns (`sync_tree` with `--chown`,
+  `files.put`, `system_user` directories, recursive `chown`); a compromised
+  service could redirect those writes. The plan: root does not write below
+  service-writable directories at all, the code sync and file operations run
+  as the service user, root-owned files move out. No behaviour changes with
+  this entry; chesslab is the pilot and follows separately.
+
 - dns: the DDNS updater logs one line per run when nothing changed
   (`DDNS result: ... wan=<IPv4>,<IPv6>`) instead of about 13; any update,
   error or public mismatch still logs the whole run. This keeps a short
