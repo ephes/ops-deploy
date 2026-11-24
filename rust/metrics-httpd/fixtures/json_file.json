@@ -228,8 +228,8 @@
  "variants": [
   {
    "variant": "backup",
-   "repo": "ops-library",
-   "template": "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/fractal_monitoring/templates/backup_metrics_httpd.py.j2",
    "server_version": "backup-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -1210,8 +1210,8 @@
   },
   {
    "variant": "storage",
-   "repo": "ops-library",
-   "template": "roles/storage_metrics_endpoint/templates/storage_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/fractal_monitoring/templates/storage_metrics_httpd.py.j2",
    "server_version": "storage-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -2192,8 +2192,8 @@
   },
   {
    "variant": "thermal",
-   "repo": "ops-library",
-   "template": "roles/thermal_metrics_endpoint/templates/thermal_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/thermal_monitoring/templates/thermal_metrics_httpd.py.j2",
    "server_version": "thermal-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -3174,8 +3174,8 @@
   },
   {
    "variant": "tailscale",
-   "repo": "ops-library",
-   "template": "roles/tailscale_metrics_endpoint/templates/tailscale_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "infra/tailscale/templates/tailscale_metrics_httpd.py.j2",
    "server_version": "tailscale-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -4158,8 +4158,8 @@
   },
   {
    "variant": "dns",
-   "repo": "ops-library",
-   "template": "roles/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
    "server_version": "dns-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -5144,8 +5144,8 @@
   },
   {
    "variant": "openclaw",
-   "repo": "ops-library",
-   "template": "roles/openclaw_deploy/templates/openclaw-metrics-httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/openclaw/templates/openclaw-metrics-httpd.py.j2",
    "server_version": "openclaw-metrics-httpd/0.1",
    "argv": [
     "json-file",
@@ -6128,8 +6128,8 @@
   },
   {
    "variant": "ddns",
-   "repo": "ops-library",
-   "template": "roles/dns_deploy/files/ddns_status_httpd.py",
+   "repo": "ops-deploy",
+   "template": "services/dns/files/ddns_status_httpd.py",
    "server_version": "ddns-status-httpd/0.1",
    "argv": [
     "json-file",
@@ -7114,8 +7114,8 @@
   },
   {
    "variant": "torrent-vpn",
-   "repo": "ops-control",
-   "template": "roles/torrent_vpn_metrics_endpoint/templates/torrent_vpn_metrics_httpd.py.j2",
+   "repo": "ops-deploy",
+   "template": "services/torrent_vpn_metrics_endpoint/templates/torrent_vpn_metrics_httpd.py.j2",
    "server_version": "torrent-vpn-metrics-httpd/0.1",
    "argv": [
     "json-file",

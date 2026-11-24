@@ -27,7 +27,7 @@ this page is the short version for ops-deploy work.
 
 | Recipe | What it runs |
 |---|---|
-| `just rust-check` | fmt, clippy, tests, cargo-deny, the `rust-apt` isolation check, the `rust/scripts` tests, the fixture drift checks against the frozen oracles and the metrics-httpd parity harness |
+| `just rust-check` | fmt, clippy, tests, cargo-deny, the `rust-apt` isolation check, the `rust/scripts` tests, the fixture drift checks (the guard and software-live against their frozen oracles, metrics-httpd against the endpoint scripts ops-deploy installs today) and the metrics-httpd parity harness |
 | `just rust-check-apt [ubuntu24.04] [debian13]` | `software-live-apt` and the software-live parity harness in containers of both distributions (Docker) |
 
 They need rustup's `cargo` first in `PATH` (the toolchain of

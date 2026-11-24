@@ -41,15 +41,11 @@ one of the rendered Python endpoint scripts produces. The Rust tests
     clock, fixed ``uname().release``, a temporary reboot flag) for state
     files covering every branch of PLAN.md 4.5 (S2c).
 ``json_file`` (templates, ``htpasswd``; S2a)
-    ``json_file.json``: the eight json-file scripts of PLAN.md 4.3 (seven in
-    ops-library, torrent-vpn in ops-control) served on loopback with a
+    ``json_file.json``: the eight json-file scripts of PLAN.md 4.3 served on loopback with a
     frozen clock, each driven through the same file states at its
     ``--json-path`` (documents, ``meta`` forms, numbers, Unicode, mtimes,
     missing/unreadable/invalid files, Python's crash paths and the D-4
-    refusals) plus a few gate cases (realm, path match). The torrent-vpn
-    script is read from an ops-control checkout (``$METRICS_HTTPD_OPS_CONTROL``,
-    else a sibling ``ops-control`` or ``~/projects/ops-control``); without
-    one, ``write`` and ``check`` keep the committed torrent-vpn cases.
+    refusals) plus a few gate cases (realm, path match).
 ``static`` (templates)
     ``static.json``: ``static-site-httpd.py.j2`` (S2e) serving a sample tree
     (written by the replay from the fixture) with ``mimetypes``' built-in
@@ -93,6 +89,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -100,8 +97,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 FIXTURES = Path(__file__).resolve().parent
-# The frozen copies of the ops-library templates (rust/HISTORY.md).
-ROOT = FIXTURES.parents[1] / "oracle"
+# The endpoint scripts as ops-deploy installs them today (its package
+# directory): a change to an installed endpoint is checked against the Rust
+# port at once, not when somebody refreshes a frozen copy (rust/HISTORY.md).
+ROOT = FIXTURES.parents[2] / "src" / "ops_deploy"
+# The role defaults (path, port and timeout of each endpoint) are still the
+# ones frozen with the move from ops-library; ops-deploy keeps these values in
+# its typed configs, which the harness does not import.
+DEFAULTS = FIXTURES.parents[1] / "oracle"
 SEED = 20261021
 
 # User -> password of the committed fixtures/htpasswd (test-only).
@@ -568,6 +571,9 @@ def render(template: str, variables: dict[str, Any], root: Path = ROOT) -> str:
     from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
     path = root / template
+    if path.suffix != ".j2":
+        # A plain script ops-deploy installs as it is (no template any more).
+        return path.read_text(encoding="utf-8")
     environment = Environment(
         loader=FileSystemLoader(path.parent),
         undefined=StrictUndefined,
@@ -609,11 +615,11 @@ def load_module(
     return module
 
 
-BACKUP = "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2"
-METRICS = "roles/metrics_endpoint/templates/metrics_httpd.py.j2"
-TAILSCALE = "roles/tailscale_metrics_endpoint/templates/tailscale_metrics_httpd.py.j2"
-APT = "roles/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2"
-LOGYARD = "roles/logyard_deploy/templates/logyard_health_httpd.py.j2"
+BACKUP = "services/fractal_monitoring/templates/backup_metrics_httpd.py.j2"
+METRICS = "services/metrics_endpoint/templates/metrics_httpd.py.j2"
+TAILSCALE = "infra/tailscale/templates/tailscale_metrics_httpd.py.j2"
+APT = "services/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2"
+LOGYARD = "services/logyard/files/logyard_health_httpd.py"
 
 PLACEHOLDER_VARS = {
     "backup_metrics_endpoint_json_path": "/nonexistent/backup.json",
@@ -1109,7 +1115,7 @@ def build_http_common() -> dict[str, str]:
     ):
         for variant in variants(Path(tmp_name)):
             handler = getattr(variant["module"], variant["handler"])
-            server = socketserver.TCPServer(("127.0.0.1", 0), handler)
+            server = variant["module"].BoundedThreadingTCPServer(("127.0.0.1", 0), handler)
             if variant["cfg"] is not None:
                 server.cfg = {k: htpasswd if v == "{htpasswd}" else v for k, v in variant["cfg"].items()}  # type: ignore[attr-defined]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1263,32 +1269,28 @@ SCRIPT_CASES: list[tuple[str, str | None, int, str, dict[str, Any]]] = [
     ("killed-by-signal", "#!/bin/sh\nkill -TERM $$\nsleep 5\n", 0o755, "10", {}),
     ("timeout", "#!/bin/sh\nexec sleep 5\n", 0o755, "0.5", {}),
     (
-        # A newline in the stderr text breaks Python's status line (the
-        # message is the reason phrase); Rust keeps it in the body only.
+        # The stderr text goes to the log on both sides, never into the
+        # response: a newline in it, any length and any character answer the
+        # same fixed 502 (these three once broke Python's status line).
         "exit-multiline-stderr",
         "#!/bin/sh\nprintf 'line1\\nline2\\n' >&2\nexit 1\n",
         0o755,
         "10",
-        {"d": "D-3", "rust_status": 502, "rust_message": "line1 line2"},
+        {},
     ),
     (
         "exit-long-stderr",
         STDERR_LONG_SCRIPT,
         0o755,
         "10",
-        {
-            "d": "D-3",
-            "rust_status": 502,
-            "rust_message": " ".join(f"err{i:04d}" for i in range(300))[:1024],
-        },
+        {},
     ),
     (
-        # Python: UnicodeEncodeError for the latin-1 status line, no response.
         "exit-stderr-outside-latin1",
         "#!/bin/sh\nprintf 'kaputt \\342\\202\\254\\n' >&2\nexit 1\n",
         0o755,
         "10",
-        {"d": "D-2", "rust_status": 502, "rust_message": "kaputt \u20ac"},
+        {},
     ),
     (
         # Python: UnicodeDecodeError in subprocess.run, no response.
@@ -1296,7 +1298,7 @@ SCRIPT_CASES: list[tuple[str, str | None, int, str, dict[str, Any]]] = [
         "#!/bin/sh\nprintf 'bad \\377\\n' >&2\nexit 1\n",
         0o755,
         "10",
-        {"d": "D-2", "rust_status": 502, "rust_message": "bad \ufffd"},
+        {"d": "D-2", "rust_status": 502, "rust_message": "Metrics script failed"},
     ),
     (
         "stdout-not-utf8",
@@ -1350,7 +1352,7 @@ def build_script() -> dict[str, str]:
     ):
         tmp = Path(tmp_name)
         module = load_module("metrics_script", METRICS, PLACEHOLDER_VARS, tmp)
-        server = socketserver.TCPServer(("127.0.0.1", 0), module.MetricsHandler)
+        server = module.BoundedThreadingTCPServer(("127.0.0.1", 0), module.MetricsHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -1596,7 +1598,7 @@ def python_reboot_state(module: Any, state: Any, flag: bool, release: str) -> An
 
 
 def apt_state_document(**fields: Any) -> dict[str, Any]:
-    """A state file as roles/os_apt_maintenance/templates/os_apt_maintenance.py.j2 writes it."""
+    """A state file as services/os_apt_maintenance/templates/os_apt_maintenance.py.j2 writes it."""
     state: dict[str, Any] = {
         "schema_version": 1,
         "host_id": "fixture-host",
@@ -2020,7 +2022,7 @@ def build_apt_state() -> dict[str, str]:
         module.datetime = _FrozenDatetime
         flag_path = tmp / "reboot-required"
         module.REBOOT_REQUIRED_FLAG = str(flag_path)
-        server = socketserver.TCPServer(("127.0.0.1", 0), module.AptMaintenanceHandler)
+        server = module.BoundedThreadingTCPServer(("127.0.0.1", 0), module.AptMaintenanceHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         http_rows = []
@@ -2119,41 +2121,29 @@ def build_apt_state() -> dict[str, str]:
 CLOCK_EPOCH = 1_792_576_800
 SECOND = 10**9
 
-# The ops-control checkout that holds the torrent-vpn variant (PLAN.md 1.1:
-# the only json-file script outside ops-library). Without one, `write` and
-# `check` keep the committed torrent-vpn cases.
-OPS_CONTROL_ENV = "METRICS_HTTPD_OPS_CONTROL"
-TORRENT_ROLE = "roles/torrent_vpn_metrics_endpoint"
-TORRENT = f"{TORRENT_ROLE}/templates/torrent_vpn_metrics_httpd.py.j2"
+TORRENT = "services/torrent_vpn_metrics_endpoint/templates/torrent_vpn_metrics_httpd.py.j2"
+# The torrent-vpn endpoint never was an ops-library role (it came from
+# ops-control), so no frozen defaults exist for it: its path is the default of
+# ops-deploy's TorrentVpnMetricsEndpointConfig.
+TORRENT_DEFAULTS = {"torrent_vpn_metrics_endpoint_path": "/.well-known/vpn-egress"}
 
 
-def ops_control_checkout() -> Path | None:
-    configured = os.environ.get(OPS_CONTROL_ENV)
-    if configured:
-        root = Path(configured)
-        if not (root / TORRENT).is_file():
-            raise SystemExit(f"{OPS_CONTROL_ENV}={configured}: {TORRENT} not found")
-        return root
-    for root in (FIXTURES.parents[3] / "ops-control", Path.home() / "projects" / "ops-control"):
-        if (root / TORRENT).is_file():
-            return root
-    return None
-
-
-def role_defaults(root: Path, role: str) -> dict[str, Any]:
+def role_defaults(role: str) -> dict[str, Any]:
     import yaml
 
-    path = root / "roles" / role / "defaults" / "main.yml"
+    if role == "torrent_vpn_metrics_endpoint":
+        return dict(TORRENT_DEFAULTS)
+    path = DEFAULTS / "roles" / role / "defaults" / "main.yml"
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, Any]]:
+def json_file_variants(tmp: Path) -> list[dict[str, Any]]:
     """The eight json-file scripts (PLAN.md 4.3) with the argv of PLAN.md 7.3."""
     table: list[tuple[str, str, str, str, str, list[str]]] = [
         # (variant, template, handler, role, path key, extra argv)
         (
             "backup",
-            "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2",
+            BACKUP,
             "BackupMetricsHandler",
             "backup_metrics_endpoint",
             "backup_metrics_endpoint_path",
@@ -2161,7 +2151,7 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
         ),
         (
             "storage",
-            "roles/storage_metrics_endpoint/templates/storage_metrics_httpd.py.j2",
+            "services/fractal_monitoring/templates/storage_metrics_httpd.py.j2",
             "StorageMetricsHandler",
             "storage_metrics_endpoint",
             "storage_metrics_endpoint_path",
@@ -2169,7 +2159,7 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
         ),
         (
             "thermal",
-            "roles/thermal_metrics_endpoint/templates/thermal_metrics_httpd.py.j2",
+            "services/thermal_monitoring/templates/thermal_metrics_httpd.py.j2",
             "ThermalMetricsHandler",
             "thermal_metrics_endpoint",
             "thermal_metrics_endpoint_path",
@@ -2185,7 +2175,7 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
         ),
         (
             "dns",
-            "roles/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
+            "services/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
             "DnsMetricsHandler",
             "dns_metrics_endpoint",
             "dns_metrics_endpoint_path",
@@ -2198,7 +2188,7 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
         ),
         (
             "openclaw",
-            "roles/openclaw_deploy/templates/openclaw-metrics-httpd.py.j2",
+            "services/openclaw/templates/openclaw-metrics-httpd.py.j2",
             "OpenClawMetricsHandler",
             "openclaw_deploy",
             "openclaw_metrics_endpoint_path",
@@ -2209,7 +2199,7 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
         ),
         (
             "ddns",
-            "roles/dns_deploy/files/ddns_status_httpd.py",
+            "services/dns/files/ddns_status_httpd.py",
             "DdnsStatusHandler",
             "dns_deploy",
             "dns_ddns_status_endpoint_path",
@@ -2231,13 +2221,8 @@ def json_file_variants(tmp: Path, ops_control: Path | None) -> list[dict[str, An
     ]
     out = []
     for variant, template, handler_name, role, path_key, extra in table:
-        if variant == "torrent-vpn":
-            if ops_control is None:
-                continue
-            root, repo = ops_control, "ops-control"
-        else:
-            root, repo = ROOT, "ops-library"
-        defaults = role_defaults(root, role)
+        root, repo = ROOT, "ops-deploy"
+        defaults = role_defaults(role)
         # The templates' only variables: placeholder paths (the server gets
         # the real ones from its cfg) and the dns template's baked defaults.
         variables: dict[str, Any] = {
@@ -2542,7 +2527,6 @@ def build_json_file() -> dict[str, str]:
             "generate the json_file fixtures as an unprivileged user (unreadable-file case)"
         )
     htpasswd = str(FIXTURES / "htpasswd")
-    ops_control = ops_control_checkout()
     captured = _CapturedStderr()
     variants_out = []
     with (
@@ -2550,12 +2534,12 @@ def build_json_file() -> dict[str, str]:
         contextlib.redirect_stderr(captured),
     ):
         tmp = Path(tmp_name)
-        for variant in json_file_variants(tmp, ops_control):
+        for variant in json_file_variants(tmp):
             module = variant["module"]
             module.datetime = frozen_datetime(CLOCK_EPOCH)
             base = tmp / f"case-{variant['variant']}"
             base.mkdir()
-            server = socketserver.TCPServer(("127.0.0.1", 0), variant["handler"])
+            server = module.BoundedThreadingTCPServer(("127.0.0.1", 0), variant["handler"])
             server.cfg = {  # type: ignore[attr-defined]
                 "path": variant["path"],
                 "json_path": str(base / "data" / "metrics.json"),
@@ -2584,26 +2568,6 @@ def build_json_file() -> dict[str, str]:
                     "cases": rows,
                 }
             )
-    if ops_control is None:
-        committed = FIXTURES / "json_file.json"
-        kept = (
-            [
-                v
-                for v in json.loads(committed.read_text(encoding="utf-8"))["variants"]
-                if v["variant"] == "torrent-vpn"
-            ]
-            if committed.is_file()
-            else []
-        )
-        if not kept:
-            raise SystemExit(
-                f"the torrent-vpn variant needs an ops-control checkout ({OPS_CONTROL_ENV})"
-            )
-        print(
-            "json_file: no ops-control checkout, kept the committed torrent-vpn cases",
-            file=sys.stderr,
-        )
-        variants_out += kept
     fixture = {
         "clock_epoch": CLOCK_EPOCH,
         "states": JSON_FILE_STATES,
@@ -3360,9 +3324,7 @@ def build_logyard_http(tmp: Path, loki: FakeLoki) -> list[dict[str, Any]]:
             loki.reset(specs)
             stderr.seek(0)
             stderr.truncate()
-            server = module.ReusableThreadingHTTPServer(
-                ("127.0.0.1", 0), module.Handler
-            )
+            server = module.BoundedThreadingTCPServer(("127.0.0.1", 0), module.Handler)
             threading.Thread(
                 target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
             ).start()
@@ -3484,7 +3446,12 @@ def build_logyard_health() -> dict[str, str]:
 
 # static (S2e): static-site-httpd.py.j2 on a sample tree (PLAN.md 4.7, D-11)
 
-STATIC = "roles/static_site_deploy/templates/static-site-httpd.py.j2"
+STATIC = "services/static_site/templates/static-site-httpd.py.j2"
+
+
+def static_variables(root: Path, port: int) -> dict[str, Any]:
+    """What the static template reads: ``cfg.site_path``, ``cfg.bind_host`` and ``cfg.port``."""
+    return {"cfg": types.SimpleNamespace(site_path=str(root), bind_host="127.0.0.1", port=port)}
 STATIC_ARGV = ["static", "--root", "{root}"]
 # Every file's mtime: the live site's Last-Modified (2026-10-03 13:57:50 UTC).
 STATIC_MTIME = 1_791_035_870
@@ -3778,15 +3745,11 @@ def build_static() -> dict[str, str]:
         module = load_module(
             "static_site",
             STATIC,
-            {
-                "static_site_path": str(root),
-                "static_site_bind_host": "127.0.0.1",
-                "static_site_port": 0,
-            },
+            static_variables(root, 0),
             tmp,
         )
         handler = functools.partial(module.StaticHandler, directory=str(root))
-        server = module.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server = module.BoundedThreadingTCPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

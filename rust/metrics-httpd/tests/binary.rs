@@ -800,11 +800,11 @@ fn script_mode_logs_one_error_line_per_5xx() {
         &[("Authorization", USER_SECRET)],
     );
     assert_eq!(response.status, 502);
-    assert!(
-        String::from_utf8(response.body)
-            .unwrap()
-            .contains("<p>Message: disk &lt;full&gt;.</p>")
-    );
+    // The script's stderr is for the journal (the error line below), never
+    // for the client.
+    let body = String::from_utf8(response.body).unwrap();
+    assert!(body.contains("<p>Message: Metrics script failed.</p>"));
+    assert!(!body.contains("disk"), "{body}");
     let lines = server.stop();
     assert_eq!(lines.len(), 3, "{lines:?}");
     assert_eq!(

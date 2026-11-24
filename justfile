@@ -105,9 +105,10 @@ rust-check:
     python3 -I scripts/release_checks.py apt-isolation --metadata "$metadata"
     python3 -I -m unittest discover -s scripts -p 'test_*.py'
     uv run --python 3.12 --no-project python -I -m unittest discover -s software-live/parity -p 'test_*.py'
-    # Fixture drift against the frozen oracles (rust/oracle): the guard under the
-    # hosts' Pythons, metrics-httpd rendered under 3.14 (the ops-library venv's)
-    # and its stdlib families under 3.12 and 3.13, software-live under 3.14.
+    # Fixture drift: the guard (frozen oracle, rust/oracle) under the hosts'
+    # Pythons; metrics-httpd against the endpoint scripts ops-deploy installs
+    # today (src/ops_deploy), rendered under 3.14 and its stdlib families under
+    # 3.12 and 3.13; software-live (frozen oracle) under 3.14.
     uv run --python 3.12 --no-project python -I echoport-command-guard/parity/gen_fixtures.py check
     uv run --python 3.13 --no-project python -I echoport-command-guard/parity/gen_fixtures.py check
     uv run --python 3.14 --no-project --with jinja2 --with pyyaml python -I metrics-httpd/fixtures/generate.py check

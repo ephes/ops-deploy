@@ -17,9 +17,11 @@ Nothing in this directory is part of the ops-deploy package: the wheel and the
 sdist hold only `src/ops_deploy`, and `tests/test_rust_workspace.py` (part of
 `just check`) builds both and checks that no member comes from `rust/`. The
 plans name ops-library's Ansible roles and `.github/workflows`; they are the
-record of how the crates were built there. Today the Python originals the
-harnesses compare against are the frozen copies under `oracle/`
-([`HISTORY.md`](HISTORY.md)), and the checks and releases run locally (below).
+record of how the crates were built there. Today the guard's and
+software-live's Python originals are the frozen copies under `oracle/`
+([`HISTORY.md`](HISTORY.md)); metrics-httpd is compared with the endpoint
+scripts ops-deploy installs today (`src/ops_deploy`), with only the role
+defaults frozen. The checks and releases run locally (below).
 Merging Rust code changes nothing on any host: a host runs a release only
 after ops-control pins its version and sha256.
 
@@ -159,7 +161,8 @@ There is no GitHub Actions job (owner rule since 2026-11-15); ops-library's
   isolation check;
 - the `rust/scripts` tests (stdlib Python);
 - the software-live parity comparator tests under Python 3.12;
-- the fixture drift checks against the frozen oracles: the guard's
+- the fixture drift checks (the guard and software-live against the frozen
+  oracles, metrics-httpd against ops-deploy's current endpoint scripts): the guard's
   `parity/gen_fixtures.py check` under 3.12 and 3.13, metrics-httpd's
   `fixtures/generate.py check` rendered under 3.14 (the Python of the
   ops-library venv that wrote them; the 3.12 stdlib renders other error

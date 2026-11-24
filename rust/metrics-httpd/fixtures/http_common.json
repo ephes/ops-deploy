@@ -1,7 +1,7 @@
 [
  {
   "variant": "backup",
-  "template": "roles/backup_metrics_endpoint/templates/backup_metrics_httpd.py.j2",
+  "template": "services/fractal_monitoring/templates/backup_metrics_httpd.py.j2",
   "argv": [
    "json-file",
    "--path",
@@ -544,7 +544,7 @@
  },
  {
   "variant": "tailscale",
-  "template": "roles/tailscale_metrics_endpoint/templates/tailscale_metrics_httpd.py.j2",
+  "template": "infra/tailscale/templates/tailscale_metrics_httpd.py.j2",
   "argv": [
    "json-file",
    "--path",
@@ -1087,7 +1087,7 @@
  },
  {
   "variant": "metrics_endpoint",
-  "template": "roles/metrics_endpoint/templates/metrics_httpd.py.j2",
+  "template": "services/metrics_endpoint/templates/metrics_httpd.py.j2",
   "argv": [
    "script",
    "--path",
@@ -1632,7 +1632,7 @@
  },
  {
   "variant": "os_apt",
-  "template": "roles/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
+  "template": "services/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
   "argv": [
    "apt-state",
    "--path",
@@ -2179,7 +2179,7 @@
  },
  {
   "variant": "logyard",
-  "template": "roles/logyard_deploy/templates/logyard_health_httpd.py.j2",
+  "template": "services/logyard/files/logyard_health_httpd.py",
   "argv": [
    "logyard-health"
   ],

@@ -1,5 +1,20 @@
 # metrics-httpd: Rust port of the small Python HTTP endpoint daemons — plan
 
+> **Amendment 2026-11-24.** This plan records how the port was built against
+> the ops-library scripts. Three things it says are history now; the places
+> are marked "(2026-11-24: ...)" below, and the crate `README.md` and
+> `TESTMAP.md` describe the current state.
+>
+> 1. The harness reads the endpoint scripts ops-deploy installs today
+>    (`src/ops_deploy`), not frozen copies, and the torrent-vpn script comes
+>    from ops-deploy: there is no ops-control checkout and no kept case.
+> 2. `script` mode, exit ≠ 0: the answer is the fixed 502 "Metrics script
+>    failed" on both sides. The script's stderr goes to the log only (Python
+>    changed first; the port followed). Releases up to 0.1.1 put it into the
+>    502 page as sections 4.4 and 5.2 describe.
+> 3. The installed Python endpoints serve each connection in its own thread,
+>    so the slow-client case shows no stall and no D-1 difference any more.
+
 Status: S1 implemented (core: command line of all five modes,
 `--check-config`, server, auth, Python-compatible JSON, meta, clock,
 fixture generator with drift test, `TESTMAP.md`); every mode answers the
@@ -309,7 +324,9 @@ i.e. `/dev/null`, which Rust passes explicitly) with `--script-timeout`
 seconds (`subprocess.run(..., capture_output=True, text=True)`). Timeout →
 **504** (`send_error(504, "Metrics script timeout")`). Exit ≠ 0, including
 death by a signal → **502** (`send_error(502, stderr.strip() or "Metrics
-script failed")`; `str.strip()` also strips U+001C–U+001F). Exit 0 →
+script failed")`; `str.strip()` also strips U+001C–U+001F; 2026-11-24:
+always `send_error(502, "Metrics script failed")`, the stripped stderr is
+logged instead). Exit 0 →
 **200**, body = the script's stdout as text mode reads it: UTF-8 with
 universal newlines (`\r\n` and a lone `\r` become `\n`), otherwise
 unchanged (no JSON validation), `Content-Type: application/json`; stderr is
@@ -527,11 +544,14 @@ per-request 401/503, not a startup failure.
 
 - **D-1 Concurrency and timeouts.** Rust serves connections concurrently in
   every mode (Python is single-threaded in seven variants, so one idle
-  keep-alive client blocks the endpoint today). Header-read and keep-alive
+  keep-alive client blocks the endpoint today; 2026-11-24: history, the
+  scripts ops-deploy installs serve each connection in its own thread, at
+  most 32 at once, with a read timeout and a header deadline). Header-read and keep-alive
   idle timeout = `--request-timeout` (10 s; dns 15 s via the flag; static
   10 s); at most 64 concurrent connections per process (more wait in the
   accept queue). In script mode concurrent requests therefore run the script
-  concurrently (Python runs one at a time).
+  concurrently (Python runs one at a time; 2026-11-24: history as well, the
+  installed endpoint runs the script in each connection's thread).
 - **D-2 Python crash paths get answers.** Where Python raises inside the
   handler and drops the connection without a response, Rust answers:
   top-level JSON not an object (json-file, apt-state) → 502 `invalid_json`;
@@ -541,7 +561,9 @@ per-request 401/503, not a startup failure.
   through with 200 (newlines translated as in 4.4); script stderr not UTF-8
   (exit ≠ 0) → 502 with the text decoded lossily; a script stderr text
   outside latin-1 (Python: `UnicodeEncodeError` writing it into the status
-  line) → 502; a script that cannot be started (missing, not executable;
+  line) → 502 (2026-11-24: the text is logged, not sent; stderr outside
+  latin-1 is no difference any more, stderr that is not UTF-8 still crashes
+  Python's decoding and stays D-2); a script that cannot be started (missing, not executable;
   Python: `OSError` from `subprocess.run`) → 502 `send_error` "Cannot run
   metrics script"; static: a `%00` in the target (Python: `ValueError`
   from `open()`) → Python's 404 page;
@@ -566,7 +588,9 @@ per-request 401/503, not a startup failure.
   Rust uses the standard reason phrase and puts the stderr text (stripped
   as Python strips it, cut to ≤ 1 KiB at a character boundary, control
   characters replaced by spaces) into the page's message, as Python does
-  for a short single-line text. logyard-health: exception texts in
+  for a short single-line text (2026-11-24: neither side sends the stderr
+  text any more; both answer "Metrics script failed", so multi-line and long
+  stderr are no differences). logyard-health: exception texts in
   `loki.ready_body` (when `ready_status` is null), `ingest.error`, a unit's
   `error` that comes from an exception (timeout, spawn or decode failure)
   and `units_rejected[].detail` may differ (`fixtures/logyard_health.json`
@@ -695,7 +719,8 @@ per-request 401/503, not a startup failure.
 - **D-12 Size limits.** JSON files larger than 64 MiB → 502 `invalid_json`
   (Python: unbounded; live ≤ 24 KB); script stdout capped at 64 MiB → 502
   "Metrics script output too large" and the process group is killed; of the
-  script's stderr the first 64 KiB are kept for the 502 message, the rest
+  script's stderr the first 64 KiB are kept for the 502 message (2026-11-24:
+  for the error line of the log), the rest
   is read and discarded; Loki answers larger than 64 MiB → the caught-error
   path of logyard-health (Python: unbounded); request headers capped by
   hyper's defaults.
@@ -1086,6 +1111,8 @@ plus five gate cases (realm, path match); the replay also checks the
 generator reads it from `$METRICS_HTTPD_OPS_CONTROL`, a sibling
 `ops-control` or `~/projects/ops-control` and otherwise keeps the
 committed torrent-vpn cases (the drift test reports that as a skip).
+(2026-11-24: all eight scripts are read from `src/ops_deploy`; no checkout,
+no kept cases.)
 
 S2e added the family `static` (`static.json`: the rendered
 `static-site-httpd.py.j2` serving a sample tree that the fixture describes
@@ -1100,7 +1127,8 @@ D-11).
 script and the Rust binary side by side on loopback with identical inputs and
 runs the matrix over real sockets, plus: keep-alive reuse, a slow client
 holding a connection while another request arrives (expected D-1
-difference), concurrent requests, SIGTERM exit code. The static mode's part exists
+difference; 2026-11-24: no stall on either side, the installed Python
+endpoints are threaded), concurrent requests, SIGTERM exit code. The static mode's part exists
 since S2e as `parity/static_site.py` (stdlib; `--site DIR --binary BIN`,
 optionally `--reference-url` for a deployed Python server, `--record`):
 S3 runs it in CI on a sample tree. Time fields
@@ -1118,7 +1146,8 @@ plus the flags the script takes), the Rust binary with the argv of the
 fixture (`--port 0`, the port read from its startup line). The matrix is the
 fixture files' cases: `http_common.json` (family `gate`, including the
 logyard 404/501 cases), `json_file.json` (the eight variants; torrent-vpn
-only with an ops-control checkout as in 8.2, otherwise reported as skipped),
+only with an ops-control checkout as in 8.2, otherwise reported as skipped;
+2026-11-24: always run, the script is read from `src/ops_deploy`),
 `script.json` (one `--script` path whose content changes per case,
 `--script-timeout 2` on both sides because Python's flag is an `int`) and
 `apt_state.json` `http` (the os_apt script copy reads a temporary reboot
@@ -1148,7 +1177,9 @@ Linux drops and macOS resets connections); a slow client that sends half a
 request while a second client asks: the single-threaded backup script
 answers the second client only after the slow client got its answer and
 closed its keep-alive connection, Rust answers at once (D-1), and the
-threaded dns script shows no difference; SIGTERM with an idle keep-alive
+threaded dns script shows no difference (2026-11-24: the backup script is
+threaded as installed, so neither pair shows a stall and the harness expects
+none); SIGTERM with an idle keep-alive
 connection open (Rust exits 0 within the grace period). Every pair is
 stopped with SIGTERM: Rust must exit 0, Python dies by the signal (status
 −15; systemd counts both as a clean stop), and neither log may contain the

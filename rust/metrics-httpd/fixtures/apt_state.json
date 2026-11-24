@@ -1,5 +1,5 @@
 {
- "template": "roles/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
+ "template": "services/os_apt_maintenance/templates/os_apt_maintenance_httpd.py.j2",
  "served_at_epoch": 1792576800,
  "reboot_state": [
   {

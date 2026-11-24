@@ -5,8 +5,9 @@
 //! without a shell and without arguments, with the inherited environment and
 //! working directory, in its own process group. Exit 0 → 200 with stdout
 //! (Python's universal-newline translation applied, no JSON validation);
-//! exit ≠ 0 → 502 `send_error` with the stripped stderr or "Metrics script
-//! failed" (D-3: in the body, not the reason phrase); timeout → 504
+//! exit ≠ 0 → 502 `send_error` "Metrics script failed", with the stripped
+//! stderr on the error line of the log and never in the response (it can name
+//! internal paths; the Python endpoint does the same); timeout → 504
 //! "Metrics script timeout", and the whole process group is killed (D-8).
 //! A script that cannot be started gets 502 where Python drops the
 //! connection (D-2); stdout above [`MAX_STDOUT_BYTES`] gets 502 (D-12).
@@ -32,12 +33,13 @@ use crate::server::{self, AccessLog, HttpResponse, Request, ServerConfig, Servic
 
 /// D-12: stdout above this answers 502 (Python: unbounded).
 pub const MAX_STDOUT_BYTES: usize = 64 * 1024 * 1024;
-/// stderr kept for the 502 message; the rest is read and discarded.
+/// stderr kept for the error line of the log; the rest is read and discarded.
 pub const KEPT_STDERR_BYTES: usize = 64 * 1024;
-/// D-3: the stderr text in the 502 body is cut to this many bytes.
+/// The stderr text on the error line is cut to this many bytes.
 pub const MAX_MESSAGE_BYTES: usize = 1024;
 
-/// `send_error(502, ...)` without stderr text (`metrics_httpd.py.j2` l.43).
+/// `send_error(502, "Metrics script failed")` (`metrics_httpd.py.j2`): the
+/// message of every non-zero exit, whatever the script wrote to stderr.
 pub const FAILED_MESSAGE: &str = "Metrics script failed";
 /// D-2: the 502 when the script cannot be started (Python drops the
 /// connection).
@@ -293,12 +295,14 @@ pub fn respond(script: &Path, timeout: Duration, outcome: Outcome) -> HttpRespon
             server::json_response(StatusCode::OK, translate_newlines(&stdout))
         }
         Outcome::Exited { status, stderr, .. } => {
-            let message = stderr_message(&stderr);
-            let message = message.as_deref().unwrap_or(FAILED_MESSAGE);
+            // The script's stderr goes to the journal, never to the client:
+            // it can name internal paths (`metrics_httpd.py.j2` does the same).
+            let detail = stderr_message(&stderr);
+            let detail = detail.as_deref().unwrap_or("(no stderr)");
             server::log_line(&format!(
-                "metrics-httpd script: {script} failed ({status}): {message}"
+                "metrics-httpd script: {script} failed ({status}): {detail}"
             ));
-            bad_gateway(message)
+            bad_gateway(FAILED_MESSAGE)
         }
         Outcome::TimedOut => {
             server::log_line(&format!(
@@ -350,7 +354,7 @@ pub fn translate_newlines(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// `completed.stderr.strip()` as the 502 message (`None` when empty), cut
+/// `completed.stderr.strip()` for the error line (`None` when empty), cut
 /// to [`MAX_MESSAGE_BYTES`] with control characters replaced by spaces
 /// (D-3); bytes that are not UTF-8 are replaced (D-2: Python crashes).
 pub fn stderr_message(stderr: &[u8]) -> Option<String> {

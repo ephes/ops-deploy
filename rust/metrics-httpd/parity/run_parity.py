@@ -9,8 +9,8 @@ mode. Where a case names an allowed difference (``rust_status`` and a D item
 of PLAN.md 5.2), the Python side must still answer as the fixture recorded
 it and the Rust side as the case expects. On top of the matrix: keep-alive
 reuse, a slow client holding a connection while another request arrives
-(the D-1 difference: the single-threaded Python scripts stall, Rust
-answers; a threaded script shows no difference), concurrent requests, the
+(no difference any more: the installed Python endpoints are threaded, where
+the single-threaded scripts of the archive stalled, D-1), concurrent requests, the
 SIGTERM exit codes, no credential in any log, and ``shadow_compare.py``
 against the live pairs.
 
@@ -649,16 +649,9 @@ def family_json_file(ctx: Context) -> None:
     fixture = load_fixture("json_file.json")
     epoch = fixture["clock_epoch"]
     tmp = ctx.dir("json-file")
-    ops_control = generate.ops_control_checkout()
-    rendered = {v["variant"]: v for v in generate.json_file_variants(tmp, ops_control)}
+    rendered = {v["variant"]: v for v in generate.json_file_variants(tmp)}
     for variant in fixture["variants"]:
         name = variant["variant"]
-        if name not in rendered:
-            ctx.results.skip(
-                f"json_file/{name}",
-                f"no ops-control checkout ({generate.OPS_CONTROL_ENV}) for the {variant['repo']} script",
-            )
-            continue
         base = ctx.dir(f"json-file-{name}")
         json_path = base / "data" / "metrics.json"
         argv = substitute(
@@ -863,7 +856,7 @@ BASIC_STATE = {"kind": "file", "text": generate.BASIC}
 def json_file_pair(ctx: Context, name: str, dir_name: str) -> tuple[Pair, Path]:
     """A json-file pair of the named variant serving ``base/data/metrics.json``."""
     tmp = ctx.dir(dir_name)
-    rendered = {v["variant"]: v for v in generate.json_file_variants(tmp, None)}
+    rendered = {v["variant"]: v for v in generate.json_file_variants(tmp)}
     variant = next(
         v for v in load_fixture("json_file.json")["variants"] if v["variant"] == name
     )
@@ -1022,18 +1015,19 @@ def family_process(ctx: Context) -> None:
     with pair:
         ctx.results.check("process/keep-alive", keep_alive(pair, path))
         ctx.results.check("process/concurrent", concurrent_requests(pair, path))
-        # D-1: the single-threaded Python script stalls behind the slow client.
-        ctx.results.check(
-            "process/slow-client-single-threaded", slow_client(pair, path, True), "D-1"
-        )
+        # The installed Python endpoints serve every connection in its own
+        # thread (bounded-httpd), so a slow client stalls neither side. With
+        # the single-threaded scripts of the archive this was the D-1
+        # difference; `slow_client(..., True)` still expects such a stall.
+        ctx.results.check("process/slow-client", slow_client(pair, path, False))
         # Rust stops here (the pair's exit then reads its status again);
         # Python's exit status is checked when the pair stops.
         ctx.results.check("process/sigterm-idle-keep-alive", idle_sigterm(pair, path))
     dns_pair, _ = json_file_pair(ctx, "dns", "process-dns")
     with dns_pair:
-        # The threaded dns script answers too: no difference.
+        # The dns script, threaded already before bounded-httpd: no difference either.
         ctx.results.check(
-            "process/slow-client-threaded",
+            "process/slow-client-dns",
             slow_client(dns_pair, "/.well-known/dns", False),
         )
 
@@ -1273,9 +1267,7 @@ def family_static(ctx: Context) -> None:
         text = generate.render(
             fixture["template"],
             {
-                "static_site_path": str(root),
-                "static_site_bind_host": "127.0.0.1",
-                "static_site_port": port,
+                **generate.static_variables(root, port),
             },
         )
         (scripts / "static-site-httpd.py").write_text(text, encoding="utf-8")
@@ -1537,9 +1529,7 @@ def shadow_logyard_and_static(ctx: Context) -> None:
         text = generate.render(
             fixture["template"],
             {
-                "static_site_path": str(root),
-                "static_site_bind_host": "127.0.0.1",
-                "static_site_port": port,
+                **generate.static_variables(root, port),
             },
         )
         (tmp / "static-site-httpd.py").write_text(text, encoding="utf-8")

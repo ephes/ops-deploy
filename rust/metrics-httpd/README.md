@@ -38,9 +38,10 @@ comparer) and **S4** (release 0.1.0). What exists:
   to stderr. Which writers could produce JSON that Rust refuses (`NaN`,
   `Infinity`, lone surrogates): PLAN.md 5.3.
 - `script` mode (S2b, `metrics_endpoint`): runs `--script` per request in
-  its own process group and serves its stdout (200), a 502 page with the
-  script's stderr or a 504 page after `--script-timeout`, which kills the
-  whole process group (PLAN.md 4.4, D-8).
+  its own process group and serves its stdout (200), the fixed 502 page
+  "Metrics script failed" for a non-zero exit (the script's stderr goes to
+  the log; releases up to 0.1.1 put it into the page) or a 504 page after
+  `--script-timeout`, which kills the whole process group (PLAN.md 4.4, D-8).
 - `apt-state` mode (S2c, PLAN.md 4.5): serves the os_apt_maintenance
   state file with the computed `meta`, `summary` and reboot state (the
   reboot flag and `uname` are read per request), answers like the Python
@@ -71,7 +72,9 @@ metrics-httpd json-file --bind 127.0.0.1 --port 9103 --path /.well-known/backup 
 ## Fixtures
 
 `fixtures/generate.py` is the Python oracle (PLAN.md 8.2): it renders the
-endpoint templates, runs their handlers on loopback with raw requests, calls
+endpoint scripts **as ops-deploy installs them today** (the templates and
+files under `src/ops_deploy`, not a frozen copy), runs their handlers on
+loopback with raw requests in the server class each script starts itself, calls
 their `_check_auth` with the real `htpasswd`, and records CPython's
 `json.dumps`, `float.__repr__`, `datetime` and `st_mtime` results.
 `tests/fixtures.rs` replays every case (the `apt_state` family:
@@ -84,10 +87,34 @@ just metrics-httpd-fixtures       # regenerate (venv; then 3.12 and 3.13 must ag
 just test-metrics-httpd-fixtures  # drift test, part of `just test`
 ```
 
-The torrent-vpn json-file script lives in ops-control; the generator reads
-it from `$METRICS_HTTPD_OPS_CONTROL`, a sibling `ops-control` checkout or
-`~/projects/ops-control`, and keeps the committed torrent-vpn cases when
-none is found.
+A change to an installed endpoint that alters what the fixtures record
+therefore fails the drift check (`generate.py check`, part of
+`just rust-check`) until the fixtures are regenerated. The fixtures do not
+record every byte of every answer (`generate.py` and `TESTMAP.md` say what
+each family records), and a change outside the recorded data leaves them as
+they are. Whether the port has
+to change as well is decided by the replay (`cargo test`) and the parity
+harness with the regenerated fixtures: they fail when the new answer differs
+in something they compare, and pass when it differs only in what a compare
+mode leaves out (the `<style>` block of an error page, for example), in
+which case regenerating is all there is to do. What no case exercises or
+records, the check cannot see. The first run
+against the current scripts found one such difference: a failing metrics
+script's stderr was still in the Rust 502 page after the Python endpoint had
+stopped sending it (below, "Script failures").
+
+What is still frozen: the role defaults under `rust/oracle/roles/*/defaults/`
+(path, port and timeout of each endpoint). ops-deploy keeps those values in
+its typed configs, which the harness does not import. The torrent-vpn script
+has no frozen defaults (it never was an ops-library role); its path is the
+default of ops-deploy's config, written into the generator.
+
+### Script failures
+
+`script` mode answers every non-zero exit with the fixed 502 "Metrics script
+failed". The script's stderr (stripped, control characters replaced, cut to
+1024 bytes) is on the error line of the log and never in the response: it can
+name internal paths. Released binaries up to 0.1.1 put it into the 502 page.
 
 `fixtures/script.json` (S2b) carries the fixture scripts themselves; the
 replay writes them to a temporary directory and runs them.
@@ -152,7 +179,7 @@ the fixture matrix (`http_common`, `json_file`, `script`, `apt_state`,
 real sockets with the same file states, and compares the two live answers
 by each case's `compare` mode; cases with an allowed difference (D item)
 require Python's recorded answer and Rust's expectation. Then keep-alive,
-concurrent requests, the slow-client D-1 difference, the SIGTERM exit codes
+concurrent requests, the slow client (no stall on either side since the installed Python endpoints are threaded), the SIGTERM exit codes
 and `shadow_compare.py` against live pairs. From the repository root:
 
 ```bash
@@ -169,8 +196,9 @@ or by hand (the repo venv renders the templates; `htpasswd` must be on
     [--family gate|json_file|script|apt_state|logyard_health|static|process|shadow ...] [-v]
 ```
 
-The `rust` CI job runs the same step (with `apache2-utils`). Without an
-ops-control checkout the torrent-vpn variant is reported as skipped. A
+The `rust` CI job runs the same step (with `apache2-utils`). All eight
+json-file variants run; none needs another repository (as root the
+unreadable-file cases are still skipped). A
 static `Content-Type` that differs is printed as a D-11 note, not a
 failure: the Python side reads the host's `mime.types`.
 

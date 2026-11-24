@@ -7,6 +7,23 @@
   `config/www/apexcharts-card.js` like the Location Timeline Card; off by
   default, Home Assistant restarts only when the file changed.
 
+- rust/metrics-httpd: the parity harness compares the port with the endpoint
+  scripts ops-deploy installs today (`src/ops_deploy/...`) instead of the
+  copies frozen with the move from ops-library; those copies are removed from
+  `rust/oracle` (the role defaults stay). The torrent-vpn script comes from
+  ops-deploy too, so the harness needs no ops-control checkout and no longer
+  skips that variant. A change to an installed endpoint that alters what the
+  fixtures record now fails `just rust-check` until the
+  fixtures are regenerated, and then until the port agrees wherever the
+  replay and the parity harness compare. Found by the switch and fixed in the
+  crate (not released; hosts run 0.1.1): `script` mode still put a failing
+  metrics script's stderr into the 502 page, which the Python endpoint stopped
+  doing because it can name internal paths. It now answers the fixed "Metrics
+  script failed" and logs the stderr. Three script cases that used to be
+  allowed differences (multi-line, long and non-latin-1 stderr) are plain
+  parity cases, and the slow-client check expects no stall on either side
+  (the installed Python endpoints are threaded).
+
 - chesslab: first conversion of
   [root writes in service homes](plans/root-writes-in-service-homes.md). The
   source sync runs as the service user (no `--chown`), `site` and `data` are

@@ -1,5 +1,5 @@
 {
- "template": "roles/static_site_deploy/templates/static-site-httpd.py.j2",
+ "template": "services/static_site/templates/static-site-httpd.py.j2",
  "argv": [
   "static",
   "--root",

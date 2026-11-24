@@ -9,6 +9,7 @@ built in ops-library stays consistent.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -16,6 +17,7 @@ import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -95,8 +97,6 @@ def test_releases_json_records_the_eight_ops_library_releases() -> None:
     "path",
     [
         "rust/echoport-command-guard/parity/oracle.py",
-        "rust/metrics-httpd/fixtures/generate.py",
-        "rust/metrics-httpd/parity/static_site.py",
         "rust/software-live/fixtures/generate.py",
         "rust/software-live/parity/run_parity.py",
         "rust/software-live/parity/shadow_compare.py",
@@ -107,16 +107,83 @@ def test_harnesses_read_the_frozen_oracles(path: str) -> None:
     assert '"oracle"' in (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_oracle_holds_the_26_frozen_ops_library_files() -> None:
+def test_oracle_holds_the_14_frozen_ops_library_files() -> None:
     files = sorted(
         str(path.relative_to(RUST / "oracle"))
         for path in (RUST / "oracle").rglob("*")
         if path.is_file() and "__pycache__" not in path.parts
     )
-    assert len(files) == 26
+    assert len(files) == 14
     assert all(name.startswith("roles/") for name in files)
     assert "roles/software_live/files/software_live.py" in files
     assert "roles/echoport_remote_command_guard/files/echoport-remote-command-guard.py" in files
+    # Of the metrics-httpd endpoints only the role defaults are frozen: the
+    # scripts are read from ops-deploy itself (next test).
+    endpoint_files = [name for name in files if "httpd" in name or name.endswith(".j2")]
+    assert endpoint_files == []
+    assert len([name for name in files if name.endswith("/defaults/main.yml")]) == 11
+
+
+def _metrics_httpd_generator() -> Any:
+    spec = importlib.util.spec_from_file_location("metrics_httpd_generate", RUST / "metrics-httpd/fixtures/generate.py")
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_metrics_httpd_harness_reads_the_endpoints_ops_deploy_installs() -> None:
+    """The parity harness compares the port with today's endpoint scripts.
+
+    Its root is the ops-deploy package, every script it names exists there,
+    and no frozen copy of one is left to compare with instead.
+    """
+
+    generate = _metrics_httpd_generator()
+    package = ROOT / "src/ops_deploy"
+    assert package == generate.ROOT
+    named = {
+        generate.BACKUP,
+        generate.METRICS,
+        generate.TAILSCALE,
+        generate.APT,
+        generate.LOGYARD,
+        generate.TORRENT,
+        generate.STATIC,
+        "services/fractal_monitoring/templates/storage_metrics_httpd.py.j2",
+        "services/thermal_monitoring/templates/thermal_metrics_httpd.py.j2",
+        "services/dns_metrics_endpoint/templates/dns_metrics_httpd.py.j2",
+        "services/openclaw/templates/openclaw-metrics-httpd.py.j2",
+        "services/dns/files/ddns_status_httpd.py",
+    }
+    assert len(named) == 12
+    source = (RUST / "metrics-httpd/fixtures/generate.py").read_text(encoding="utf-8")
+    for template in sorted(named):
+        assert (package / template).is_file(), template
+        assert template in source, template
+    assert "roles/" not in source.replace('DEFAULTS / "roles"', "")
+    static_site = (RUST / "metrics-httpd/parity/static_site.py").read_text(encoding="utf-8")
+    assert '"src" / "ops_deploy"' in static_site
+    assert "oracle" not in static_site
+
+
+def test_metrics_httpd_fixtures_name_the_ops_deploy_scripts() -> None:
+    fixtures = RUST / "metrics-httpd/fixtures"
+    variants = json.loads((fixtures / "json_file.json").read_text(encoding="utf-8"))["variants"]
+    assert len(variants) == 8
+    for variant in variants:
+        assert variant["repo"] == "ops-deploy", variant["variant"]
+        assert (ROOT / "src/ops_deploy" / variant["template"]).is_file(), variant["variant"]
+
+
+def test_torrent_vpn_default_in_the_harness_is_the_config_default() -> None:
+    """The one endpoint without frozen role defaults takes its path from ops-deploy's config."""
+    from ops_deploy.services.torrent_vpn_metrics_endpoint.deploy import TorrentVpnMetricsEndpointConfig
+
+    generate = _metrics_httpd_generator()
+    default = TorrentVpnMetricsEndpointConfig.model_fields["path"].default
+    assert {"torrent_vpn_metrics_endpoint_path": default} == generate.TORRENT_DEFAULTS
 
 
 def _default_url() -> str:

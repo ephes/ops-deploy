@@ -154,11 +154,11 @@
    "status": 502,
    "response_headers": {
     "Content-Type": "text/html;charset=utf-8",
-    "Content-Length": "464",
+    "Content-Length": "481",
     "WWW-Authenticate": null,
     "Connection": "close"
    },
-   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: boom.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
    "compare": "html"
   },
   {
@@ -214,11 +214,11 @@
    "status": 502,
    "response_headers": {
     "Content-Type": "text/html;charset=utf-8",
-    "Content-Length": "489",
+    "Content-Length": "481",
     "WWW-Authenticate": null,
     "Connection": "close"
    },
-   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: failed: &lt;disk&gt; &amp; co.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
    "compare": "html"
   },
   {
@@ -244,11 +244,11 @@
    "status": 502,
    "response_headers": {
     "Content-Type": "text/html;charset=utf-8",
-    "Content-Length": "477",
+    "Content-Length": "481",
     "WWW-Authenticate": null,
     "Connection": "close"
    },
-   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Fehler: \u00fcberlauf.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
    "compare": "html"
   },
   {
@@ -287,10 +287,14 @@
    "mode": "0755",
    "timeout": "10",
    "status": 502,
-   "compare": "status",
-   "d": "D-3",
-   "rust_status": 502,
-   "rust_message": "line1 line2"
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "481",
+    "WWW-Authenticate": null,
+    "Connection": "close"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "compare": "html"
   },
   {
    "id": "exit-long-stderr",
@@ -298,21 +302,29 @@
    "mode": "0755",
    "timeout": "10",
    "status": 502,
-   "compare": "status",
-   "d": "D-3",
-   "rust_status": 502,
-   "rust_message": "err0000 err0001 err0002 err0003 err0004 err0005 err0006 err0007 err0008 err0009 err0010 err0011 err0012 err0013 err0014 err0015 err0016 err0017 err0018 err0019 err0020 err0021 err0022 err0023 err0024 err0025 err0026 err0027 err0028 err0029 err0030 err0031 err0032 err0033 err0034 err0035 err0036 err0037 err0038 err0039 err0040 err0041 err0042 err0043 err0044 err0045 err0046 err0047 err0048 err0049 err0050 err0051 err0052 err0053 err0054 err0055 err0056 err0057 err0058 err0059 err0060 err0061 err0062 err0063 err0064 err0065 err0066 err0067 err0068 err0069 err0070 err0071 err0072 err0073 err0074 err0075 err0076 err0077 err0078 err0079 err0080 err0081 err0082 err0083 err0084 err0085 err0086 err0087 err0088 err0089 err0090 err0091 err0092 err0093 err0094 err0095 err0096 err0097 err0098 err0099 err0100 err0101 err0102 err0103 err0104 err0105 err0106 err0107 err0108 err0109 err0110 err0111 err0112 err0113 err0114 err0115 err0116 err0117 err0118 err0119 err0120 err0121 err0122 err0123 err0124 err0125 err0126 err0127 "
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "481",
+    "WWW-Authenticate": null,
+    "Connection": "close"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "compare": "html"
   },
   {
    "id": "exit-stderr-outside-latin1",
    "script": "#!/bin/sh\nprintf 'kaputt \\342\\202\\254\\n' >&2\nexit 1\n",
    "mode": "0755",
    "timeout": "10",
-   "status": null,
-   "compare": "no-response",
-   "d": "D-2",
-   "rust_status": 502,
-   "rust_message": "kaputt \u20ac"
+   "status": 502,
+   "response_headers": {
+    "Content-Type": "text/html;charset=utf-8",
+    "Content-Length": "481",
+    "WWW-Authenticate": null,
+    "Connection": "close"
+   },
+   "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 502</p>\n        <p>Message: Metrics script failed.</p>\n        <p>Error code explanation: 502 - Invalid responses from another server/proxy.</p>\n    </body>\n</html>\n",
+   "compare": "html"
   },
   {
    "id": "exit-stderr-not-utf8",
@@ -323,7 +335,7 @@
    "compare": "no-response",
    "d": "D-2",
    "rust_status": 502,
-   "rust_message": "bad \ufffd"
+   "rust_message": "Metrics script failed"
   },
   {
    "id": "stdout-not-utf8",

@@ -70,29 +70,37 @@ compare the ports against, at their final state:
   (`echoport-command-guard/parity/gen_fixtures.py`) and the port follow. The
   guard's recorded corpus came from ops-library's test module, which did not
   move; `gen_fixtures.py record` refuses and the corpus stays frozen.
-- 23 files of the metrics-httpd endpoints: ten endpoint templates,
-  `os_apt_maintenance.py.j2`, `dns_deploy/files/ddns_status_httpd.py` and the
-  `defaults/main.yml` of those eleven roles. The Python endpoints are still
-  the fleet default; ops-deploy renders its own templates, which have changed
-  since the archive (bounded idle clients). The frozen templates keep the
-  parity results valid for the released 0.1.1. Pointing the harness at
-  ops-deploy's templates is a follow-up of its own and comes before
-  `metrics_httpd_impl` moves further to `rust`.
+- The `defaults/main.yml` of the eleven roles behind the metrics-httpd
+  endpoints (path, port and timeout of each). Until 2026-11-24 the ten
+  endpoint templates, `os_apt_maintenance.py.j2` and
+  `dns_deploy/files/ddns_status_httpd.py` were frozen here too, and the
+  harness compared the port with them. ops-deploy's own scripts had moved on
+  since the archive (bounded idle clients: every connection in its own
+  thread; the metrics script's stderr no longer in the 502 answer), so the
+  parity results described the archive, not the fleet. The harness now reads
+  the scripts ops-deploy installs (`src/ops_deploy/...`,
+  `metrics-httpd/fixtures/generate.py`), the frozen copies are gone, and the
+  torrent-VPN script comes from ops-deploy as well instead of an ops-control
+  checkout. A change to an installed endpoint that alters what the
+  fixtures record fails `just rust-check` until the fixtures are
+  regenerated, and then until the port agrees wherever the replay and the
+  parity harness compare. The released 0.1.0 and 0.1.1 were qualified
+  against the archive's scripts; their record is this repository's history.
 - `software_live/files/software_live.py` and
   `software_estate/files/collect.py`. The Python collector is retired; its
   oracle stays frozen for good, and new behaviour of the Rust port (the
   Traefik cooldown of 0.1.3) knowingly differs from it.
 
 The harnesses resolve these files under `rust/oracle/` instead of the
-ops-library root; the torrent-VPN endpoint template still lives in
-ops-control and is read from an ops-control checkout when one is given.
+ops-library root.
 
 ## Changes made with the move
 
 - The harness roots (`parity/oracle.py`, both `fixtures/generate.py`,
   `metrics-httpd/parity/static_site.py`, `software-live/parity/run_parity.py`
-  and `shadow_compare.py`, the container and e2e scripts) point at
-  `rust/oracle/`.
+  and `shadow_compare.py`, the container and e2e scripts) pointed at
+  `rust/oracle/` (metrics-httpd's two since 2026-11-24 at `src/ops_deploy`,
+  see "The oracles").
 - The container check scripts copy only `rust/` and run on an explicit
   platform with toolchain volumes per architecture.
 - `Cargo.toml` names ops-deploy as the repository.

@@ -47,9 +47,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-# The frozen copy of the ops-library template (rust/HISTORY.md).
-ROOT = Path(__file__).resolve().parents[2] / "oracle"
-TEMPLATE = ROOT / "roles/static_site_deploy/templates/static-site-httpd.py.j2"
+# The server as ops-deploy installs it today (its package directory).
+ROOT = Path(__file__).resolve().parents[3] / "src" / "ops_deploy"
+TEMPLATE = ROOT / "services/static_site/templates/static-site-httpd.py.j2"
 COMPARED = (
     "Content-Type",
     "Content-Length",
@@ -105,9 +105,9 @@ def render_template(site: Path, port: int) -> str:
     """The template's three variables, without Jinja (stdlib only)."""
     text = TEMPLATE.read_text(encoding="utf-8")
     values = {
-        "static_site_path": str(site),
-        "static_site_bind_host": "127.0.0.1",
-        "static_site_port": str(port),
+        "cfg.site_path": str(site),
+        "cfg.bind_host": "127.0.0.1",
+        "cfg.port": str(port),
     }
     for name, value in values.items():
         text = text.replace("{{ " + name + " }}", value)
