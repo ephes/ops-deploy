@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- homeassistant: optional `matter_server_bluetooth_adapter` (default `None`).
+  Set to an adapter id, the Matter unit runs `matter-server --bluetooth-adapter
+  <id>`, so the server commissions new Matter devices over BLE itself (the
+  dashboard's "Commission new Thread device") when a phone app's handover to
+  Home Assistant fails. Unset renders the unit unchanged; setting it restarts
+  the Matter server once. Details: `docs/services/homeassistant.md`.
+
 - vibe_coding: zellij is replaced when `zellij --version` differs from the
   pin. The former `which zellij` check only installed it on a host without
   zellij, so pin moves never reached macmini (it ran 0.43.1).

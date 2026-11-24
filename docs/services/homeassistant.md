@@ -1035,6 +1035,22 @@ A non-default version needs its own checksums (the model refuses the default
 ones). To raise it, take the sha256 of both release assets, set version and
 checksums together.
 
+## Matter Bluetooth commissioning (`matter_server_bluetooth_adapter`)
+
+`matter_server_bluetooth_adapter` (default `None`) is the id of the host's
+Bluetooth adapter (`0` for `hci0`). When set, the Matter unit starts
+`matter-server` with `--bluetooth-adapter <id>`, so the server can commission
+a factory-new device itself over BLE (the Matter dashboard's "Commission new
+Thread device" / "Commission new WiFi device"), without a phone app. A change
+rewrites the unit and restarts the Matter server once. `None` renders the unit
+exactly as before (golden unchanged). The service user needs D-Bus access to
+BlueZ (the same access Home Assistant's own Bluetooth integration uses).
+
+Thread commissioning also needs the Thread operational dataset in the server.
+python-matter-server keeps it only in memory (`set_thread_dataset`), so after
+every restart it has to be set again before a BLE Thread commissioning; the
+deploy does not do this.
+
 ## GPS Timeline and Location Timeline Card
 
 Home Assistant's recorder keeps every entity for the same, global

@@ -80,6 +80,10 @@ class HomeAssistantRuntimeConfig(RoleConfig):
     matter_server_fabric_id: Positive = 1
     matter_server_log_level: Annotated[str, Field(pattern=r"^[a-zA-Z]+$")] = "info"
     matter_server_log_file: AbsolutePath | Literal[""] = "/home/homeassistant/site/logs/matter-server.log"
+    # Bluetooth adapter id (hci<N>) for direct BLE commissioning from the
+    # Matter server (dashboard "Commission new Thread/WiFi device"); None
+    # leaves BLE off and the unit unchanged.
+    matter_server_bluetooth_adapter: Annotated[StrictInt, Field(ge=0)] | None = None
     matter_server_restart_on_change: StrictBool = True
     matter_server_chip_factory_dir: AbsolutePath = "/data"
     # chip-ota-provider-app: python-matter-server starts it from PATH for

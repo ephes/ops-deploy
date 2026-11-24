@@ -58,3 +58,18 @@ def test_trust_allowlist_keeps_exact_declared_paths() -> None:
     assert HomeAssistantRuntimeConfig(uv_system_certs_allowed_dropins=(path,)).uv_system_certs_allowed_dropins == (
         path,
     )
+
+
+def test_matter_bluetooth_adapter_flag() -> None:
+    from ops_deploy.services.homeassistant.render import render_unit
+
+    assert "--bluetooth-adapter" not in render_unit(HomeAssistantRuntimeConfig(), "matter-server")
+    unit = render_unit(HomeAssistantRuntimeConfig(matter_server_bluetooth_adapter=0), "matter-server")
+    exec_start = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    assert exec_start.endswith("/matter-server.log --bluetooth-adapter 0")
+
+
+@pytest.mark.parametrize("bad", [-1, "0", True, 1.0])
+def test_matter_bluetooth_adapter_rejects_non_ids(bad: Any) -> None:
+    with pytest.raises(ValidationError):
+        HomeAssistantRuntimeConfig.model_validate({"matter_server_bluetooth_adapter": bad})
