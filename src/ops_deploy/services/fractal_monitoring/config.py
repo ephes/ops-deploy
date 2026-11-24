@@ -283,6 +283,10 @@ class FractalMonitoringConfig(RoleConfig):
     expected_relay_ipv4: str
     storage_schema: tuple[SchemaRule, ...]
     backup_schema: tuple[SchemaRule, ...]
+    # Opt-in: remove the MinIO client the retired lag monitor installed at
+    # /usr/local/bin/mc (only that exact release). The Echoport deploys install
+    # the same release, so never set this on a host that runs Echoport.
+    retired_mc_absent: StrictBool = False
 
     @model_validator(mode="after")
     def _identity(self) -> FractalMonitoringConfig:

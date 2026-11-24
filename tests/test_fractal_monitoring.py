@@ -475,3 +475,75 @@ def test_enabled_exporter_is_independent_of_disabled_endpoint(monkeypatch: pytes
     assert any(path == cfg.exporter.bin_path for path, body in run.uploads)
     assert any(op.name.endswith("Ensure original exporter pool-cache directory") for op in run.ops)
     assert not any("Reconcile storage cached resources" in op.name for op in run.ops)
+
+
+def _retired_mc_run(monkeypatch: pytest.MonkeyPatch, *, enabled: bool, mc: dict[str, Any]) -> Any:
+    from ops_deploy.core.secrets import SecretRef, SecretValues
+    from ops_deploy.infra.mail_relay_client import MailRelayClientConfig
+    from ops_deploy.services.fractal_monitoring import deploy as implementation
+    from ops_deploy.services.fractal_monitoring.config import FractalMonitoringConfig, StorageExporterConfig
+    from ops_deploy.testing import run_deploy_fake
+    from tests import fakehost
+
+    def states(command: str, *, name: str, stdin: str | None = None) -> str:
+        return "100.64.0.7" if name == "Fractal alert relay Tailscale identity" else "current"
+
+    monkeypatch.setattr(implementation, "probe", states)
+    cfg = FractalMonitoringConfig(
+        relay=MailRelayClientConfig(enabled=False),
+        smartd=SmartdConfig(enabled=False),
+        zed=ZedConfig(enabled=False),
+        exporter=StorageExporterConfig(enabled=False),
+        storage=StorageEndpointConfig(enabled=False),
+        backup=BackupEndpointConfig(enabled=False),
+        expected_tailscale_ipv4="100.64.0.7",
+        expected_relay_ipv4="100.64.0.2",
+        storage_schema=(),
+        backup_schema=(),
+        retired_mc_absent=enabled,
+    )
+    secrets = SecretValues(SecretRef("secrets/owned.yml"), {implementation.CREDENTIAL_FIELD: "owned-unused-mc-login"})
+    return run_deploy_fake(
+        implementation.deploy_fractal_monitoring,
+        cfg=cfg,
+        secrets=secrets,
+        responses={**fakehost.UBUNTU, **mc},
+    )
+
+
+def test_retired_mc_is_removed_only_when_opted_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ops_deploy.services._echoport.mc import MC_SHA256
+    from ops_deploy.services.fractal_monitoring.config import FractalMonitoringConfig
+    from ops_deploy.services.fractal_monitoring.deploy import RETIRED_MC_PATH, RETIRED_MC_SHA256
+    from tests import fakehost
+
+    assert FractalMonitoringConfig.model_fields["retired_mc_absent"].default is False
+    # The release the lag monitor pinned (removed in 307fa27); Echoport pins the same one today.
+    assert RETIRED_MC_SHA256 == "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891" == MC_SHA256
+    kept = _retired_mc_run(monkeypatch, enabled=False, mc=fakehost.mc_installed())
+    assert kept.succeeded
+    assert not any(RETIRED_MC_PATH in command for command in kept.executed_commands)
+    removed = _retired_mc_run(monkeypatch, enabled=True, mc=fakehost.mc_installed())
+    assert removed.succeeded, removed.error
+    assert [c for c in removed.executed_commands if RETIRED_MC_PATH in c] == [f"rm -f {RETIRED_MC_PATH}"]
+
+
+def test_retired_mc_absent_is_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _retired_mc_run(monkeypatch, enabled=True, mc={})
+    assert run.succeeded, run.error
+    assert not any("/usr/local/bin/mc" in command for command in run.executed_commands)
+
+
+@pytest.mark.parametrize("kind", ["other-binary", "symlink", "directory"])
+def test_retired_mc_refuses_anything_else_at_the_path(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    from ops_deploy.services.fractal_monitoring.deploy import RETIRED_MC_PATH
+    from tests import fakehost
+
+    mc = {
+        "other-binary": fakehost.file(RETIRED_MC_PATH, "another mc build", mode="-rwxr-xr-x"),
+        "symlink": fakehost.symlink(RETIRED_MC_PATH, "/opt/mc/bin/mc"),
+        "directory": fakehost.directory(RETIRED_MC_PATH),
+    }[kind]
+    run = _retired_mc_run(monkeypatch, enabled=True, mc=mc)
+    assert not run.succeeded
+    assert run.executed_commands == []

@@ -115,6 +115,15 @@ there is no engine/owner acknowledgement or adoption marker. An independently
 enabled exporter is installed even with the storage endpoint disabled, and its
 original root:root0755 pool-cache directory policy is enforced.
 
+`retired_mc_absent` (default `False`) removes the MinIO client that the
+replication lag monitor installed at `/usr/local/bin/mc` until its removal
+(RELEASE.2025-08-13T08-35-41Z, sha256 `01f866e9…`; nothing has installed it on
+the monitoring host since). Only a regular file with exactly that sha256 is
+removed; a symlink, another file type or another binary at the path refuses the
+deployment before any change, an absent file is a no-op. The Echoport deploys
+and runner registrations install the same release at the same path, so never
+set it on a host that runs Echoport.
+
 ## Nyxmon and qualification scope
 
 `FractalMonitoringChecksConfig` owns exactly Fractal Storage and Fractal Backup,

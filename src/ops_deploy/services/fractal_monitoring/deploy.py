@@ -14,6 +14,7 @@ from pydantic import SecretStr
 from pyinfra import host
 from pyinfra.api import DeployError, StringCommand, deploy, operation
 from pyinfra.api.operation import OperationMeta
+from pyinfra.facts.files import File, Sha256File
 from pyinfra.operations import files, systemd
 from pyinfra.operations.util import any_changed
 
@@ -34,6 +35,11 @@ from .config import (
 from .render import render
 
 CREDENTIAL_FIELD = "nyxmon_storage_metrics_password"
+# The MinIO client the replication lag monitor installed until 307fa27
+# (RELEASE.2025-08-13T08-35-41Z, linux-amd64). ``retired_mc_absent`` removes
+# exactly this file and refuses anything else at that path.
+RETIRED_MC_PATH = "/usr/local/bin/mc"
+RETIRED_MC_SHA256 = "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
 SCRIPT = (Path(__file__).parent / "files/endpoint_host.py").read_text()
 
 
@@ -241,6 +247,20 @@ def deploy_endpoint(
     metrics_httpd.verify(selection)
 
 
+def remove_retired_mc() -> None:
+    """Remove the lag monitor's pinned ``mc``; a different file at the path is refused."""
+
+    info = host.get_fact(File, path=RETIRED_MC_PATH)
+    if info is None:
+        host.noop("Retired MinIO client is absent")
+        return
+    if info is False:
+        raise DeployError(f"{RETIRED_MC_PATH} is not a regular file; the retired MinIO client is not removed")
+    if host.get_fact(Sha256File, path=RETIRED_MC_PATH) != RETIRED_MC_SHA256:
+        raise DeployError(f"{RETIRED_MC_PATH} is not the retired lag monitor's MinIO client; not removed")
+    files.file(name="Remove the retired lag monitor's MinIO client", path=RETIRED_MC_PATH, present=False)
+
+
 @deploy("Fractal cached storage and backup monitoring")
 def deploy_fractal_monitoring(cfg: FractalMonitoringConfig, secrets: SecretValues) -> None:
     credential = password(secrets)
@@ -290,3 +310,5 @@ def deploy_fractal_monitoring(cfg: FractalMonitoringConfig, secrets: SecretValue
         ),
     ]
     deploy_endpoint(cfg.backup, backup_rows, cfg.backup_schema, credential)
+    if cfg.retired_mc_absent:
+        remove_retired_mc()

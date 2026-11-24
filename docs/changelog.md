@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- fractal_monitoring: opt-in `retired_mc_absent` (default `False`) removes
+  `/usr/local/bin/mc` when it is exactly the MinIO client release the removed
+  replication lag monitor installed (RELEASE.2025-08-13T08-35-41Z, by sha256);
+  any other file at that path refuses the deployment, an absent one is a no-op.
+  Never set it on an Echoport host (Echoport installs the same release there).
+
 - traefik_release: the patch-line resolver admits a line change. When the
   owner moves the policy one minor ahead (`3.7` -> `3.8`), a host still on
   the directly preceding line takes the newest eligible release of the new
