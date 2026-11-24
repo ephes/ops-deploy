@@ -35,9 +35,16 @@ the family switches. They render into `ddns-config.json` as `static_records` (em
 list by default). Names must be unique, not the dynamic `<subdomain>`/`*.<subdomain>`,
 no wildcard, and have at least one value. The updater never deletes a name removed
 from the list; with `rfc2136` the server's `update-policy` must grant each static
-owner to the key. The updater (identical to ops-library `dns_deploy`) judges every
-`dig` answer by its header: SERVFAIL, REFUSED, a timeout or a missing `aa` flag at a
-named nameserver is a failed query, not an empty record set.
+owner to the key. The updater (ops-library `dns_deploy`'s, plus the quieter logging
+below) judges every `dig` answer by its header: SERVFAIL, REFUSED, a timeout or a
+missing `aa` flag at a named nameserver is a failed query, not an empty record set.
+
+A run that changes nothing, fails nothing and finds every record at the public
+nameservers logs one line, `DDNS result: run_ok=True updated=0 public_ok=N/N
+errors=0 wan=<IPv4>,<IPv6>`. Any update, error or public mismatch logs the full
+run: the held-back `DDNS run`, `WAN IPv4/6` and `unchanged` lines first, then
+everything else as it happens. `status.json` always holds every record, so a short
+`ddns_interval` does not flood the journal (and Loki) with unchanged records.
 
 `ddns-update.timer` runs one minute after boot and after every timer (re)start
 (`OnBootSec`/`OnActiveSec`), then every `ddns_interval` (`OnUnitActiveSec`), with

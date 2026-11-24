@@ -406,14 +406,31 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     records: dict[str, dict] = {}
     wan: dict[str, Optional[str]] = {"ipv4": None, "ipv6": None}
     statics, static_errors = parse_static_records(config.get("static_records"), names)
+    # A run that changes nothing and finds every record public logs only its result line;
+    # the routine detail lines are held back and written before the first line that matters.
+    held: list[str] = []
+    loud = False
+
+    def detail(message: str) -> None:
+        if loud:
+            log(message)
+        else:
+            held.append(message)
+
+    def say(message: str) -> None:
+        nonlocal loud
+        loud = True
+        while held:
+            log(held.pop(0))
+        log(message)
 
     provider_label = (f"provider={provider}" if len(providers) == 1
                       else f"providers={','.join(providers)}")
     static_label = f" static={','.join(n for n, _ in statics)}" if statics else ""
-    log(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}{static_label}")
+    detail(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}{static_label}")
     for err in static_errors:
         errors.append(err)
-        log(f"ERROR: {err}")
+        say(f"ERROR: {err}")
 
     backends: dict[str, Optional[Backend]] = {}
     for name_ in providers:
@@ -425,7 +442,7 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
             backends[name_] = backend_cls(zone, ttl, config.get(name_, {}), env, http)
         except DdnsError as err:
             errors.append(str(err))
-            log(f"ERROR: {err}")
+            say(f"ERROR: {err}")
 
     sources = config.get("ip_sources", {})
     for version, enabled in families.items():
@@ -435,10 +452,10 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
             wan[f"ipv{version}"] = detect_ip(
                 sources.get(f"ipv{version}", f"https://ipv{version}.icanhazip.com"), version, http
             )
-            log(f"WAN IPv{version}: {wan[f'ipv{version}']}")
+            detail(f"WAN IPv{version}: {wan[f'ipv{version}']}")
         except DdnsError as err:
             errors.append(str(err))
-            log(f"ERROR: {err}")
+            say(f"ERROR: {err}")
 
     def converge(name: str, rtype: str, desired, want: Optional[list[str]], static: bool) -> None:
         """Bring one record set to ``want`` at every provider and read it back."""
@@ -459,7 +476,7 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
                 result["values"] = current
                 if current == want:
                     result["action"] = "unchanged"
-                    log(f"unchanged {tag}{rtype} {record['name']} = {desired}")
+                    detail(f"unchanged {tag}{rtype} {record['name']} = {desired}")
                 else:
                     backend.set(name, rtype, want)
                     after = backend.get(name, rtype)
@@ -469,12 +486,12 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
                             f"{tag}{rtype} {record['name']}: read-back {after} != {want}"
                         )
                     result["action"] = "updated"
-                    log(f"updated {tag}{rtype} {record['name']}: "
+                    say(f"updated {tag}{rtype} {record['name']}: "
                         f"{current or '[]'} -> {desired}")
             except DdnsError as err:
                 result["action"] = "failed"
                 errors.append(str(err))
-                log(f"ERROR: {err}")
+                say(f"ERROR: {err}")
         # Summary fields keep their single-provider meaning: the first provider's
         # values, and the worst action across providers.
         actions = [r["action"] for r in record["providers"].values()]
@@ -535,7 +552,7 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
             a == want for a in seen
         )
         if not record["public_ok"]:
-            log(f"public {record['type']} {record['name']} = {seen or 'no answer'}"
+            say(f"public {record['type']} {record['name']} = {seen or 'no answer'}"
                 f" (want {record['desired']}) via {','.join(nameservers) or 'no nameservers'}")
 
     timestamp = int(now())
@@ -572,9 +589,11 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
         },
     }
     summary = status["summary"]
+    wan_label = ",".join(v for v in (wan["ipv4"], wan["ipv6"]) if v) or "none"
     log(
         f"DDNS result: run_ok={run_ok} updated={summary['records_updated']} "
-        f"public_ok={summary['records_public_ok']}/{summary['records_total']} errors={len(errors)}"
+        f"public_ok={summary['records_public_ok']}/{summary['records_total']} errors={len(errors)} "
+        f"wan={wan_label}"
     )
     return (0 if run_ok else 1), status
 

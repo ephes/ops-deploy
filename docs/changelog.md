@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- dns: the DDNS updater logs one line per run when nothing changed
+  (`DDNS result: ... wan=<IPv4>,<IPv6>`) instead of about 13; any update,
+  error or public mismatch still logs the whole run. This keeps a short
+  `ddns_interval` (ops-control moves macmini to 1 minute with TTL 60 so heis and
+  marina follow the nightly address change within about two minutes) from
+  flooding the journal. A deploy replaces `/usr/local/bin/ddns-update`.
+
 - django_site: a hardened Django unit gets `RuntimeDirectory=<unit>` and
   `Environment=XDG_RUNTIME_DIR=/run/<unit>`. Gunicorn 25+ puts its control
   socket there instead of `~/.gunicorn/`, which `ProtectSystem=strict` keeps
