@@ -188,6 +188,8 @@ def test_hardening_adds_the_sandbox_with_the_writable_paths(cfg: DjangoSiteConfi
 
     assert "\nProtectSystem=strict\n" in unit
     assert f"\nReadWritePaths={SITE} {SITE}/cache\n" in unit
+    # Gunicorn 25+ opens its control socket in $XDG_RUNTIME_DIR, not in the read-only home.
+    assert f"\nRuntimeDirectory={cfg.unit_name}\nEnvironment=XDG_RUNTIME_DIR=/run/{cfg.unit_name}\n" in unit
 
 
 def test_route_keeps_the_router_service_and_middleware_names(cfg: DjangoSiteConfig) -> None:

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- django_site: a hardened Django unit gets `RuntimeDirectory=<unit>` and
+  `Environment=XDG_RUNTIME_DIR=/run/<unit>`. Gunicorn 25+ puts its control
+  socket there instead of `~/.gunicorn/`, which `ProtectSystem=strict` keeps
+  read-only: Villa Kunterbunt on staging (Gunicorn 26) logged "Control server
+  error: [Errno 30] Read-only file system" at every start. The Next.js and
+  worker units are unchanged. A deploy rewrites the unit and restarts the site.
+
 - fractal_monitoring: opt-in `retired_mc_absent` (default `False`) removes
   `/usr/local/bin/mc` when it is exactly the MinIO client release the removed
   replication lag monitor installed (RELEASE.2025-08-13T08-35-41Z, by sha256);
@@ -15,6 +22,7 @@
   Any other line (older than the preceding minor, another major, newer than
   the line) is still refused; a downgrade stays impossible.
 
+||||||| parent of f5024f23 (django_site: give the hardened Gunicorn unit a runtime directory for its control socket)
 - homeassistant: optional `matter_server_bluetooth_adapter` (default `None`).
   Set to an adapter id, the Matter unit runs `matter-server --bluetooth-adapter
   <id>`, so the server commissions new Matter devices over BLE itself (the
@@ -2685,7 +2693,6 @@
   This is fixture source only; no native, inventory or physical-device success
   is claimed before actual execution and complete receipts.
 
-
 - Prepare full Home Assistant normal-role composition with original selected
   integrations, legacy retirement, trust checks, active canaries and consumed
   handler notifications. Full owned application/native qualification is pending;
@@ -3179,7 +3186,6 @@
   Existing PostfixAdmin schemas are admitted read-only; the selected upstream
   bootstrap is restricted to an empty database. Both routes expose an explicit
   `traefik_sts_preload` option, defaulting to false.
-
 
 - Make installed Rust release validation genuinely read-only on a current layout.
   Classify needed root metadata or owned staging repairs as managed changes,

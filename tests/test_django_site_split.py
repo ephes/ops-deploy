@@ -192,7 +192,13 @@ def test_units_are_strictly_sandboxed(cfg: DjangoSiteConfig) -> None:
             "SystemCallArchitectures=native",
         ):
             assert f"\n{line}\n" in unit
-        assert "Environment" not in unit
+    # Only the Gunicorn unit gets a runtime directory for its control socket.
+    assert [line for line in django.splitlines() if line.startswith(("Environment", "RuntimeDirectory"))] == [
+        "RuntimeDirectory=splitsite-django",
+        "Environment=XDG_RUNTIME_DIR=/run/splitsite-django",
+    ]
+    assert "Environment" not in nextjs
+    assert "RuntimeDirectory" not in nextjs
 
 
 def test_plain_hardening_keeps_the_home_writable(cfg: DjangoSiteConfig) -> None:

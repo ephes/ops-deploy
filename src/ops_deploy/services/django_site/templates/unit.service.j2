@@ -22,6 +22,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome={{ 'read-only' if cfg.hardening == 'strict' else 'false' }}
 ReadWritePaths={{ writable | join(' ') }}
+{% if not frontend_unit | default(false) %}
+RuntimeDirectory={{ cfg.unit_name }}
+Environment=XDG_RUNTIME_DIR=/run/{{ cfg.unit_name }}
+{% endif %}
 {% if cfg.hardening == 'strict' %}
 ProtectKernelTunables=true
 ProtectKernelModules=true
