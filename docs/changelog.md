@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- logyard: Loki logs at `warn` instead of `info` (`server.log_level` in
+  `loki-config.yml.j2`). Its per-query info lines during obs-daily-pack's
+  06:30 run made journald suppress 4,000-11,000 docker.service messages a
+  day, other containers' lines included. Vector's default `min_levels`
+  already dropped Loki's lines below `warning`, so with the default filters
+  nothing that reached Loki is lost. A deploy restarts Loki once.
+
 - rustfs: pinned RustFS 1.0.6 (GitHub release of 2026-11-15, tag commit
   `de9009d88264`) instead of 1.0.4. Archive digests from the release's
   `SHA256SUMS`, provenance subjects and asset digests (re-checked 2026-11-23);

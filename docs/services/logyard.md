@@ -168,7 +168,11 @@ The remap turns each journald entry into one Loki line with the labels
   `[I]` lines a day of mesh chatter. A configured map replaces the defaults:
   to add a floor and keep them, pass
   `{**vector.DEFAULT_MIN_LEVELS, "<service>": "<level>"}`. The journal on the
-  host keeps everything.
+  host keeps what journald's rate limit lets through. Loki itself runs with
+  `server.log_level: warn` (`loki-config.yml.j2`): at `info` it wrote lines
+  for every query, and during obs-daily-pack's 06:30 run journald suppressed
+  4,000-11,000 docker.service messages a day, other containers' lines
+  included.
 
 `tests/test_logyard_vector_remap.py` runs the rendered remap through
 `vector test` with journald-shaped events (skipped without a local `vector`).
