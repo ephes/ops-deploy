@@ -19,7 +19,6 @@
   Lets a host move its cluster to PostgreSQL 19 with `pg_upgradecluster` and
   then deploy `version="19"` (ops-control `postgres_install_version`).
 
-||||||| parent of 77e3696a (docs: design for root writes in service homes)
 - docs: design and class-B plan for root writes in service homes
   (`docs/plans/root-writes-in-service-homes.md`). During a deploy root writes
   by path into directories a service user owns (`sync_tree` with `--chown`,
