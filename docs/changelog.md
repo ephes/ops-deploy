@@ -30,7 +30,6 @@
   Any other line (older than the preceding minor, another major, newer than
   the line) is still refused; a downgrade stays impossible.
 
-||||||| parent of f5024f23 (django_site: give the hardened Gunicorn unit a runtime directory for its control socket)
 - homeassistant: optional `matter_server_bluetooth_adapter` (default `None`).
   Set to an adapter id, the Matter unit runs `matter-server --bluetooth-adapter
   <id>`, so the server commissions new Matter devices over BLE itself (the
@@ -141,7 +140,6 @@
   readiness check still fails the unit; a replica without the endpoint keeps
   the failed unit as its alert. Takes effect with the `rustfs_replica` deploy.
 
-||||||| parent of 713e0c00 (obs_daily: a signature window flooded by one stream is read again without it; the day still enters the baseline)
 - macos_ssh_tunnel: `ThrottleInterval` 300 s (was 60 s). While the relay
   (Atlas) was offline, the Studio's `eu.coreso.emerge.uat-tunnel` exited 255
   after its 10-second connect timeout about eight times per ten minutes and
