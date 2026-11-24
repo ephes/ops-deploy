@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- chesslab: first conversion of
+  [root writes in service homes](plans/root-writes-in-service-homes.md). The
+  source sync runs as the service user (no `--chown`), `site` and `data` are
+  created by the service user after a read-only check of the path to the
+  home, every command in the site (and the Echoport/Nyxmon wiring commands in
+  theirs) enters its directory as the service user, the user query runs as the
+  service user with `-init /dev/null`, the migration check opens the database
+  read-only (`mode=ro`), and the users stamp is read without following a link
+  or blocking. A probe that fails now stops the deploy while it plans instead
+  of scheduling the step it gates ("Probe again" operations are gone). New
+  `verify_only` setting: only read-only operations plus the convergence
+  predicates, for the first stage of the rollout. On a converged host a deploy
+  changes nothing and restarts nothing; a `site` or `data` that is a symlink
+  or not the service's now fails the deploy. Not rolled out: the rollout is
+  the class-B plan in that document.
+  - New `ops_deploy.services._service_home` (`as_user`, `trusted_home_check`,
+    `user_directories`, `sync_tree_as_user`, `uv_sync_as_user`), documented
+    under "Deploy helpers". It lives with the services because the shared
+    layer is at its size cap; `sync_tree`, `system_user` and `uv_sync` are
+    unchanged, and so is every other service.
+
 - traefik_deploy: the default release is 3.8.0 (from 3.7.19; owner decision
   2026-11-24 for the 3.8 line). Archive digests checked against the release's
   checksums file and the GitHub asset digests (amd64 `266f4b02…`, arm64

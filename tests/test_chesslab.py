@@ -40,14 +40,25 @@ SECRET_VALUES = {
     "users": json.dumps(USERS),
     "basic_auth_password": "chesslab-fixture-basic-pw",
 }
+# Every command in the site: root leaves its own directory (cd /) and the user enters the site.
+ENTER = """sh -c 'cd "$1" && shift && exec "$@"' sh"""
 UV_SYNC = (
-    f"cd {SITE} && runuser -u chesslab -- env HOME={HOME} UV_PROJECT_ENVIRONMENT={SITE}/.venv "
-    "/usr/local/bin/uv sync --frozen --no-dev --python 3.14"
+    f"cd / && runuser -u chesslab -- env HOME={HOME} UV_PROJECT_ENVIRONMENT={SITE}/.venv "
+    f"{ENTER} {SITE} /usr/local/bin/uv sync --frozen --no-dev --python 3.14"
+)
+# Substrings of the two probes of chesslab's own database, and of the bounded stamp read.
+MIGRATE_PROBE = "check_unapplied=True"
+USERS_PROBE = "sqlite3 -readonly"
+STAMP_READ = "info.st_uid == 0"
+REMOTE_RSYNC = (
+    "--rsync-path=cd / && runuser -u chesslab -- "
+    """sh -c 'test -d "$1" && test ! -L "$1" && shift && exec rsync "$@"' rsync /home/chesslab/site"""
 )
 ITEMIZED_CHANGE = [">f.st...... src/chesslab/views.py"]
 _HASH = hash_password(SECRET_VALUES["basic_auth_password"])
 READ_ONLY = [
     "Deploy chesslab | Port preflight tcp/10019",
+    "Deploy chesslab | Check the path to /home/chesslab",
     "Deploy chesslab | Check chesslab database",
     "Deploy chesslab | Verify chesslab certifi/pip trust",
     "Deploy chesslab | Check http://127.0.0.1:10019/healthz",
@@ -97,10 +108,11 @@ def converged(cfg: ChesslabConfig, secrets: SecretValues, **drift: str) -> dict[
         **fakehost.LINUX,
         **fakehost.system_account("chesslab", HOME, shell="/usr/sbin/nologin"),
         **fakehost.deb_installed("python3", "python3-venv", "sqlite3", "rsync"),
-        "sqlite3 -readonly": user_rows(secrets),
+        USERS_PROBE: user_rows(secrets),
         ECHOPORT_PROBE: ["unchanged"],
         NYXMON_PROBE: ["unchanged"],
-        "django migrate --check": ["current"],
+        MIGRATE_PROBE: ["current"],
+        STAMP_READ: content[STAMP].splitlines(),
     }
     for path in ("", "/site", "/data"):
         responses.update(fakehost.directory(f"{HOME}{path}", user="chesslab"))
@@ -219,7 +231,7 @@ def test_password_change_only_ensures_users(cfg: ChesslabConfig, secrets: Secret
 
 
 def test_missing_user_in_database_is_ensured(cfg: ChesslabConfig, secrets: SecretValues) -> None:
-    responses = {**converged(cfg, secrets), "sqlite3 -readonly": user_rows(secrets)[:1]}
+    responses = {**converged(cfg, secrets), USERS_PROBE: user_rows(secrets)[:1]}
 
     run = deploy(cfg, secrets, responses)
 
@@ -357,7 +369,7 @@ def test_port_collision_stops_before_any_change(cfg: ChesslabConfig, secrets: Se
 
 
 def test_unapplied_migrations_are_retried_without_a_code_change(cfg: ChesslabConfig, secrets: SecretValues) -> None:
-    responses = {**converged(cfg, secrets), "django migrate --check": []}
+    responses = {**converged(cfg, secrets), MIGRATE_PROBE: []}
 
     run = deploy(cfg, secrets, responses)
 
@@ -376,18 +388,299 @@ def test_user_names_never_reach_a_command_line(cfg: ChesslabConfig, secrets: Sec
     assert all("CHESSLAB_DEPLOY_USERNAME" in c for c in ensure)
 
 
-def test_a_failing_migrations_probe_runs_migrate_and_probes_again(cfg: ChesslabConfig, secrets: SecretValues) -> None:
-    # The probe crashed (not "pending"): the step runs, then the probe must pass.
-    responses = {**converged(cfg, secrets), "django migrate --check": [FAILED]}
+@pytest.mark.parametrize("probe", [MIGRATE_PROBE, USERS_PROBE, ECHOPORT_PROBE, NYXMON_PROBE])
+def test_a_failing_probe_stops_planning_and_nothing_runs(
+    cfg: ChesslabConfig, secrets: SecretValues, probe: str
+) -> None:
+    # The probe crashed (not "pending"): scheduling the step it gates would turn
+    # an unreadable database or neighbour into a write.
+    responses = {**converged(cfg, secrets), probe: [FAILED]}
+
+    run = run_deploy_fake(deploy_chesslab, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert "probe failed" in str(run.error)
+    assert run.executed_commands == []
+    assert run.stdin == []
+    assert run.uploads == []
+
+
+def test_pending_is_not_a_failure(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), MIGRATE_PROBE: ["pending"], ECHOPORT_PROBE: ["pending"]}
 
     run = deploy(cfg, secrets, responses)
 
-    assert run.succeeded
-    assert "Deploy chesslab | Run chesslab migrations" in run.mutating_changed_ops
-    verify = run.op("Deploy chesslab | Probe again: chesslab migrations")
-    assert verify.changed
-    assert verify.read_only
-    assert any("migrate --check --plan" in c and "probe still fails" in c for c in run.executed_commands)
+    assert run.mutating_changed_ops == [
+        "Deploy chesslab | Run chesslab migrations",
+        "Deploy chesslab | Restart chesslab.service",
+        "Deploy chesslab | Upsert Echoport backup target",
+    ]
+
+
+def _root_enters(command: str) -> bool:
+    """Root changes into a service's directory before it drops privileges."""
+
+    return any(f"cd /home/{owner}" in command.split("runuser")[0] for owner in ("chesslab", "echoport", "nyxmon"))
+
+
+@pytest.mark.parametrize("scenario", ["first", "converged", "drift"])
+def test_root_never_enters_or_writes_a_service_directory(
+    cfg: ChesslabConfig, secrets: SecretValues, scenario: str
+) -> None:
+    responses = None if scenario == "first" else converged(cfg, secrets)
+    if scenario == "drift":
+        assert responses is not None
+        responses.update({MIGRATE_PROBE: ["pending"], ECHOPORT_PROBE: ["pending"], NYXMON_PROBE: ["pending"]})
+    rsync = RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE})
+
+    run = deploy(cfg, secrets, responses, rsync=rsync)
+
+    commands = run.executed_commands + run.fact_commands
+    assert not [c for c in commands if _root_enters(c)]
+    in_site = [c for c in run.executed_commands if "uv sync" in c or "django" in c or "manage.py shell" in c]
+    assert in_site
+    assert all(c.startswith("cd / && runuser -u ") for c in in_site)
+    # The sync receives as the service user and sets no owner as root.
+    assert rsync.calls
+    assert all(REMOTE_RSYNC in call for call in rsync.calls)
+    assert not any(arg.startswith("--chown") for call in rsync.calls for arg in call)
+    # site and data are made by the user; root's mkdir/chown only ever names the home.
+    made = [c for c in run.executed_commands if c.startswith(("mkdir", "chown", "chmod")) and HOME in c]
+    assert all(c.split()[-1] == HOME for c in made), made
+    if scenario == "first":
+        assert f"cd / && runuser -u chesslab -- mkdir -p -m 0755 {SITE}" in run.executed_commands
+        assert f"cd / && runuser -u chesslab -- mkdir -p -m 0755 {HOME}/data" in run.executed_commands
+
+
+def test_database_probes_run_read_only_as_the_service_user(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    users = next(c for c in run.fact_commands if USERS_PROBE in c)
+    assert "runuser -u chesslab -- env HOME=/home/chesslab sh -c" in users
+    # Never the account's ~/.sqliterc.
+    assert users.count("sqlite3 -readonly -init /dev/null") == users.count("sqlite3 -readonly") == 2
+    migrations = next(c for c in run.fact_commands if MIGRATE_PROBE in c)
+    assert "?mode=ro" in migrations
+    assert '"uri": True' in migrations
+    assert "PYTHONDONTWRITEBYTECODE=1" in migrations
+    assert "cd / && runuser -u chesslab -- env HOME=/home/chesslab" in migrations
+    assert not any("migrate --check" in c for c in run.fact_commands)
+
+
+def test_stamp_is_read_without_following_or_blocking(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    read = next(c for c in run.fact_commands if STAMP_READ in c)
+    assert read.startswith("python3 -I -c ")
+    assert read.endswith(STAMP)
+    assert "os.O_NOFOLLOW | os.O_NONBLOCK" in read
+    assert "0o600" in read
+    assert not any(c.startswith(f"cat {STAMP}") for c in run.fact_commands)
+
+
+@pytest.mark.parametrize(
+    ("planted", "expected"),
+    [
+        ("regular", "stamp\n"),
+        ("wrong-mode", ""),
+        ("symlink", ""),
+        ("fifo", ""),
+        ("missing", ""),
+        ("too-large", ""),
+    ],
+)
+def test_stamp_reader_accepts_only_a_small_private_regular_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, planted: str, expected: str
+) -> None:
+    import os
+    import subprocess
+    import sys
+
+    from ops_deploy.services.chesslab.deploy import _READ_STAMP
+
+    stamp = tmp_path / "stamp"
+    if planted in ("regular", "wrong-mode", "too-large"):
+        stamp.write_text("stamp\n" if planted != "too-large" else "x" * 300)
+        stamp.chmod(0o644 if planted == "wrong-mode" else 0o600)
+    elif planted == "symlink":
+        target = tmp_path / "target"
+        target.write_text("stamp\n")
+        target.chmod(0o600)
+        stamp.symlink_to(target)
+    elif planted == "fifo":
+        os.mkfifo(stamp, 0o600)
+    # The production stamp is root's; here the owner is whoever runs the tests.
+    script = _READ_STAMP.replace("info.st_uid == 0", f"info.st_uid == {os.getuid()}")
+    assert script != _READ_STAMP
+
+    done = subprocess.run([sys.executable, "-I", "-c", script, str(stamp)], capture_output=True, text=True, timeout=20)
+
+    assert (done.returncode, done.stdout, done.stderr) == (0, expected, "")
+
+
+def verify_only(cfg: ChesslabConfig) -> ChesslabConfig:
+    return cfg.model_copy(update={"verify_only": True})
+
+
+def test_verify_only_queues_nothing_that_changes_a_converged_host(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    rsync = RecordingRsyncRunner()
+
+    run = deploy(verify_only(cfg), secrets, converged(cfg, secrets), rsync=rsync)
+
+    # Only read-only operations exist in this run: nothing that a later re-evaluation could turn into a write.
+    assert [op.name for op in run.ops if not op.read_only] == []
+    assert [op.name for op in run.ops if op.read_only] == [
+        "Deploy chesslab | Check the path to /home/chesslab",
+        "Deploy chesslab | Audit ownership below the chesslab home",
+        "Deploy chesslab | Show the identity of chesslab",
+        "Deploy chesslab | Check chesslab database",
+    ]
+    assert run.uploads == []
+    assert run.stdin == []
+    assert run.function_calls == []
+    assert rsync.calls
+    assert all("--dry-run" in call and REMOTE_RSYNC in call for call in rsync.calls)
+    assert "cd / && runuser -u chesslab -- env HOME=/home/chesslab id" in run.executed_commands
+    audit = next(c for c in run.executed_commands if "-perm -2000" in c)
+    assert audit.endswith(f"sh chesslab chesslab {SITE} {HOME}/data")
+    assert 'find "$@" -xdev' in audit
+    assert run.fish_unsafe_commands == []
+    assert '! -user "$user" -o ! -group "$group" -o -type d -perm -2000' in audit
+    # No neighbour is asked and no account, package, unit or route fact is needed.
+    assert not any("echoport" in c or "nyxmon" in c for c in run.executed_commands + run.fact_commands)
+    assert not any(word in c for c in run.executed_commands for word in ("systemctl", "apt-get", "useradd", "mkdir"))
+
+
+@pytest.mark.parametrize(
+    ("drift", "itemized", "message"),
+    [
+        ({}, ITEMIZED_CHANGE, "the source differs"),
+        ({MIGRATE_PROBE: ["pending"]}, [], "migrations are not current"),
+        ({USERS_PROBE: []}, [], "application users"),
+        ({STAMP_READ: ["stale"]}, [], "application users"),
+        ({STAMP_READ: []}, [], "application users"),
+        ({f"test -x {SITE}/.venv/bin/python": []}, [], "no interpreter"),
+        ({f"test -e {SITE} ||": []}, [], f"{SITE} is missing"),
+        (fakehost.directory(f"{HOME}/data", user="chesslab", mode="drwx------"), [], f"{HOME}/data is not 0755"),
+        (
+            {"cat /etc/passwd | cut": ["root:x:0:0:root:/root:/bin/bash|root|root||!"]},
+            [],
+            "account chesslab does not exist",
+        ),
+    ],
+)
+def test_verify_only_stops_on_pending_work_without_acting(
+    cfg: ChesslabConfig, secrets: SecretValues, drift: dict[str, Any], itemized: list[str], message: str
+) -> None:
+    rsync = RecordingRsyncRunner(responses={"--dry-run": itemized})
+    responses = {**converged(cfg, secrets), **drift}
+
+    run = run_deploy_fake(deploy_chesslab, verify_only(cfg), secrets, rsync=rsync, responses=responses)
+
+    assert not run.succeeded
+    assert "verify_only: chesslab is not converged" in str(run.error)
+    assert message in str(run.error)
+    assert run.executed_commands == []
+    assert run.function_calls == []
+    assert all("--dry-run" in call for call in rsync.calls)
+
+
+@pytest.mark.parametrize("probe", [MIGRATE_PROBE, USERS_PROBE])
+def test_verify_only_stops_on_a_failing_probe(cfg: ChesslabConfig, secrets: SecretValues, probe: str) -> None:
+    responses = {**converged(cfg, secrets), probe: [FAILED]}
+
+    run = run_deploy_fake(deploy_chesslab, verify_only(cfg), secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert "probe failed" in str(run.error)
+    assert run.executed_commands == []
+
+
+@pytest.mark.parametrize(
+    ("layout", "message"),
+    [
+        (fakehost.symlink(f"{HOME}/data", "/srv/elsewhere", user="chesslab"), "not a directory"),
+        (fakehost.directory(SITE, user="root"), "belongs to root:root"),
+    ],
+)
+def test_verify_only_refuses_what_a_deploy_refuses(
+    cfg: ChesslabConfig, secrets: SecretValues, layout: dict[str, Any], message: str
+) -> None:
+    rsync = RecordingRsyncRunner()
+
+    run = run_deploy_fake(
+        deploy_chesslab, verify_only(cfg), secrets, rsync=rsync, responses={**converged(cfg, secrets), **layout}
+    )
+
+    assert not run.succeeded
+    assert message in str(run.error)
+    assert run.executed_commands == []
+    assert rsync.calls == []
+
+
+def test_verify_only_never_transfers_even_if_the_host_changes_while_it_runs(
+    cfg: ChesslabConfig, secrets: SecretValues
+) -> None:
+    # No sync operation is queued, so there is nothing pyinfra could re-evaluate into a transfer.
+    rsync = RecordingRsyncRunner()
+
+    run = deploy(verify_only(cfg), secrets, converged(cfg, secrets), rsync=rsync)
+
+    assert not any("Sync" in op.name for op in run.ops)
+    assert len(rsync.calls) == 1
+    assert "--dry-run" in rsync.calls[0]
+
+
+@pytest.mark.parametrize("field", ["site_path", "data_path"])
+def test_audit_refuses_a_path_a_shell_would_read(tmp_path: Path, field: str) -> None:
+    cfg = ChesslabConfig(
+        source_path=make_source(tmp_path),
+        secrets=SecretRef("secrets/prod/chesslab.yml"),
+        verify_only=True,
+        **{field: "/home/chesslab/x; touch /root/pwned"},
+    )
+
+    run = run_deploy_fake(deploy_chesslab, cfg, values(cfg), rsync=RecordingRsyncRunner(), responses=first_host())
+
+    assert not run.succeeded
+    assert "plain normalized absolute path" in str(run.error)
+    assert run.executed_commands == []
+
+
+def test_first_deploy_with_a_provisioned_database_but_no_account_plans(
+    cfg: ChesslabConfig, secrets: SecretValues
+) -> None:
+    # The database may be there before the account this run creates: runuser
+    # cannot work yet, and that is "nothing there yet", not a failed probe.
+    responses = {**first_host(), USERS_PROBE: [FAILED], MIGRATE_PROBE: [FAILED]}
+
+    run = deploy(cfg, secrets, responses, rsync=RecordingRsyncRunner(responses={"--dry-run": ITEMIZED_CHANGE}))
+
+    assert not any(USERS_PROBE in c or MIGRATE_PROBE in c for c in run.fact_commands)
+    assert len([c for c in run.executed_commands if "ensure_admin" in c]) == 2
+    assert any("django migrate --noinput" in c for c in run.executed_commands)
+
+
+def test_a_foreign_site_directory_is_not_repaired(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), **fakehost.directory(SITE, user="root")}
+
+    run = run_deploy_fake(deploy_chesslab, cfg, secrets, rsync=RecordingRsyncRunner(), responses=responses)
+
+    assert not run.succeeded
+    assert "Root does not repair it" in str(run.error)
+    assert run.executed_commands == []
+
+
+def test_a_symlinked_site_is_refused(cfg: ChesslabConfig, secrets: SecretValues) -> None:
+    responses = {**converged(cfg, secrets), **fakehost.symlink(SITE, "/etc", user="chesslab")}
+    rsync = RecordingRsyncRunner()
+
+    run = run_deploy_fake(deploy_chesslab, cfg, secrets, rsync=rsync, responses=responses)
+
+    assert not run.succeeded
+    assert "not a directory" in str(run.error)
+    assert run.executed_commands == []
+    assert rsync.calls == []
 
 
 def test_route_sends_hsts_without_preload(cfg: ChesslabConfig, secrets: SecretValues) -> None:

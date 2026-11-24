@@ -395,7 +395,9 @@ def test_verify_probe_fails_unless_the_probe_now_passes(
 
 
 @pytest.mark.parametrize("login_shell", LOGIN_SHELLS)
-def test_chesslab_users_probe_tells_a_new_database_from_a_broken_one(tmp_path: Path, login_shell: str) -> None:
+def test_chesslab_users_probe_tells_a_new_database_from_a_broken_one(
+    tmp_path: Path, fake_runuser: str, login_shell: str
+) -> None:
     db = tmp_path.resolve() / "chess.db"
     cfg = ChesslabConfig(
         source_path=make_chesslab_source(tmp_path),
@@ -406,7 +408,8 @@ def test_chesslab_users_probe_tells_a_new_database_from_a_broken_one(tmp_path: P
     check = probe_command(_chesslab_users_probe(cfg))
 
     def answer() -> str | None:
-        return probe_output(run_remote(check, login_shell, os.environ["PATH"]).stdout)
+        # The probe runs as the service user; here ``runuser`` only runs its command.
+        return probe_output(run_remote(check, login_shell, fake_runuser).stdout)
 
     assert answer() == "none\n"  # no database
     db.touch()

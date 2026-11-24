@@ -57,13 +57,20 @@ Defaults follow the role's `defaults/main.yml`.
 2. Port preflight (read-only; fails when `ss` fails): nothing but `chesslab.service` may listen on
    `app_port` at a loopback or wildcard address, as the playbook's
    `preflight_ports` (`bind: loopback`). It cannot be skipped.
-3. `system_user` (`/usr/sbin/nologin`), `home`, `site`, `data`.
+3. `trusted_home_check`, `system_user` (`/usr/sbin/nologin`) and
+   `user_directories`
+   ([service homes](../concepts/helpers.md#service-homes-ops_deployservices_service_home)):
+   a read-only check that only root can replace a directory on the way to the
+   home, then the home by root and `site` and `data` by the service user
+   itself. A `site` or `data` that is a symlink or belongs to someone else
+   fails the deploy; root does not repair it by path.
 4. Database check (read-only): `db_path` must exist and be read/writable by
    the service user. The deploy never creates the database; without it, it
    stops before the site changes.
-5. `sync_tree` of the checkout to `site/` with the role's excludes (`.git`,
-   `.venv`, caches, `.env`, `chess.db`, `*.db`, `*.db-*`), owned by the
-   service user.
+5. `sync_tree_as_user` of the checkout to `site/` with the role's excludes
+   (`.git`, `.venv`, caches, `.env`, `chess.db`, `*.db`, `*.db-*`): the remote
+   rsync runs as the service user (no `--chown`), so the files are the
+   service's because it creates them.
 6. Runtime packages (`python3`, `python3-venv`, `sqlite3`, `rsync`).
 7. `uv sync --frozen --no-dev --python 3.14` if the source changed or the venv
    is missing.
@@ -74,14 +81,20 @@ Defaults follow the role's `defaults/main.yml`.
 8. `.env` through `secret_file`, `0600`.
 9. `python -m django migrate` if the source or dependencies changed or a
    read-only `migrate --check` (debug key, no secret) finds unapplied
-   migrations, so a failed run is retried. A migration restarts chesslab. The
-   Django environment goes over stdin, never on a command line.
+   migrations, so a failed run is retried. The check opens the database
+   through the SQLite URI `file:<db>?mode=ro` and without writing bytecode: a
+   normal connection can checkpoint the log or roll back a hot journal just by
+   reading. A migration restarts chesslab. The Django environment goes over
+   stdin, never on a command line.
 10. `ensure_admin` for each user, called in-process by the venv's Python
     (password, user name and owner over stdin, never in a process's arguments), only when a user or its trainer profile is missing or
-    differs in the database (a read-only SQLite query, compared as digests) or
+    differs in the database (a read-only SQLite query as the service user,
+    `sqlite3 -readonly -init /dev/null`, compared as digests) or
     the `users` secret changed since the last run. The last ensured set is
     recorded as an HMAC (keyed with the Django secret) in
-    `/home/chesslab/.ops-deploy-users` (`0600 root`).
+    `/home/chesslab/.ops-deploy-users` (`0600 root`). Root reads it back
+    without following a link or blocking, and only accepts a small regular
+    file of its own with mode `0600`; anything else counts as no stamp.
 11. Unit file and `service_rollout`: restart on code, dependency or `.env`
     change.
 12. Traefik route with the role's own template (dual router, the HTTP router
@@ -97,6 +110,59 @@ Defaults follow the role's `defaults/main.yml`.
     - Nyxmon (`/home/nyxmon/site`, `.env` sourced): service "Chesslab", check
       "Chesslab trainer health" on `http://<app_host>:<app_port>/healthz`.
     - Fails when the app is not installed on the host, as the playbook does.
+
+Every command in the site, and every wiring command in a neighbour's site,
+has the form `cd / && runuser -u <user> -- env ... sh -c 'cd "$1" && shift && exec "$@"' sh <dir> ...`:
+the service user enters the directory, not root.
+
+A probe that *fails* (the migration check, the user query, a wiring check)
+stops the deploy while it plans, before any operation. While the service
+account does not exist yet (a first deploy, also with a database that was
+provisioned beforehand), the two probes of chesslab's own database are not run
+at all and answer "no users" and "pending": nobody can run as that user yet. "Pending" is an answer;
+a crash is not, and it must not schedule the migration, the user update or the
+upsert it gates.
+
+## Root writes in the service's home
+
+chesslab is the pilot of
+[root writes in service homes](../plans/root-writes-in-service-homes.md): the
+sync, the directories below the home and all commands and probes run as the
+service user. Still written by root into the service's directories, through
+`secret_file`: `.env` and the users stamp (step 3 of that plan moves them).
+
+### `verify_only`
+
+`verify_only=True` is stage A of the pilot's rollout. The deploy then queues
+only read-only operations:
+
+| Operation | What it checks |
+|---|---|
+| Check the path to /home/chesslab | every ancestor is a real root-owned directory closed to group and others; the home is a real directory of the service user |
+| Audit ownership below the chesslab home | nothing in `site` or `data` has another owner or group, and no directory is setgid |
+| Show the identity of chesslab | `runuser -u chesslab -- id`, the credentials every command gets |
+| Check chesslab database | as in a normal deploy |
+
+and decides while planning, with the predicates a normal deploy uses, that
+nothing is pending: `site` and `data` are the service's own directories with
+mode `0755` (a symlink or a foreign owner stops the run as it stops a deploy),
+the sync's dry run (as the service user) itemizes no change, the venv has an
+interpreter, the migrations are current, the users and their stamp match the
+secrets. The dry run is asked directly, not through the sync operation: no
+operation of such a run can transfer anything, whatever changes on the host
+while it executes. Anything pending, or a failing probe, stops the
+run with `verify_only: chesslab is not converged: ...` before any operation.
+No account, directory, package, dependency, `.env`, migration, unit, route,
+wiring or stamp step exists in such a run, and the neighbours are not asked.
+
+### What a converged run reports
+
+pyinfra counts every shell command as "changed". On a converged host these
+read-only operations run and nothing else: the port preflight, the path
+check, the database check, the certifi/pip trust check and the `/healthz`
+check. Listed as conditional (decided while executing, "No changes" when the
+condition is false): the dependency sync, the migrations, the daemon reload
+and the restarts of chesslab and Traefik.
 
 ## Parity with the role and playbook
 

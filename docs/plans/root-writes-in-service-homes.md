@@ -1,11 +1,10 @@
 # Root writes in service homes
 
-Status: design, 2026-11-24. Nothing here is rolled out. The first conversion
-(chesslab) follows as a separate code change; its implementation and its
-evidence (unit tests and the smoke run with the redirect case described under
-"Evidence the pilot change must bring") are pending until that change says
-otherwise. Every rollout step below is a class-B live change and needs its own
-window.
+Status: design, 2026-11-24. Nothing here is rolled out. Step 0 and the code of
+step 1 (chesslab) are merged; the evidence listed under "Evidence the pilot
+change must bring" is recorded in `docs/services/chesslab.md` and the tests it
+names. Every rollout step below is a class-B live change and needs its own
+window and its own plan review.
 
 ## Problem
 
@@ -157,7 +156,9 @@ cannot know that the name still means what the deploy meant.
 
 ### 1. Code sync as the service user
 
-`sync_tree` gets `run_as`. The controller still connects as root, but the
+`sync_tree` gets `run_as` (implemented for the pilot as the separate
+operation `sync_tree_as_user`, see open decision 5). The controller still
+connects as root, but the
 remote side of both the dry run and the real run is
 
 ```
@@ -368,7 +369,7 @@ review:
 
 | Step | Service(s) | Host | Notes |
 |---|---|---|---|
-| 0 | helpers `sync_tree(run_as)`, `system_user(directories_as_user)`, commands entering their directory as the user | none | separate code change; no deploy uses them until its service converts |
+| 0 | the building blocks of sections 1 and 2 (`ops_deploy.services._service_home`: `sync_tree_as_user`, `user_directories`, `as_user`) | none | merged with the pilot's code; no other deploy uses them until its service converts |
 | 1 | chesslab: sync, directories, probes | macmini | pilot, class 1; separate code change, then its window |
 | 2 | archive: the same | macmini | class 1 |
 | 3 | `user_file` and its siblings, the installer's ancestor check, the copy step, lint test; environment files and stamps out of the homes (section 4), first for chesslab and archive | none, then macmini | code, then one class-B change per service because the unit changes and the service restarts |
@@ -658,3 +659,10 @@ One rule decides, in this order:
 4. Whether macOS services are to be covered by the same invariant. They run
    in the owner's account, so a compromised service there already has the
    owner's rights; the proposal is to leave them out.
+5. The size cap of the shared layer. Sections 1 and 2 describe the sync and
+   the directories as parameters of `sync_tree` and `system_user`. The shared
+   layer is at 1,699 of 1,700 code lines, so the pilot implements them as
+   separate functions in `ops_deploy.services._service_home` (about 110 code
+   lines), with the same behaviour. Moving them into `sync_tree` and
+   `system_user`, as written above, needs the cap raised by about that much;
+   leaving them where they are needs no decision.

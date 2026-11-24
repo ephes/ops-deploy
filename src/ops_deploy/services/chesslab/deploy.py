@@ -22,9 +22,9 @@ from typing import Annotated, ClassVar
 import jinja2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictInt, field_validator
 from pyinfra import host
-from pyinfra.api import deploy
+from pyinfra.api import OperationError, deploy
 from pyinfra.api.operation import OperationMeta
-from pyinfra.facts.server import Command
+from pyinfra.facts.server import Command, Users
 from pyinfra.operations import apt, server
 
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
@@ -39,14 +39,22 @@ from ops_deploy.helpers import (
     system_user,
     systemd_unit,
     traefik_route,
-    uv_sync,
 )
-from ops_deploy.helpers.probes import last_line, migrations_state, probe, verify_probe, when_present
-from ops_deploy.helpers.python import _as_user
+from ops_deploy.helpers.probes import last_line, migrations_state, probe, when_present
 from ops_deploy.helpers.python_security import require_lock_floors, verify_trust
 from ops_deploy.helpers.traefik import _MIDDLEWARE, Hostname
-from ops_deploy.ops import secret_file, secret_stdin, sync_tree
+from ops_deploy.ops import secret_file, secret_stdin
 from ops_deploy.services._echoport import TARGET_SCRIPT
+from ops_deploy.services._service_home import (
+    as_user,
+    require_plain,
+    sync_dry_run_as_user,
+    sync_tree_as_user,
+    trusted_home_check,
+    user_directories,
+    user_directories_pending,
+    uv_sync_as_user,
+)
 
 TEMPLATE_PACKAGE = "ops_deploy.services.chesslab"
 FILES = Path(__file__).parent / "files"
@@ -136,6 +144,10 @@ class ChesslabConfig(BaseServiceConfig):
     echoport_schedule: Annotated[str, Field(pattern=r"^[0-9*/,\- ]+$")] = "50 2 * * *"
     echoport_update_schedule: bool = False
     nyxmon_check: bool = False
+    # Queue nothing that changes the host: only the read-only checks, the
+    # sync's dry run and the convergence probes, all of which must report a
+    # converged host. Stage A of docs/plans/root-writes-in-service-homes.md.
+    verify_only: bool = False
 
     @field_validator("source_path")
     @classmethod
@@ -277,16 +289,45 @@ def _stdin_env(env: dict[str, str]) -> SecretContent:
 _READ_ENV = 'while IFS= read -r line && [ -n "$line" ]; do export "$line"; done'
 
 
+class ProbeFailed(OperationError):
+    """A probe could not answer. Not the same as "work is pending": the deploy stops while planning."""
+
+
+def _answer(state: str | None, name: str) -> str:
+    """``state`` of a strict probe, or stop: a failed probe must not schedule the step it gates.
+
+    The shared :func:`probe` logs a failure and lets the caller run the gated
+    step. For chesslab that would turn an unreadable database (or an
+    unreachable neighbour) into a migration, a user update or an upsert.
+    """
+
+    if state is None:
+        raise ProbeFailed(f"probe failed: {name}; nothing was changed")
+    return state
+
+
+def _probe_as_service(cfg: ChesslabConfig, command: str, *, name: str, no_account: str) -> str:
+    """A strict probe that runs as the service user; ``no_account`` while that account does not exist.
+
+    On a first deploy the database may already be provisioned while the
+    account is still to be created by this run: ``runuser`` would fail, and
+    that is the state "nothing there yet", not a broken probe.
+    """
+
+    if cfg.user not in host.get_fact(Users):
+        return no_account
+    return _answer(probe(command, name=name), name).strip()
+
+
 def _site_shell(cfg: ChesslabConfig, script: str) -> str:
-    shell = _as_user(cfg.user, cfg.home, {}, ["sh", "-c", script])
-    return f"cd {shlex.quote(str(cfg.site_path))} && {shell}"
+    return as_user(cfg.user, cfg.home, {}, ["sh", "-c", script], cwd=cfg.site_path)
 
 
 def _database_check(cfg: ChesslabConfig) -> OperationMeta:
     """The role's "Verify chesslab database is available to service user"."""
 
     db = shlex.quote(str(cfg.db_path))
-    test = _as_user(
+    test = as_user(
         cfg.user,
         cfg.home,
         {},
@@ -353,7 +394,9 @@ def _users_probe(cfg: ChesslabConfig) -> str:
     )
 
     def sqlite(statement: str) -> str:
-        return shlex.join(["sqlite3", "-readonly", "-separator", "|", str(cfg.db_path), statement])
+        # ``-init /dev/null``: as the service user the shell would run that account's ~/.sqliterc.
+        argv = ["sqlite3", "-readonly", "-init", "/dev/null", "-separator", "|", str(cfg.db_path), statement]
+        return shlex.join(argv)
 
     tables = "select count(*) from sqlite_master where type = 'table' and name in ('auth_user', 'accounts_profile')"
     digest = 'while IFS= read -r row; do printf %s "$row" | sha256sum | cut -c1-64; done'
@@ -364,12 +407,46 @@ def _users_probe(cfg: ChesslabConfig) -> str:
         f't=$( {sqlite(tables)} ) || exit 1; [ "$t" = 2 ] || {{ echo none; exit 0; }}; '
         f'rows=$( {sqlite(sql)} ) || exit 1; [ -z "$rows" ] || printf \'%s\\n\' "$rows" | {digest}'
     )
+    # As the service user: a read-only connection to a WAL database may still
+    # create or touch its -shm/-wal files, and root must not do that in a
+    # directory the service owns.
+    query = as_user(cfg.user, cfg.home, {}, ["sh", "-c", rows])
     # No database yet (the check before the sync fails the run then): no users.
-    return when_present([cfg.db_path], rows, otherwise="none")
+    return when_present([cfg.db_path], query, otherwise="none")
 
 
 def _users_in_place(rows: str | None, users: tuple[ChesslabUser, ...]) -> bool:
     return rows is not None and {_row_digest(u.username, u.owner) for u in users} <= set(rows.split())
+
+
+# The stamp is root's (0600) but lies in the service's home, where the service
+# could put a FIFO or a symlink in its place: open without following or
+# blocking, and accept only a small regular file of root's with mode 0600.
+# Anything else reads as "no stamp".
+_READ_STAMP = (
+    "import os, stat, sys\n"
+    "try:\n"
+    "    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)\n"
+    "except OSError:\n"
+    "    sys.exit(0)\n"
+    "info = os.fstat(fd)\n"
+    "if stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600 "
+    "and info.st_size <= 256:\n"
+    "    sys.stdout.write(os.read(fd, 256).decode('ascii', 'replace'))\n"
+)
+
+
+def _read_stamp(cfg: ChesslabConfig) -> str:
+    command = shlex.join(["python3", "-I", "-c", _READ_STAMP, str(cfg.home / USERS_STAMP)])
+    return str(host.get_fact(Command, command=command) or "")
+
+
+def _users_converged(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[ChesslabUser, ...]) -> bool:
+    """No user needs ``ensure_admin``: the stamp matches the secrets and every row is in place."""
+
+    stamp = _users_stamp(cfg, secrets, users)
+    rows = _probe_as_service(cfg, _users_probe(cfg), name="chesslab app users", no_account="none")
+    return _read_stamp(cfg).strip() == stamp.strip() and _users_in_place(rows, users)
 
 
 def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[ChesslabUser, ...]) -> None:
@@ -382,10 +459,7 @@ def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[Chess
 
     stamp_path = cfg.home / USERS_STAMP
     stamp = _users_stamp(cfg, secrets, users)
-    current = host.get_fact(Command, command=f"cat {shlex.quote(str(stamp_path))} 2>/dev/null || true") or ""
-    check = _users_probe(cfg)
-    rows = probe(check, name="chesslab app users")
-    if current.strip() == stamp.strip() and _users_in_place(rows, users):
+    if _users_converged(cfg, secrets, users):
         return
     env = django_environment(cfg, secrets)
     # User names travel on stdin with the password and are handed to the
@@ -413,8 +487,22 @@ def _ensure_users(cfg: ChesslabConfig, secrets: SecretValues, users: tuple[Chess
     secret_file(
         name="Record chesslab app users", path=stamp_path, content=SecretContent(stamp), user="root", group="root"
     )
-    if rows is None:
-        verify_probe(check, name="chesslab app users")
+
+
+# ``migrate --check --plan`` on a read-only connection (SQLite URI ``mode=ro``):
+# Django's normal connection can checkpoint the log or roll back a hot journal
+# just by reading. A database that needs that fails the probe instead.
+_MIGRATE_CHECK = (
+    "import urllib.parse\n"
+    "from django.conf import settings\n"
+    'db = settings.DATABASES["default"]\n'
+    'db["NAME"] = "file:" + urllib.parse.quote(str(db["NAME"])) + "?mode=ro"\n'
+    'db["OPTIONS"] = {**db.get("OPTIONS", {}), "uri": True}\n'
+    "import django\n"
+    "django.setup()\n"
+    "from django.core.management import call_command\n"
+    'call_command("migrate", check_unapplied=True, plan=True)\n'
+)
 
 
 def _migrations_probe(cfg: ChesslabConfig) -> str:
@@ -424,9 +512,10 @@ def _migrations_probe(cfg: ChesslabConfig) -> str:
         "DJANGO_SETTINGS_MODULE": cfg.django_settings_module,
         "CHESSLAB_DEBUG": "true",
         "CHESSLAB_DB_PATH": str(cfg.db_path),
+        "PYTHONDONTWRITEBYTECODE": "1",
     }
-    argv = [str(cfg.venv_bin / "python"), "-m", "django", "migrate", "--check", "--plan"]
-    plan = f"cd {shlex.quote(str(cfg.site_path))} && {_as_user(cfg.user, cfg.home, env, argv)}"
+    argv = [str(cfg.venv_bin / "python"), "-c", _MIGRATE_CHECK]
+    plan = as_user(cfg.user, cfg.home, env, argv, cwd=cfg.site_path)
     return when_present([cfg.venv_bin / "python", cfg.db_path], migrations_state(plan), otherwise="pending")
 
 
@@ -434,18 +523,14 @@ def _migrate(cfg: ChesslabConfig, secrets: SecretValues, when_changed: list[Oper
     """Run migrations after a code or dependency change, or while any are unapplied
     (also after a failed run whose sync already happened)."""
 
-    check = _migrations_probe(cfg)
-    state = probe(check, name="chesslab migrations")
+    state = _probe_as_service(cfg, _migrations_probe(cfg), name="chesslab migrations", no_account="pending")
     argv = [str(cfg.venv_bin / "python"), "-m", "django", "migrate", "--noinput"]
-    migrate = secret_stdin(
+    return secret_stdin(
         name="Run chesslab migrations",
         command=_site_shell(cfg, f"{_READ_ENV}; exec {shlex.join(argv)}"),
         content=_stdin_env(django_environment(cfg, secrets)),
         _if=lambda: state != "current" or any(meta.did_change() for meta in when_changed),
     )
-    if state is None:
-        verify_probe(check, name="chesslab migrations", expect="current")
-    return migrate
 
 
 def _health_check(cfg: ChesslabConfig) -> OperationMeta:
@@ -471,8 +556,7 @@ def _manage_shell(owner: str, script: str, params: dict[str, object], *, env_fil
     run = 'exec .venv/bin/python manage.py shell -c "$1"'
     if env_file:
         run = f"set -a; . ./.env; set +a; {run}"
-    shell = _as_user(owner, site.parent, {}, ["sh", "-c", run, "sh", code])
-    return f"cd {shlex.quote(str(site))} && {shell}"
+    return as_user(owner, site.parent, {}, ["sh", "-c", run, "sh", code], cwd=site)
 
 
 def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, env_file: bool) -> None:
@@ -482,8 +566,8 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
     run_check = _manage_shell(owner, script, {**params, "mode": "check"}, env_file=env_file)
     # Without the service the step below fails the run with a message.
     check = when_present([f"/home/{owner}/site/manage.py"], last_line(run_check), otherwise="missing")
-    state = probe(check, name=name)
-    if (state or "").strip() == "unchanged":
+    state = _answer(probe(check, name=name), name)
+    if state.strip() == "unchanged":
         return
     missing = f"{owner.capitalize()} must be deployed on this host before chesslab can be wired to it"
     server.shell(
@@ -493,8 +577,6 @@ def _wiring(name: str, owner: str, script: str, params: dict[str, object], *, en
             _manage_shell(owner, script, {**params, "mode": "apply"}, env_file=env_file),
         ],
     )
-    if state is None:
-        verify_probe(check, name=name, expect="unchanged")
 
 
 def _operations_wiring(cfg: ChesslabConfig) -> None:
@@ -525,6 +607,80 @@ def _operations_wiring(cfg: ChesslabConfig) -> None:
         )
 
 
+def _sync(cfg: ChesslabConfig, rsync: RsyncRunner) -> OperationMeta:
+    # The remote rsync runs as the service user: root never writes into the site by path.
+    return sync_tree_as_user(
+        name="Sync chesslab source",
+        src=cfg.source_path,
+        dest=cfg.site_path,
+        user=cfg.user,
+        excludes=SOURCE_EXCLUDES,
+        runner=rsync,
+    )
+
+
+def _ownership_audit(cfg: ChesslabConfig) -> OperationMeta:
+    """Read-only: everything in the site and the data directory is the service's.
+
+    Without ``--chown`` a new file takes the group of a setgid directory, so
+    those count as well.
+    """
+
+    # Names and paths become words of a root shell command: nothing a shell would read.
+    require_plain(cfg.user, cfg.site_path, cfg.data_path)
+    require_plain(cfg.group)
+    script = (
+        'user=$1; group=$2; shift 2; out=$(find "$@" -xdev '
+        '\\( ! -user "$user" -o ! -group "$group" -o -type d -perm -2000 \\) -print) || exit 1; '
+        '[ -z "$out" ] || { echo "not owned by the service, or a setgid directory:" >&2; '
+        "printf '%s\\n' \"$out\" | head -n 20 >&2; exit 1; }"
+    )
+    argv = ["sh", "-c", script, "sh", cfg.user, cfg.group, str(cfg.site_path), str(cfg.data_path)]
+    return mark_read_only(server.shell(name="Audit ownership below the chesslab home", commands=[shlex.join(argv)]))
+
+
+def _identity(cfg: ChesslabConfig) -> OperationMeta:
+    """Read-only: the credentials every command of the deploy gets through ``runuser``."""
+
+    command = as_user(cfg.user, cfg.home, {}, ["id"])
+    return mark_read_only(server.shell(name=f"Show the identity of {cfg.user}", commands=[command]))
+
+
+def _verify_only(
+    cfg: ChesslabConfig, secrets: SecretValues, users: tuple[ChesslabUser, ...], rsync: RsyncRunner
+) -> None:
+    """Stage A of the conversion: prove the host is converged without queuing a change.
+
+    Only read-only operations are queued. The sync's dry run and the deploy's
+    own convergence predicates must all say "nothing to do"; anything else
+    stops while planning. No account, directory, package, dependency, ``.env``,
+    migration, unit, route, wiring or stamp step exists in this run.
+    """
+
+    # The predicates of a normal deploy, read-only; they refuse what it refuses (a symlink, a foreign owner).
+    pending = user_directories_pending(cfg.user, cfg.group, cfg.home, [cfg.site_path, cfg.data_path])
+    trusted_home_check(cfg.user, cfg.home)
+    _ownership_audit(cfg)
+    _identity(cfg)
+    _database_check(cfg)
+    require_lock_floors(cfg.source_path, "chesslab source")
+    # A dry run asked now, not the sync operation: nothing queued here can ever transfer.
+    itemized = sync_dry_run_as_user(cfg.source_path, cfg.site_path, cfg.user, SOURCE_EXCLUDES, rsync)
+    if itemized is None or itemized:
+        pending.append("the source differs from the site (or the account or the site is missing)")
+    interpreter = shlex.quote(str(cfg.venv_bin / "python"))
+    # The same test uv_sync uses to decide that a sync is needed.
+    if host.get_fact(Command, command=f"test -x {interpreter} && echo present || true") != "present":
+        pending.append("the virtual environment has no interpreter")
+    state = _probe_as_service(cfg, _migrations_probe(cfg), name="chesslab migrations", no_account="pending")
+    if state != "current":
+        pending.append("migrations are not current")
+    if not _users_converged(cfg, secrets, users):
+        pending.append("the application users or their stamp need an update")
+    if pending:
+        raise OperationError("verify_only: chesslab is not converged: " + "; ".join(pending))
+
+
 @deploy("Deploy chesslab")
 def deploy_chesslab(cfg: ChesslabConfig, secrets: SecretValues, rsync: RsyncRunner = subprocess_rsync_runner) -> None:
     secrets.require(cfg.required_secret_keys)
@@ -532,28 +688,22 @@ def deploy_chesslab(cfg: ChesslabConfig, secrets: SecretValues, rsync: RsyncRunn
     env_content = render_env(cfg, secrets)
     route = traefik_config(cfg, secrets)
 
+    if cfg.verify_only:
+        _verify_only(cfg, secrets, users, rsync)
+        return
+
     _port_preflight(cfg)
-    system_user(
-        cfg.user,
-        group=cfg.group,
-        home=cfg.home,
-        shell="/usr/sbin/nologin",
-        directories=[cfg.site_path, cfg.data_path],
-    )
+    # Root creates only the home, under a path nobody else can change; site
+    # and data are made by the service user (docs/plans/root-writes-in-service-homes.md).
+    trusted_home_check(cfg.user, cfg.home)
+    system_user(cfg.user, group=cfg.group, home=cfg.home, shell="/usr/sbin/nologin")
+    user_directories(cfg.user, cfg.group, cfg.home, [cfg.site_path, cfg.data_path])
     _database_check(cfg)
     # A stale certifi/pip lock fails here, before any operation.
     require_lock_floors(cfg.source_path, "chesslab source")
-    code = sync_tree(
-        name="Sync chesslab source",
-        src=cfg.source_path,
-        dest=cfg.site_path,
-        excludes=SOURCE_EXCLUDES,
-        runner=rsync,
-        user=cfg.user,
-        group=cfg.group,
-    )
+    code = _sync(cfg, rsync)
     apt.packages(name="Install chesslab runtime packages", packages=list(PACKAGES))
-    deps = uv_sync(
+    deps = uv_sync_as_user(
         cfg.site_path,
         user=cfg.user,
         home=cfg.home,

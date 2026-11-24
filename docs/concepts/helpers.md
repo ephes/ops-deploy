@@ -472,3 +472,96 @@ roles. The Traefik YAML is pinned by `tests/test_traefik_route_golden.py`.
    [`deploy_postgres_install`](../infra.md) here. A changed password is
    set as a SCRAM verifier computed on the controller (the role sends the
    password).
+
+## Service homes: `ops_deploy.services._service_home`
+
+A deploy connects as root, and whatever root writes, deletes or re-owns by
+path below a directory the service user can write, a compromised service can
+point somewhere else
+([root writes in service homes](../plans/root-writes-in-service-homes.md)).
+These building blocks do that work as the service user. They live with the
+services and not in `helpers`/`ops`: the shared layer is at its
+[size cap](../development.md#size-cap-on-the-shared-layer) (1,699 of 1,700
+code lines), and raising it is an owner decision. chesslab is the first user;
+every other service still uses `sync_tree(user=...)`, `uv_sync` and
+`system_user(directories=...)`. Linux only (`runuser`), over a root connection.
+
+### `as_user(user, home, env, argv, *, cwd=None)`
+
+The command string
+
+```
+cd / && runuser -u <user> -- env HOME=<home> K=V ... [sh -c 'cd "$1" && shift && exec "$@"' sh <cwd>] <argv>
+```
+
+`cd <dir> && runuser ...` resolves the directory as root and hands it to the
+unprivileged program as its working directory, also where the user could not
+have reached it; with `cwd` the user enters the directory itself, and `cd /`
+leaves root's own directory behind. `runuser` without `-g` gives the process
+the account's primary group and its supplementary groups, as a unit's `User=`
+does (with `-g`, util-linux sets an explicit group list instead).
+
+### `trusted_home_check(user, home)` and `user_directories(user, group, home, directories, *, mode="0755")`
+
+```python
+trusted_home_check(cfg.user, cfg.home)
+system_user(cfg.user, group=cfg.group, home=cfg.home)  # root makes only the home
+user_directories(cfg.user, cfg.group, cfg.home, [cfg.site_path, cfg.data_path])
+```
+
+- `trusted_home_check` is a read-only operation: every ancestor of the home
+  from `/` down must be a real directory (no symlink) owned by root and not
+  writable by group or others, and an existing home a real directory of the
+  user. Root's path-based `mkdir`/`chown` of the home is only safe under such
+  a chain.
+- `user_directories` creates each directory as the user
+  (`cd / && runuser -u <user> -- mkdir -p -m <mode> <path>`); a wrong mode is
+  corrected by the user (`chmod`). A directory that is a symlink, not a
+  directory, or owned by another user or group fails the deploy while it
+  plans: root does not repair it by path. Every directory must lie below the
+  home, and `group` must be the account's primary group, because that is the
+  group of what the user creates.
+- Names and paths must be plain (letters, digits, `_ . @ + -`);
+  `require_plain(name, *paths)` is the check, for callers that put a name or
+  path into a command of their own.
+- `user_directories_pending(...)` (same arguments) answers read-only what
+  `user_directories` would do: one line per directory it would make or
+  re-mode, and "the account does not exist". It applies the same refusals and
+  queues nothing.
+
+### `sync_tree_as_user(src, dest, user, excludes=(), runner=...)`
+
+`sync_tree` (same flags, excludes, checksum comparison, one cached dry run)
+whose remote side, for the dry run and for the transfer, is
+
+```
+cd / && runuser -u <user> -- sh -c 'test -d "$1" && test ! -L "$1" && shift && exec rsync "$@"' rsync <dest> --server ...
+```
+
+- The receiver has the account's UID and groups. Wherever a path leads it, it
+  can only change what that user may change: the UID is the boundary. There is
+  no `--chown`; the files are the user's because the user creates them, with
+  the user's primary group (or the group of a setgid directory).
+- The guard is a correctness check, not the boundary: rsync would otherwise
+  create a missing last component, and a destination that is a symlink is
+  refused when the guard looks.
+- A destination that exists and is not a directory fails while planning.
+- First deploy: while the account or the destination does not exist, nobody
+  can dry-run as the user. The operation then counts as a change and transfers
+  at its place in the order, after the operations that create both; the guard
+  fails it if the directory is still missing.
+- The remote command is logged on every run
+  (`sync_tree remote command: ...`), because the runner captures rsync's
+  output and prints nothing on success.
+
+`sync_dry_run_as_user(src, dest, user, excludes=(), runner=...)` runs only the
+dry run, while planning, and returns its itemized lines (`None` while the
+account or the destination does not exist). It is not an operation and queues
+nothing, so nothing pyinfra re-evaluates later can become a transfer; a
+verify-only run uses it.
+
+### `uv_sync_as_user(project_dir, *, user, home, venv, python, args, when_changed)`
+
+`uv_sync` with the user entering `project_dir` (`as_user(..., cwd=project_dir)`)
+and the same gate: one of `when_changed` changed, or `<venv>/bin/python` is not
+executable.
