@@ -5,16 +5,19 @@ from typing import Any
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from pyinfra.api import DeployError
 
 from ops_deploy.helpers.postgres import scram_verifier, state_command
 from ops_deploy.infra import DatabaseSpec, ExtensionSpec, PostgresInstallConfig, deploy_postgres_install
 from ops_deploy.infra._common import deb822_sources
-from ops_deploy.infra.postgres_install import render_conf_d, render_pg_hba
+from ops_deploy.infra.postgres_install import Cluster, clusters_named, refuse_other_major, render_conf_d, render_pg_hba
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.fakehost import LINUX
 
 PASSWORD = "postgres-fixture-password"
+# The cluster probe of deploy_postgres_install (postgres_install.cluster_probe).
+PROBE = "command -v pg_lsclusters"
 APP = DatabaseSpec(name="app", owner="app", password=SecretStr(PASSWORD))
 CFG = PostgresInstallConfig()
 CONF_DIR = "/etc/postgresql/17/main"
@@ -63,10 +66,14 @@ def converged(cfg: PostgresInstallConfig = CFG) -> dict[str, Any]:
         state_command("app", "app", "postgres"): [stored_role(PASSWORD), "db|app", "schema|app"],
         "pg_extension": ["1"],
         "stat -c %a ": ["755"],
+        # The host's cluster on cfg's major and port.
+        PROBE: [f"{cfg.version} {cfg.cluster_name} {cfg.port} online postgres /d /l", "PG_LSCLUSTERS_OK"],
     }
 
 
 def run(responses: dict[str, Any], cfg: PostgresInstallConfig = CFG, **kwargs: Any) -> FakeRun:
+    # Without a probe answer: a fresh host without PostgreSQL tooling.
+    responses = {**responses, PROBE: responses.get(PROBE, ["PG_LSCLUSTERS_ABSENT"])}
     result = run_deploy_fake(deploy_postgres_install, cfg, responses=responses, **kwargs)
     assert result.succeeded, result.error
     return result
@@ -172,7 +179,9 @@ def test_refuses_non_debian_and_unknown_codename() -> None:
     assert "Debian-family" in str(no_apt.error)
 
     unknown = run_deploy_fake(
-        deploy_postgres_install, CFG, responses={**LINUX, "command -v apt-get": ["/usr/bin/apt-get"]}
+        deploy_postgres_install,
+        CFG,
+        responses={**LINUX, "command -v apt-get": ["/usr/bin/apt-get"], PROBE: ["PG_LSCLUSTERS_ABSENT"]},
     )
     assert not unknown.succeeded
     assert "codename" in str(unknown.error)
@@ -261,3 +270,103 @@ def test_unreachable_server_while_planning_is_planned_as_new() -> None:
     # The probe swallows errors (server stopped or not installed yet); creates
     # are planned, and a CREATE of something that exists would fail, not alter.
     assert state_command("app", "app", "postgres").endswith("2>/dev/null || true")
+
+
+LISTING_17 = "17 main 5432 online postgres /var/lib/postgresql/17/main /var/log/postgresql/postgresql-17-main.log"
+ROW_17_DOWN = "17 main 5433 down   postgres /var/lib/postgresql/17/main /var/log/postgresql/postgresql-17-main.log"
+ROW_19 = "19 main 5432 online postgres /var/lib/postgresql/19/main /var/log/postgresql/postgresql-19-main.log"
+ROW_19_EMPTY = "19 main 5433 online postgres /var/lib/postgresql/19/main /var/log/postgresql/postgresql-19-main.log"
+OK = "PG_LSCLUSTERS_OK"
+
+
+def probe(*rows: str) -> list[str]:
+    return [*rows, OK]
+
+
+def test_clusters_named_reads_the_probe() -> None:
+    assert clusters_named("\n".join(probe(ROW_17_DOWN, ROW_19)), "main") == [
+        Cluster("17", 5433, False),
+        Cluster("19", 5432, True),
+    ]
+    assert clusters_named("\n".join(probe(ROW_19)), "other") == []
+    assert clusters_named(OK, "main") == []
+    assert clusters_named("PG_LSCLUSTERS_ABSENT", "main") == []
+    assert clusters_named("9.6 main 5432 online postgres /d /l\n" + OK, "main") == [Cluster("9.6", 5432, True)]
+    # Another cluster without a port does not block; listed directories are fine.
+    assert clusters_named(f"16 old <unknown> down postgres /d /l\n{ROW_19}\n{OK}", "main") == [
+        Cluster("19", 5432, True)
+    ]
+    assert clusters_named(f"{ROW_19}\n{OK}\nLEFTOVER /var/lib/postgresql/19/main", "main") == [
+        Cluster("19", 5432, True)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("listing", "message"),
+    [
+        ("PG_LSCLUSTERS_FAILED", "pg_lsclusters failed"),
+        ("", "pg_lsclusters failed"),
+        ("19 mainPG_LSCLUSTERS_FAILED", "pg_lsclusters failed"),
+        (f"19 main\n{OK}", "unexpected pg_lsclusters output"),
+        ("PG_LSCLUSTERS_ABSENT\nLEFTOVER /etc/postgresql/17/main", "cluster directories remain"),
+        (f"{OK}\nLEFTOVER /var/lib/postgresql/17/main", "does not list"),
+        (f"19 main <unknown> down postgres /d /l\n{OK}", "has no port"),
+    ],
+)
+def test_probe_failures_are_refused(listing: str, message: str) -> None:
+    with pytest.raises(DeployError, match=message):
+        clusters_named(listing, "main")
+
+
+def test_existing_cluster_on_its_major_passes() -> None:
+    result = run({**converged(), PROBE: probe(LISTING_17)}, databases=(APP,))
+
+    assert result.changed_ops == []
+
+
+def test_failing_probe_stops_before_any_change() -> None:
+    result = run_deploy_fake(deploy_postgres_install, CFG, responses={**converged(), PROBE: ["PG_LSCLUSTERS_FAILED"]})
+
+    assert not result.succeeded
+    assert "pg_lsclusters failed" in str(result.error)
+    assert not result.executed_commands
+
+
+def test_version_without_its_cluster_is_refused_before_any_change() -> None:
+    # 19 configured while the data is still in 17/main: would configure an empty 19/main.
+    cfg = PostgresInstallConfig(version="19")
+    result = run_deploy_fake(deploy_postgres_install, cfg, responses={**converged(), PROBE: probe(LISTING_17)})
+
+    assert not result.succeeded
+    assert "upgrade it with pg_upgradecluster" in str(result.error)
+    assert not result.executed_commands
+
+
+def test_old_major_of_an_upgrade_is_refused() -> None:
+    # 17 configured after the upgrade to 19: would configure and start the stopped 17/main.
+    result = run_deploy_fake(deploy_postgres_install, CFG, responses={**converged(), PROBE: probe(ROW_17_DOWN, ROW_19)})
+
+    assert not result.succeeded
+    assert "deploy version 19" in str(result.error)
+    assert not result.executed_commands
+
+
+@pytest.mark.parametrize(
+    ("version", "clusters", "message"),
+    [
+        ("17", [Cluster("19", 5432, True)], "deploy version 19"),  # old cluster already dropped
+        ("19", [Cluster("9.6", 5432, True)], "upgrade it with pg_upgradecluster"),
+        # The packages' auto-created empty 19/main on 5433 beside the live 17/main.
+        ("19", [Cluster("17", 5432, True), Cluster("19", 5433, True)], "finish the upgrade"),
+        ("19", [Cluster("17", 5433, True), Cluster("19", 5432, True)], "finish the upgrade"),
+        ("17", [Cluster("9.6", 5433, False), Cluster("17", 5432, True)], None),
+        ("19", [Cluster("17", 5433, False), Cluster("19", 5432, True)], None),
+    ],
+)
+def test_refuse_other_major(version: str, clusters: list[Cluster], message: str | None) -> None:
+    cfg = PostgresInstallConfig(version=version)
+    if message is None:
+        refuse_other_major(cfg, clusters)
+    else:
+        with pytest.raises(DeployError, match=message):
+            refuse_other_major(cfg, clusters)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import shlex
 from collections.abc import Generator, Mapping
+from dataclasses import dataclass
 from io import StringIO
 from typing import Annotated, Literal
 
@@ -199,6 +200,114 @@ def missing_packages(packages: tuple[str, ...]) -> list[str]:
     return [package for package in packages if package not in have]
 
 
+# The probe frames its result: rows of `pg_lsclusters -h` (captured, so never a
+# terminal and never colored) followed by PG_LSCLUSTERS_OK, or
+# PG_LSCLUSTERS_FAILED, or, without the tool, PG_LSCLUSTERS_ABSENT; then, in
+# every case, one LEFTOVER line per directory of a cluster of that name on disk.
+def cluster_probe(cluster_name: str) -> str:
+    dirs = f"/etc/postgresql/*/{cluster_name} /var/lib/postgresql/*/{cluster_name}"
+    return (
+        "if command -v pg_lsclusters >/dev/null 2>&1; then"
+        " if out=$(pg_lsclusters -h); then printf '%s\\nPG_LSCLUSTERS_OK\\n' \"$out\";"
+        " else echo PG_LSCLUSTERS_FAILED; fi;"
+        " else echo PG_LSCLUSTERS_ABSENT; fi;"
+        f' for d in {dirs}; do [ -e "$d" ] && echo "LEFTOVER $d"; done; true'
+    )
+
+
+@dataclass(frozen=True)
+class Cluster:
+    version: str
+    port: int
+    online: bool
+
+
+def _major_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def clusters_named(listing: str, cluster_name: str) -> list[Cluster]:
+    """The clusters called ``cluster_name`` in the probe's output (none on a fresh host)."""
+
+    lines = [line.strip() for line in listing.splitlines() if line.strip()]
+    leftovers = [line.removeprefix("LEFTOVER ") for line in lines if line.startswith("LEFTOVER ")]
+    lines = [line for line in lines if not line.startswith("LEFTOVER ")]
+    # /etc/postgresql/<version>/<name> or /var/lib/postgresql/<version>/<name>
+    on_disk = {path.rstrip("/").split("/")[-2] for path in leftovers}
+    if lines == ["PG_LSCLUSTERS_ABSENT"]:
+        if leftovers:
+            raise DeployError(
+                "postgres_install: no pg_lsclusters, but cluster directories remain ("
+                + ", ".join(leftovers)
+                + "); restore postgresql-common before deploying"
+            )
+        return []
+    if not lines or lines[-1] != "PG_LSCLUSTERS_OK":
+        raise DeployError("postgres_install: pg_lsclusters failed; cannot tell which major holds the cluster")
+    found = []
+    for line in lines[:-1]:
+        parts = line.split()
+        if len(parts) < 6 or not re.fullmatch(r"\d+(\.\d+)?", parts[0]):
+            raise DeployError("postgres_install: unexpected pg_lsclusters output")
+        if parts[1] != cluster_name:
+            continue  # another cluster; its port may legitimately read <unknown>
+        if not parts[2].isdigit():
+            raise DeployError(f"postgres_install: cluster {parts[0]}/{cluster_name} has no port ({parts[2]})")
+        found.append(Cluster(version=parts[0], port=int(parts[2]), online=parts[3].startswith("online")))
+    unlisted = sorted(on_disk - {c.version for c in found})
+    if unlisted:
+        raise DeployError(
+            f"postgres_install: directories of {', '.join(unlisted)}/{cluster_name} exist that pg_lsclusters"
+            " does not list; repair or remove them before deploying"
+        )
+    return found
+
+
+def refuse_other_major(cfg: PostgresInstallConfig, clusters: list[Cluster]) -> None:
+    """Refuse a deploy whose ``version`` is not the host's upgraded, serving cluster.
+
+    No cluster of that name: a fresh install, allowed. Otherwise ``version``
+    must hold the cluster, be its newest major and listen on ``cfg.port``, and
+    every older major of it must be down: after ``pg_upgradecluster`` the old
+    cluster is stopped on another port. A newer major means ``version`` is an
+    old cluster (deploy the newest); no cluster on ``version`` means the data
+    is still on an older major (upgrade first); an older major still online,
+    or ``version`` on another port, is an unfinished upgrade (for example the
+    empty ``19/main`` the packages create on 5433 beside a live ``17/main``).
+
+    This guards against an accidental deploy of the wrong major. It is not
+    proof that the data was migrated (a hand-stopped old cluster and a
+    hand-moved port pass), and it reads the configured ports of
+    ``pg_lsclusters``, not the live ones; the upgrade runbook's parity check
+    is that proof.
+    """
+
+    if not clusters:
+        return
+    name = cfg.cluster_name
+    newest = max(clusters, key=lambda c: _major_key(c.version))
+    if _major_key(cfg.version) < _major_key(newest.version):
+        raise DeployError(
+            f"postgres_install: cluster {name} already runs on PostgreSQL {newest.version};"
+            f" version {cfg.version} is older, deploy version {newest.version}"
+        )
+    own = [c for c in clusters if c.version == cfg.version]
+    if not own:
+        raise DeployError(
+            f"postgres_install: cluster {name} exists on PostgreSQL"
+            f" {', '.join(c.version for c in clusters)}, not on {cfg.version};"
+            f" upgrade it with pg_upgradecluster before deploying version {cfg.version}"
+        )
+    older_online = [c.version for c in clusters if c.version != cfg.version and c.online]
+    if own[0].port != cfg.port or older_online:
+        raise DeployError(
+            f"postgres_install: cluster {cfg.version}/{name} is on port {own[0].port}"
+            + (f" while {', '.join(older_online)}/{name} is online" if older_online else "")
+            + f"; finish the upgrade (pg_upgradecluster) so {cfg.version}/{name} serves port {cfg.port}"
+            " and older majors are down before deploying"
+        )
+
+
 def _psql(admin_user: str, database: str, port: int) -> str:
     argv = [
         "runuser",
@@ -248,6 +357,9 @@ def deploy_postgres_install(
     owners = {db.owner: db.password.get_secret_value() for db in databases}
     if any(db.password.get_secret_value() != owners[db.owner] for db in databases):
         raise DeployError("postgres_install: one owner has two different passwords")
+
+    listing = host.get_fact(Command, command=cluster_probe(cfg.cluster_name)) or ""
+    refuse_other_major(cfg, clusters_named(listing, cfg.cluster_name))
 
     if cfg.use_pgdg_repo:
         suite = f"{cfg.repo_codename or codename()}-pgdg"

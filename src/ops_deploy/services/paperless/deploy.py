@@ -108,8 +108,10 @@ def dependency_configs(
     rd = redis or RedisInstallConfig(
         bind_addresses=("127.0.0.1",), port=cfg.redis_port, requirepass_enabled=cfg.redis_requirepass_enabled
     )
-    if pg.version != "17" or pg.port != cfg.postgres_port:
-        raise ValueError("Paperless PostgreSQL dependency must match version17 and application port")
+    # The major is the host's (postgres_install refuses one that is not the
+    # newest major of its cluster); only the port must match the application.
+    if pg.port != cfg.postgres_port:
+        raise ValueError("Paperless PostgreSQL dependency must match the application port")
     if rd.port != cfg.redis_port or rd.requirepass_enabled != cfg.redis_requirepass_enabled:
         raise ValueError("Paperless Redis dependency must match application authentication and port")
     if shared_redis_password is not None and not hmac.compare_digest(

@@ -233,7 +233,9 @@ contents were inspected.
 ## Deployment and recovery
 
 Existing Python trust floors are checked before dependencies change. The
-deployment reuses the uv, Redis and PostgreSQL17 implementations, then installs
+deployment reuses the uv, Redis and PostgreSQL implementations (PostgreSQL 17
+by default; a caller passes the host's major in `PostgresInstallConfig`, which
+`postgres_install` checks against the host's cluster), then installs
 the role's prerequisite packages without upgrading installed versions. Callers
 using shared Redis supply its independently declared password through
 `shared_redis_password`; inequality refuses before any operation. Dependency

@@ -27,6 +27,35 @@ deploy_redis_install(RedisInstallConfig(requirepass_enabled=True), SecretStr(red
 Field names follow the role variables without the role prefix; defaults are
 the role defaults unless noted.
 
+### Major version and existing clusters
+
+Before any change the deploy reads `pg_lsclusters -h` and refuses:
+
+- `version` while `cluster_name` exists only on another major (the data is
+  still on, say, 17 and `version` is 19): it would install 19 beside the live
+  data and configure an empty `19/<cluster>`. Upgrade the cluster first
+  (`pg_upgradecluster --method=upgrade`), then deploy the new `version`.
+- `version` while a newer major holds `cluster_name` (19 after an upgrade,
+  `version` still 17, whether or not the old cluster is still there): the
+  deploy would configure and start the old one again. Deploy the newest.
+
+- `version` while its cluster is not on `port`, or an older major of it is
+  still online: an unfinished upgrade, such as the empty `19/<cluster>` the
+  packages create on 5433 beside a live `17/<cluster>`.
+- a failing `pg_lsclusters`; directories of a `<version>/<cluster>` it does not
+  list; and, without `pg_lsclusters`, any remaining cluster directory.
+
+No cluster of that name (a fresh host) installs `version` as before. The check
+guards against deploying the wrong major by accident; it is not proof that
+the data was migrated (a hand-stopped old cluster passes) and it reads the
+configured ports, not the live ones. The major upgrade itself is not part
+of this deploy. After `pg_upgradecluster`, the old cluster has `start.conf`
+`manual`, but this deploy had enabled its systemd instance
+(`postgresql@17-main`), which would still start it at boot:
+`systemctl disable postgresql@<old>-<cluster>` and check
+`systemctl is-enabled` before deploying the new `version` (which enables
+`postgresql@<new>-<cluster>`).
+
 ## The files the roles wrote
 
 Both deploys write the bytes the roles wrote before the switch: `pg_hba.conf`,
@@ -53,7 +82,7 @@ a directory).
 
 | Field | Default | |
 |---|---|---|
-| `version` | `"17"` | major version, digits only |
+| `version` | `"17"` | major version, digits only; must be the newest major of the host's `cluster_name` (see below) |
 | `cluster_name` | `main` | config in `/etc/postgresql/<version>/<cluster>` |
 | `service_name` | `postgresql` | |
 | `use_pgdg_repo` | `True` | `False` removes the `.sources` file and `/etc/apt/keyrings/<repo_name>.{asc,gpg}`, as the role's `state: absent` does |

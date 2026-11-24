@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- postgres_install: refuses before any change when `version` is not the newest
+  major of the host's `cluster_name` in `pg_lsclusters` (the cluster still on an
+  older major: upgrade it first; a newer major holds it: deploy that one), when
+  its cluster is not on `port` or an older major is still online, when
+  `pg_lsclusters` fails, and when cluster directories exist that it does not list. paperless no longer forces PostgreSQL 17: its
+  dependency takes the host's major, only the port must match the application.
+  Lets a host move its cluster to PostgreSQL 19 with `pg_upgradecluster` and
+  then deploy `version="19"` (ops-control `postgres_install_version`).
+
 - dns: the DDNS updater logs one line per run when nothing changed
   (`DDNS result: ... wan=<IPv4>,<IPv6>`) instead of about 13; any update,
   error or public mismatch still logs the whole run. This keeps a short

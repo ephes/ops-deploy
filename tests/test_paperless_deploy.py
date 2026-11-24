@@ -52,8 +52,11 @@ def test_original_dependency_defaults_and_custom_consistency() -> None:
     assert not rd.requirepass_enabled
     with pytest.raises(ValueError, match="authentication and port"):
         MODULE.dependency_configs(cfg, credentials(), None, RedisInstallConfig(requirepass_enabled=True), None)
-    with pytest.raises(ValueError, match="version17"):
-        MODULE.dependency_configs(cfg, credentials(), PostgresInstallConfig(version="16"), None, None)
+    # The host's major is accepted (19 after the 2026-11 upgrade); the port is not.
+    pg19, _ = MODULE.dependency_configs(cfg, credentials(), PostgresInstallConfig(version="19"), None, None)
+    assert pg19.version == "19"
+    with pytest.raises(ValueError, match="application port"):
+        MODULE.dependency_configs(cfg, credentials(), PostgresInstallConfig(port=5433), None, None)
 
 
 @pytest.mark.parametrize(("version", "expected"), [("24.04", ()), ("25.04", ("libleptonica6",)), ("13", ())])
