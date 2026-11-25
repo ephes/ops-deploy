@@ -135,6 +135,11 @@ SERVERS: dict[str, Server] = {
     ),
     "static_site": Server("services/static_site/templates/static-site-httpd.py.j2", lambda port, tmp: []),
     "obs_daily_status": Server("services/obs_daily/files/obs_status.py", lambda port, tmp: _obs_status_args(port, tmp)),
+    "voice_session_proxy": Server(
+        "services/voice_session_proxy/files/voice_session_proxy.py",
+        lambda port, tmp: [],
+        lambda port: {"VOICE_PROXY_LISTEN_PORT": str(port), "VOICE_PROXY_UPSTREAM": "http://127.0.0.1:9"},
+    ),
 }
 
 

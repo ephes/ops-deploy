@@ -1,0 +1,27 @@
+[Unit]
+Description=Voice session proxy (Home Assistant voice bridge -> OpenClaw, shared daily session)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+User={{ cfg.user }}
+Environment=VOICE_PROXY_LISTEN_HOST=127.0.0.1
+Environment=VOICE_PROXY_LISTEN_PORT={{ cfg.listen_port }}
+Environment=VOICE_PROXY_UPSTREAM={{ cfg.upstream_url }}
+Environment=VOICE_PROXY_SESSION_PREFIX={{ cfg.session_prefix }}
+Environment=VOICE_PROXY_ROLLOVER_HOUR={{ cfg.rollover_hour }}
+Environment=TZ={{ cfg.timezone }}
+ExecStart=/usr/bin/python3 -I {{ cfg.script_path }}
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
