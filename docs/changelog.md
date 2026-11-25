@@ -11,6 +11,20 @@
   reminder stayed `mute` every day in `message_tool_only` delivery mode. The
   `cron` step replaces the old form of the job.
 
+- tailscale metrics: optional NVMe health in the cached endpoint
+  (`nvme_devices`, `require_nvme_healthy`). The root collector reads each
+  listed controller's (at most eight) SMART/health log with `smartctl -j`, in
+  parallel under one 25 s deadline and each in its own transient
+  `systemd-run --scope` named per disk, so a hung reader is killed once, never
+  waited for, never holds the collector unit and is never joined by a second
+  one (the deploy installs `smartmontools`), and
+  reports Critical Warning, temperature, spare, wear,
+  media and error-log counts per disk (`storage.nvme_by_name`) and
+  `summary.nvme_healthy`; when required, `overall_ok` and the Nyxmon check
+  (a critical rule after the mdraid one) include it. Without devices the
+  output only gains `null`/empty NVMe fields; the collector script changes
+  on every host, which refreshes the cache once on its next deploy.
+
 - homeassistant: optional pinned ApexCharts card (`apexcharts_card`,
   `RomRider/apexcharts-card` v2.2.3, sha256-checked) installed as
   `config/www/apexcharts-card.js` like the Location Timeline Card; off by

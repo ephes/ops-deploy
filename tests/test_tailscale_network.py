@@ -8,6 +8,7 @@ import pwd
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -56,6 +57,11 @@ def test_latest_retains_present_policy_and_original_false_preferences() -> None:
         dict(require_default_ipv4_route=True),
         dict(warning_days=1, critical_days=3),
         dict(timer_on_calendar=""),
+        dict(nvme_devices=("/dev/nvme0n1",)),
+        dict(nvme_devices=("/dev/sda",)),
+        dict(nvme_devices=("/dev/nvme0", "/dev/nvme0")),
+        dict(nvme_devices=tuple(f"/dev/nvme{i}" for i in range(9))),
+        dict(require_nvme_healthy=True),
     ],
 )
 def test_endpoint_retains_original_filter_route_timer_threshold_admission(values: dict[str, Any]) -> None:
@@ -86,6 +92,7 @@ def test_tailscale_nyxmon_rule_order_and_optional_policy_are_exact() -> None:
         require_self_online=True,
         require_default_ipv4_route=True,
         require_mdraid_healthy=True,
+        require_nvme_healthy=True,
         notify_consecutive_failures=4,
         max_age_seconds=600,
         check_interval=300,
@@ -98,12 +105,256 @@ def test_tailscale_nyxmon_rule_order_and_optional_policy_are_exact() -> None:
         "$.summary.self_online",
         "$.summary.default_ipv4_route_present",
         "$.summary.mdraid_healthy",
+        "$.summary.nvme_healthy",
         "$.summary.key_expiry_critical_ok",
         "$.summary.key_expiry_warning_ok",
         "$.meta.age_seconds",
     ]
     assert data["notification_policy"] == {"consecutive_failures": 4}
     assert data["checks"][-1] == dict(path="$.meta.age_seconds", op="<", value=600, severity="critical")
+    assert data["checks"][4] == dict(path="$.summary.nvme_healthy", op="==", value=True, severity="critical")
+
+
+def test_nvme_rule_is_absent_unless_required() -> None:
+    row = check_row(
+        TailscaleNyxmonTarget(hostname="owned", url="http://192.0.2.20:9107/.well-known/tailscale"),
+        SecretStr("synthetic-only"),
+    )
+    data = row["data"]
+    assert isinstance(data, dict)
+    assert "$.summary.nvme_healthy" not in [check["path"] for check in data["checks"]]
+
+
+def _health_log(**overrides: int) -> dict[str, int]:
+    log = dict(
+        critical_warning=0,
+        temperature=51,
+        available_spare=68,
+        available_spare_threshold=10,
+        percentage_used=32,
+        media_errors=0,
+        num_err_log_entries=0,
+    )
+    log.update(overrides)
+    return log
+
+
+def _nvme_exporter(tmp_path: Path, reports: dict[str, Any], *, required: bool = True) -> dict[str, Any]:
+    """The rendered collector's namespace, reading ``reports`` through a fake smartctl."""
+
+    fixtures = tmp_path / "reports.json"
+    fixtures.write_text(json.dumps(reports))
+    fake = tmp_path / "smartctl"
+    fake.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        f"reports = json.load(open({str(fixtures)!r}))\n"
+        "device = sys.argv[-1]\n"
+        "if reports.get(device) == 'hang':\n"
+        "    import time; time.sleep(60)\n"
+        "if device not in reports:\n"
+        "    print('Smartctl open device: ' + device + ' failed: No such device', file=sys.stderr)\n"
+        "    sys.exit(2)\n"
+        "print(json.dumps(reports[device]))\n"
+        "sys.exit(8 if reports[device].get('smart_status', {}).get('passed') is False else 0)\n"
+    )
+    fake.chmod(0o755)
+    # Stands in for ``systemd-run --scope``: records its options, then becomes the reader.
+    launcher = tmp_path / "systemd-run"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        "args = sys.argv[1:]\n"
+        "options = []\n"
+        "while args and args[0].startswith('--'):\n"
+        "    options.append(args.pop(0))\n"
+        "unit = next(o for o in options if o.startswith('--unit='))[7:]\n"
+        f"if os.path.exists(os.path.join({str(tmp_path)!r}, 'active-' + unit)):\n"
+        "    message = 'Failed to start transient scope unit: Unit ' + unit + '.scope was already loaded'\n"
+        "    print(message, file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+        f"with open({str(tmp_path / 'scopes.log')!r}, 'a') as log:\n"
+        "    log.write(' '.join(options) + ' | ' + ' '.join(args) + '\\n')\n"
+        "try:\n"
+        "    os.execv(args[0], args)\n"
+        "except OSError as err:\n"
+        "    print('Failed to execute ' + args[0] + ': ' + str(err), file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+    )
+    launcher.chmod(0o755)
+    cfg = TailscaleMetricsConfig(
+        smartctl_bin=str(fake),
+        systemd_run_bin=str(launcher),
+        nvme_devices=("/dev/nvme0", "/dev/nvme1"),
+        require_nvme_healthy=required,
+    )
+    namespace: dict[str, Any] = {"__name__": "tailscale_exporter_under_test"}
+    exec(compile(render(cfg, "tailscale_metrics_exporter.py"), "exporter", "exec"), namespace)
+    return namespace
+
+
+def test_nvme_probe_reports_each_controller_and_healthy_summary(tmp_path: Path) -> None:
+    ns = _nvme_exporter(
+        tmp_path,
+        {
+            "/dev/nvme0": {"nvme_smart_health_information_log": _health_log()},
+            "/dev/nvme1": {"nvme_smart_health_information_log": _health_log(temperature=62, available_spare=100)},
+        },
+    )
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert (healthy, detail) == (True, "")
+    assert [entry["name"] for entry in devices] == ["nvme0", "nvme1"]
+    assert devices[0] == dict(
+        device="/dev/nvme0",
+        name="nvme0",
+        healthy=True,
+        error="",
+        critical_warning=0,
+        temperature_c=51,
+        available_spare=68,
+        available_spare_threshold=10,
+        percentage_used=32,
+        media_errors=0,
+        num_err_log_entries=0,
+    )
+    assert devices[1]["temperature_c"] == 62
+    scopes = sorted((tmp_path / "scopes.log").read_text().splitlines())
+    assert scopes == [
+        f"--scope --quiet --collect --unit=tailscale-metrics-nvme-{name} "
+        f"--description=Tailscale metrics NVMe health read {name} | "
+        f"{tmp_path / 'smartctl'} -j -H -A -d nvme /dev/{name}"
+        for name in ("nvme0", "nvme1")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("report", "problem"),
+    [
+        (
+            {"nvme_smart_health_information_log": _health_log(media_errors=3)},
+            "nvme1: critical_warning=0 media_errors=3",
+        ),
+        (
+            {"smart_status": {"passed": False}, "nvme_smart_health_information_log": _health_log(critical_warning=1)},
+            "nvme1: critical_warning=1 media_errors=0",
+        ),
+        ({"nvme_smart_health_information_log": {"critical_warning": 0}}, "nvme1: NVMe health log lacks temperature"),
+        ({"nvme_smart_health_information_log": _health_log(media_errors=True)}, "lacks media_errors"),
+        ({}, "nvme1: no NVMe health log (smartctl exit 0)"),
+    ],
+)
+def test_nvme_probe_fails_closed(tmp_path: Path, report: dict[str, Any], problem: str) -> None:
+    ns = _nvme_exporter(
+        tmp_path, {"/dev/nvme0": {"nvme_smart_health_information_log": _health_log()}, "/dev/nvme1": report}
+    )
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert problem in detail
+    assert devices[0]["healthy"] is True
+    assert devices[1]["healthy"] is False
+
+
+def test_nvme_probe_reports_unreadable_device_and_missing_reader(tmp_path: Path) -> None:
+    ns = _nvme_exporter(tmp_path, {"/dev/nvme0": {"nvme_smart_health_information_log": _health_log()}})
+    healthy, _, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert "nvme1: Smartctl open device: /dev/nvme1 failed: No such device" in detail
+    ns["SMARTCTL_BIN"] = str(tmp_path / "absent")
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert not any(entry["healthy"] for entry in devices)
+    assert "nvme0: Failed to execute " in detail
+    ns["SYSTEMD_RUN_BIN"] = str(tmp_path / "absent")
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert not any(entry["healthy"] for entry in devices)
+    assert "nvme0: smartctl failed:" in detail
+
+
+def test_nvme_probe_does_not_wait_for_a_hung_reader(tmp_path: Path) -> None:
+    ns = _nvme_exporter(
+        tmp_path, {"/dev/nvme0": "hang", "/dev/nvme1": {"nvme_smart_health_information_log": _health_log()}}
+    )
+    ns["NVME_DEADLINE_SECONDS"] = 1
+    started = time.monotonic()
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert time.monotonic() - started < 10
+    assert healthy is False
+    assert detail == "nvme0: smartctl did not answer within 1 seconds"
+    assert devices[1]["healthy"] is True
+
+
+def test_nvme_probe_never_starts_a_second_reader_while_a_stuck_one_holds_the_scope(tmp_path: Path) -> None:
+    ns = _nvme_exporter(
+        tmp_path,
+        {
+            "/dev/nvme0": {"nvme_smart_health_information_log": _health_log()},
+            "/dev/nvme1": {"nvme_smart_health_information_log": _health_log()},
+        },
+    )
+    (tmp_path / "active-tailscale-metrics-nvme-nvme0").touch()
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert detail == (
+        "nvme0: Failed to start transient scope unit: Unit tailscale-metrics-nvme-nvme0.scope was already loaded"
+    )
+    assert devices[1]["healthy"] is True
+    assert [line.split(" | ")[1].rsplit(" ", 1)[1] for line in (tmp_path / "scopes.log").read_text().splitlines()] == [
+        "/dev/nvme1"
+    ]
+
+
+def test_nvme_probe_kills_an_unkillable_reader_once_and_never_waits_again(tmp_path: Path) -> None:
+    """A reader in uninterruptible I/O survives SIGKILL: only one kill(), no wait()/communicate() after it."""
+
+    ns = _nvme_exporter(tmp_path, {})
+    ns["NVME_DEADLINE_SECONDS"] = 0
+    events: list[str] = []
+
+    class Unkillable:
+        returncode = None
+
+        def __init__(self, argv: list[str], **_: object) -> None:
+            self.device = argv[-1]
+            self.timed_out = False
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            if self.timed_out:
+                raise AssertionError("communicate() again after the deadline")
+            events.append(f"communicate {self.device} {timeout}")
+            self.timed_out = True
+            raise subprocess.TimeoutExpired("smartctl", timeout or 0)
+
+        def kill(self) -> None:
+            events.append(f"kill {self.device}")
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise AssertionError("wait() for a reader that cannot exit")
+
+        def poll(self) -> int | None:
+            raise AssertionError("poll() for a reader that cannot exit")
+
+    shim = type(subprocess)("subprocess_shim")
+    shim.__dict__.update(
+        Popen=Unkillable, TimeoutExpired=subprocess.TimeoutExpired, DEVNULL=subprocess.DEVNULL, PIPE=subprocess.PIPE
+    )
+    ns["subprocess"] = shim
+    healthy, devices, detail = ns["probe_nvme"]()
+    assert healthy is False
+    assert events == [
+        "communicate /dev/nvme0 0.5",
+        "kill /dev/nvme0",
+        "communicate /dev/nvme1 0.5",
+        "kill /dev/nvme1",
+    ]
+    assert [entry["error"] for entry in devices] == ["smartctl did not answer within 0 seconds"] * 2
+    assert detail == "nvme0: smartctl did not answer within 0 seconds; nvme1: smartctl did not answer within 0 seconds"
+
+
+def test_without_nvme_devices_the_summary_stays_neutral() -> None:
+    namespace: dict[str, Any] = {"__name__": "tailscale_exporter_under_test"}
+    exec(compile(render(TailscaleMetricsConfig(), "tailscale_metrics_exporter.py"), "exporter", "exec"), namespace)
+    assert namespace["probe_nvme"]() == (None, [], "no NVMe devices configured")
 
 
 def sql_fixture(path: Path) -> None:

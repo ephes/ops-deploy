@@ -125,6 +125,10 @@ def deploy_tailscale_metrics(cfg: TailscaleMetricsConfig, credential: SecretStr)
         verify_probe("test -x " + shlex.quote(cfg.ip_bin), name="Native configured route probe")
     admit_paths(paths)
     prerequisites(cfg.packages)
+    if cfg.nvme_devices:
+        prerequisites(("smartmontools",))
+        verify_probe("test -x " + shlex.quote(cfg.smartctl_bin), name="Native NVMe health reader")
+        verify_probe("test -x " + shlex.quote(cfg.systemd_run_bin), name="Native NVMe reader scope launcher")
     if cfg.require_effective_ip_filter:
         distribution = host.get_fact(LinuxDistribution)
         kernel = host.get_fact(KernelVersion)

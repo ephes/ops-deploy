@@ -35,6 +35,14 @@ class TailscaleMetricsConfig(EndpointConfig):
     mdstat_path: AbsolutePath = "/proc/mdstat"
     require_mdraid_healthy: StrictBool = False
     required_mdraid_arrays: tuple[str, ...] = ()
+    # NVMe controllers whose SMART/health log the collector reads with smartctl
+    # (installed with smartmontools when the tuple is not empty).
+    smartctl_bin: AbsolutePath = "/usr/sbin/smartctl"
+    # Each read runs in its own transient scope, so a reader stuck in
+    # uninterruptible I/O never holds the collector unit's stop/start job.
+    systemd_run_bin: AbsolutePath = "/usr/bin/systemd-run"
+    nvme_devices: tuple[AbsolutePath, ...] = ()
+    require_nvme_healthy: StrictBool = False
     warning_days: StrictInt = 3
     critical_days: StrictInt = 1
     timer_on_boot_sec: StrictInt = 45
@@ -61,4 +69,12 @@ class TailscaleMetricsConfig(EndpointConfig):
             raise ValueError("collector requires its original calendar backstop")
         if any(not re.fullmatch(r"[A-Za-z0-9_.-]+", name) for name in self.required_mdraid_arrays):
             raise ValueError("invalid required mdraid name")
+        if any(not re.fullmatch(r"/dev/nvme[0-9]+", device) for device in self.nvme_devices):
+            raise ValueError("NVMe devices must be controller nodes such as /dev/nvme0")
+        if len(self.nvme_devices) > 8:
+            raise ValueError("at most eight NVMe devices (they share one 25 s collector deadline)")
+        if len(set(self.nvme_devices)) != len(self.nvme_devices):
+            raise ValueError("NVMe devices must be unique")
+        if self.require_nvme_healthy and not self.nvme_devices:
+            raise ValueError("required NVMe health needs its explicit devices")
         return self

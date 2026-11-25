@@ -33,6 +33,32 @@ never collect, query hardware or execute repair. Partial resource/reload/refresh
 work uses the existing shared endpoint rollout journal, cleared after convergence;
 it is recovery debt, not an adoption or hardware-attestation marker.
 
+NVMe health (`nvme_devices`, `require_nvme_healthy`, `smartctl_bin`,
+`systemd_run_bin`): with up to eight controller nodes such as `/dev/nvme0`
+configured, the deploy installs `smartmontools` and the root collector reads
+every controller's SMART/health log with `smartctl -j -H -A -d nvme` in
+parallel. Each read runs in its own transient scope (`systemd-run --scope
+--collect --unit=tailscale-metrics-nvme-<disk>`), so a reader stuck in
+uninterruptible I/O stays out of the collector unit's cgroup and cannot hold
+its oneshot start/stop job. The scope name is stable per disk: while a stuck
+reader still holds it, systemd refuses the next launch, stuck readers never
+pile up, and that disk stays unhealthy with systemd's refusal as its error. All reads
+share one 25 s deadline; an answer already there is still collected for at
+least 0.5 s per controller (at most 4 s past the deadline for eight). A reader
+that misses the deadline is killed once and never waited for, and its disk is
+reported unhealthy with the timeout. The values land in
+`storage.nvme_devices`/`storage.nvme_by_name`: `critical_warning`,
+`temperature_c`, `available_spare`, `available_spare_threshold`,
+`percentage_used`, `media_errors`, `num_err_log_entries`. A controller is
+healthy when Critical Warning is 0 (it covers spare below threshold,
+temperature, reliability, read-only media) and no media error was ever
+counted; an unreadable device, a missing reader or a log without these
+integers is unhealthy. `summary.nvme_healthy` is `null` without devices.
+`require_nvme_healthy` adds it to `overall_ok` and, on the Nyxmon target, a
+critical `$.summary.nvme_healthy == true` rule after the mdraid rule. Media
+errors never decrease, so the rule stays critical until the disk is replaced
+or the requirement is lifted.
+
 `deploy_tailscale_nyxmon` implements the dedicated original SQL upsert, with
 credentials bound exactly to prepared endpoint targets. It updates only type,
 URL, interval and check data. Existing disabled/status/processing/schedule

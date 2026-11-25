@@ -30,6 +30,7 @@ class TailscaleNyxmonTarget(RoleConfig):
     require_self_online: bool = False
     require_default_ipv4_route: bool = False
     require_mdraid_healthy: bool = False
+    require_nvme_healthy: bool = False
 
     @model_validator(mode="after")
     def _url(self) -> TailscaleNyxmonTarget:
@@ -62,7 +63,7 @@ class TailscaleNyxmonConfig(RoleConfig):
 
 def check_row(target: TailscaleNyxmonTarget, credential: SecretStr) -> dict[str, object]:
     checks: list[dict[str, object]] = [dict(path="$.summary.backend_running", op="==", value=True, severity="critical")]
-    for field in ("self_online", "default_ipv4_route", "mdraid_healthy"):
+    for field in ("self_online", "default_ipv4_route", "mdraid_healthy", "nvme_healthy"):
         if getattr(target, "require_" + field):
             key = field + "_present" if field == "default_ipv4_route" else field
             checks.append(dict(path="$.summary." + key, op="==", value=True, severity="critical"))
