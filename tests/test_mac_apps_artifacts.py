@@ -364,6 +364,9 @@ def test_control_runtime_status_requires_selected_extras(tmp_path: Path, monkeyp
                 'onnxruntime>=1.27; extra == "kokoro"',
                 'lingua-language-detector; extra == "routing"',
                 "mlx-whisper; platform_system == 'Darwin'",
+                'parakeet-mlx==0.5.3; (platform_system == "Darwin" and platform_machine == "arm64")'
+                ' and extra == "parakeet"',
+                'never-installed; platform_system == "Plan9" and extra == "parakeet"',
             ],
         ),
         ("onnxruntime", "1.27.0", []),
@@ -393,6 +396,8 @@ def test_control_runtime_status_requires_selected_extras(tmp_path: Path, monkeyp
     python = platform.python_version()
     assert probe(["kokoro"]) == ["0.1.11", python, []]
     assert probe(["kokoro", "routing"]) == ["0.1.11", python, ["lingua-language-detector"]]
+    on_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
+    assert probe(["parakeet"]) == ["0.1.11", python, ["parakeet-mlx"] if on_apple_silicon else []]
     venv = tmp_path / "app/.venv/bin"
     venv.mkdir(parents=True)
     (venv / "python").write_text("")

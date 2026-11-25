@@ -6,6 +6,10 @@
   Parakeet backend for Home Assistant voice; it adds the `parakeet` uv extra
   and needs the new `voxhelm_parakeet_model_dir` (rendered as
   `VOXHELM_PARAKEET_MODEL_DIR`, absent while empty).
+  The runtime probe now also judges extra requirements that carry a
+  platform marker (with `packaging` from the venv), so a selected `parakeet`
+  extra that is missing triggers the `uv sync`; before, such requirements
+  were skipped and the first deploy left the extra uninstalled.
 
 - voxhelm: the Wyoming sidecar plist gets `ProcessType=Interactive`
   (`voxhelm_wyoming_stt_process_type`, `""` restores the launchd default),

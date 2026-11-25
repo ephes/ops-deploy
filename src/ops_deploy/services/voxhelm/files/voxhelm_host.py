@@ -157,16 +157,27 @@ def selected_extras(c):
 
 
 # Read-only: installed metadata only. A requirement gated by an extra alone
-# must be installed for every selected extra; requirements with any other
-# marker condition are not judged here.
+# must be installed for every selected extra. A requirement whose marker also
+# has other conditions (for example a platform gate) is judged with
+# ``packaging`` when the venv has it, and skipped otherwise.
 RUNTIME_PROBE = r'''
 import importlib.metadata as m, json, platform, re, sys
+try:
+    from packaging.markers import Marker
+except ImportError:
+    Marker = None
 selected = set(json.loads(sys.argv[1]))
 missing = []
 for requirement in m.distribution("voxhelm").requires or []:
     spec, _, marker = requirement.partition(";")
     found = re.fullmatch(r"\s*extra\s*==\s*[\"']([^\"']+)[\"']\s*", marker)
-    if not found or found.group(1) not in selected:
+    if not found:
+        extras = set(re.findall(r"extra\s*==\s*[\"']([^\"']+)[\"']", marker))
+        if Marker is None or not extras & selected:
+            continue
+        if not any(Marker(marker).evaluate({"extra": extra}) for extra in extras & selected):
+            continue
+    elif found.group(1) not in selected:
         continue
     name = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", spec).group(1)
     try:
