@@ -34,3 +34,22 @@ def test_wait_unloaded_fails_when_job_stays_loaded(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(host.time, "sleep", lambda seconds: None)
     with pytest.raises(RuntimeError, match="did not unload"):
         host.wait_unloaded({}, {"label": "x"}, timeout=0.0)
+
+
+@pytest.mark.parametrize(
+    ("backend", "enabled", "expected"),
+    [("parakeet-mlx", True, True), ("mlx", True, False), ("parakeet-mlx", False, False)],
+)
+def test_selected_extras_adds_parakeet_for_the_inprocess_wyoming_backend(
+    backend: str, enabled: bool, expected: bool
+) -> None:
+    host = load_host()
+    c = {
+        "uv_extras": [],
+        "diarization_backend": "none",
+        "tts_kokoro_enabled": False,
+        "tts_language_routing_enabled": False,
+        "wyoming_stt_enabled": enabled,
+        "wyoming_stt_backend": backend,
+    }
+    assert ("parakeet" in host.selected_extras(c)) is expected

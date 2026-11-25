@@ -156,6 +156,22 @@ def test_control_wyoming_process_type_and_warm_up_can_be_switched_off(tmp_path: 
     assert "VOXHELM_WYOMING_STT_WARMUP=false\n" in env
 
 
+def test_control_parakeet_wyoming_backend_renders_model_dir(tmp_path: Path) -> None:
+    cfg = control_config(
+        tmp_path, voxhelm_wyoming_stt_backend="parakeet-mlx", voxhelm_parakeet_model_dir="/models/parakeet/rev"
+    )
+    data = control_payload(cfg, control_secrets())
+    env = data["contents"][cfg.voxhelm_config_dir + "/voxhelm.env"]["content"]
+    assert "VOXHELM_WYOMING_STT_BACKEND=parakeet-mlx\n" in env
+    assert "VOXHELM_PARAKEET_MODEL_DIR=/models/parakeet/rev\n" in env
+
+
+def test_control_default_env_leaves_parakeet_model_dir_unset(tmp_path: Path) -> None:
+    cfg = control_config(tmp_path)
+    env = control_payload(cfg, control_secrets())["contents"][cfg.voxhelm_config_dir + "/voxhelm.env"]["content"]
+    assert "VOXHELM_PARAKEET_MODEL_DIR" not in env
+
+
 def test_control_false_component_flags_leave_them_unmanaged(tmp_path: Path) -> None:
     cfg = control_config(tmp_path, voxhelm_worker_enabled=False, voxhelm_wyoming_stt_enabled=False)
     data = control_payload(cfg, control_secrets())
@@ -168,6 +184,8 @@ def test_control_false_component_flags_leave_them_unmanaged(tmp_path: Path) -> N
     [
         {"voxhelm_prune_interval_seconds": 59},
         {"voxhelm_wyoming_stt_process_type": "Realtime"},
+        {"voxhelm_wyoming_stt_backend": "parakeet-mlx"},
+        {"voxhelm_wyoming_stt_backend": "parakeet-mlx", "voxhelm_parakeet_model_dir": "relative/dir"},
         {"voxhelm_prune_daily_time": "25:00"},
         {"voxhelm_known_speaker_stt_backend": "other"},
         {"voxhelm_csrf_trusted_origins": ["https://example.test/path"]},

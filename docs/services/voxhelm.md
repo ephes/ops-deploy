@@ -117,6 +117,7 @@ Batch URL inputs (`VOXHELM_BATCH_MAX_DOWNLOAD_BYTES`, `VOXHELM_BATCH_URL_FETCH_T
 | `voxhelm_wyoming_stt_port` | `10300` |
 | `voxhelm_wyoming_stt_warmup` | `true` |
 | `voxhelm_wyoming_stt_process_type` | `"Interactive"` |
+| `voxhelm_parakeet_model_dir` | `""` |
 | `voxhelm_wyoming_stt_backend` | `"mlx"` |
 | `voxhelm_wyoming_stt_model` | `""` |
 | `voxhelm_wyoming_stt_language` | `""` |
@@ -215,3 +216,10 @@ about 0.45 s (measured 2026-11-25). `voxhelm_wyoming_stt_warmup` renders
 `VOXHELM_WYOMING_STT_WARMUP` (voxhelm from `ea77adf` on; older trees ignore it): the sidecar loads its model
 and runs one second of silence right after it starts listening, so the first voice
 command after a restart does not pay the model load (about 12 s cold).
+
+`voxhelm_wyoming_stt_backend: parakeet-mlx` (voxhelm from `603f130` on) runs
+NVIDIA Parakeet resident in the Wyoming sidecar. The deploy then also installs
+the `parakeet` extra, and `voxhelm_parakeet_model_dir` (absolute, required with
+that backend) renders `VOXHELM_PARAKEET_MODEL_DIR`. A turn falls back to
+mlx-whisper when the package, the model or the language is unavailable.
+`mlx` switches back.

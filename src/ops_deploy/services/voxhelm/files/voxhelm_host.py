@@ -152,7 +152,8 @@ def mark(c):
 
 def selected_extras(c):
     return list(dict.fromkeys(c["uv_extras"] + (["diarization"] if c["diarization_backend"].strip().lower() == "pyannote" else [])
-                              + (["kokoro"] if c["tts_kokoro_enabled"] else []) + (["routing"] if c["tts_language_routing_enabled"] else [])))
+                              + (["kokoro"] if c["tts_kokoro_enabled"] else []) + (["routing"] if c["tts_language_routing_enabled"] else [])
+                              + (["parakeet"] if c.get("wyoming_stt_enabled") and c.get("wyoming_stt_backend") == "parakeet-mlx" else [])))
 
 
 # Read-only: installed metadata only. A requirement gated by an extra alone

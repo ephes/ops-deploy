@@ -136,6 +136,7 @@
   "voxhelm_wyoming_stt_port": 10300,
   "voxhelm_wyoming_stt_backend": "mlx",
   "voxhelm_wyoming_stt_model": "",
+  "voxhelm_parakeet_model_dir": "",
   "voxhelm_wyoming_stt_language": "",
   "voxhelm_wyoming_stt_languages": [
     "de",

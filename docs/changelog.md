@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- voxhelm: `voxhelm_wyoming_stt_backend: parakeet-mlx` selects the resident
+  Parakeet backend for Home Assistant voice; it adds the `parakeet` uv extra
+  and needs the new `voxhelm_parakeet_model_dir` (rendered as
+  `VOXHELM_PARAKEET_MODEL_DIR`, absent while empty).
+
 - voxhelm: the Wyoming sidecar plist gets `ProcessType=Interactive`
   (`voxhelm_wyoming_stt_process_type`, `""` restores the launchd default),
   and `voxhelm_wyoming_stt_warmup` (default true) renders

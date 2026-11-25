@@ -157,6 +157,9 @@ class VoxhelmConfig(RoleConfig):
     voxhelm_wyoming_stt_port: int = Field(default=DEFAULTS["voxhelm_wyoming_stt_port"])
     voxhelm_wyoming_stt_backend: str = Field(default=DEFAULTS["voxhelm_wyoming_stt_backend"])
     voxhelm_wyoming_stt_model: str = Field(default=DEFAULTS["voxhelm_wyoming_stt_model"])
+    # Local Parakeet model directory for the in-process "parakeet-mlx" Wyoming
+    # backend (VOXHELM_PARAKEET_MODEL_DIR); "" leaves it unset.
+    voxhelm_parakeet_model_dir: str = Field(default=DEFAULTS["voxhelm_parakeet_model_dir"])
     voxhelm_wyoming_stt_language: str = Field(default=DEFAULTS["voxhelm_wyoming_stt_language"])
     voxhelm_wyoming_stt_languages: list[str] = Field(default=DEFAULTS["voxhelm_wyoming_stt_languages"])
     voxhelm_wyoming_stt_prompt: str = Field(default=DEFAULTS["voxhelm_wyoming_stt_prompt"])
@@ -278,6 +281,8 @@ class VoxhelmConfig(RoleConfig):
             raise ValueError("Voxhelm controller source directory is unavailable")
         if self.voxhelm_bootstrap_operator_username in ("", "CHANGEME"):
             raise ValueError("Voxhelm bootstrap operator must be configured")
+        if self.voxhelm_wyoming_stt_backend == "parakeet-mlx" and not os.path.isabs(self.voxhelm_parakeet_model_dir):
+            raise ValueError("The parakeet-mlx Wyoming backend needs an absolute voxhelm_parakeet_model_dir")
         if self.voxhelm_known_speaker_stt_backend not in ("", "parakeet"):
             raise ValueError("Known-speaker backend must be empty or parakeet")
         if self.voxhelm_transcription_execution_mode.strip().lower() not in ("django_tasks", "remote_pull"):
