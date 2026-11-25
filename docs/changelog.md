@@ -16,7 +16,8 @@
   fixtures record now fails `just rust-check` until the
   fixtures are regenerated, and then until the port agrees wherever the
   replay and the parity harness compare. Found by the switch and fixed in the
-  crate (version 0.1.2, to be released; hosts run 0.1.1): `script` mode still put a failing
+  crate and released as `metrics-httpd-v0.1.2` (from `98473ac2`; README
+  release table): `script` mode still put a failing
   metrics script's stderr into the 502 page, which the Python endpoint stopped
   doing because it can name internal paths. It now answers the fixed "Metrics
   script failed" and logs the stderr. Three script cases that used to be
