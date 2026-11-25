@@ -412,7 +412,9 @@ def test_default_services_probe_is_read_only_by_construction(cfg: HomelabConfig,
     probe = next(c for c in run.fact_commands if SERVICES in c)
     assert "FileSystemStorage._save = refuse" in probe
     assert "execute_wrapper(refuse_writes)" in probe
-    assert "transaction.set_rollback(True)" in probe
+    # Autocommit, as homelab's command requires (96f7f4e): no outer transaction.
+    assert "atomic" not in DEFAULT_SERVICES_CHECK
+    assert "set_rollback" not in DEFAULT_SERVICES_CHECK
     # The code is an argument of bash, never interpolated into the script.
     assert 'manage.py shell -c "$1"' in probe
     assert "\\" not in DEFAULT_SERVICES_CHECK

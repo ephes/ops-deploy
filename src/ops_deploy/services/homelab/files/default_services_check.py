@@ -2,15 +2,16 @@
 # Read-only: prints "current" when ``manage.py add_default_services`` would
 # write nothing, "pending" when it would create or change a row or store a
 # logo file. The command itself runs, with every SQL write and every file
-# storage write or delete refused before it happens, inside a transaction that
-# is rolled back. Any other error fails the probe (the deploy then runs the
-# command and checks again).
+# storage write or delete refused before it happens. It runs in autocommit, as
+# the command requires since homelab 96f7f4e: a write is refused before it
+# reaches the database, so there is nothing to roll back. Any other error fails
+# the probe (the deploy then runs the command and checks again).
 import contextlib
 import io
 
 from django.core.files.storage import FileSystemStorage
 from django.core.management import call_command
-from django.db import connections, transaction
+from django.db import connections
 
 WRITES = {"insert", "update", "delete", "replace", "create", "drop", "alter"}
 
@@ -38,9 +39,7 @@ with contextlib.ExitStack() as stack:
     for alias in connections:
         stack.enter_context(connections[alias].execute_wrapper(refuse_writes))
     try:
-        with transaction.atomic():
-            call_command("add_default_services", stdout=io.StringIO(), stderr=io.StringIO())
-            transaction.set_rollback(True)
+        call_command("add_default_services", stdout=io.StringIO(), stderr=io.StringIO())
     except WouldWrite:
         state = "pending"
 print(state)

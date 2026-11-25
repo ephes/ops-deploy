@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- homelab: the default-services probe runs `add_default_services` in
+  autocommit, without its outer `transaction.atomic()`. Since homelab
+  `96f7f4e` the command refuses to run inside a transaction, so the probe
+  failed and every homelab deploy stopped at "Probe again: homelab default
+  services". Writes are still refused before they reach the database or the
+  logo storage.
+
 - voxhelm: `voxhelm_wyoming_stt_backend: parakeet-mlx` selects the resident
   Parakeet backend for Home Assistant voice; it adds the `parakeet` uv extra
   and needs the new `voxhelm_parakeet_model_dir` (rendered as

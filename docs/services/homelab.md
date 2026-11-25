@@ -99,9 +99,11 @@ another `homelab_traefik_config_path` (always
     read-only probe `files/default_services_check.py` says it would write.
     The probe runs the command itself through `manage.py shell -c`, with every
     SQL `INSERT`/`UPDATE`/`DELETE`/`REPLACE`/`CREATE`/`DROP`/`ALTER` and every
-    file-storage save or delete refused before it happens, inside a
-    transaction that is rolled back: "pending" when the command tried to
-    write (a missing default service or logo), "current" otherwise.
+    file-storage save or delete refused before it happens: "pending" when the
+    command tried to write (a missing default service or logo), "current"
+    otherwise. The probe runs the command in autocommit, without an outer
+    transaction: since homelab `96f7f4e` the command refuses to run inside
+    one, and a refused write never reaches the database.
 13. Unit file and `service_rollout`: restart on a code, copied file, venv,
     dependency, `.env`, unit or migration change.
 14. Traefik route with the role's own template (dual router, the HTTP router
