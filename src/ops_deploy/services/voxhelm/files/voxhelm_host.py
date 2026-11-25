@@ -308,6 +308,16 @@ def job(c, unit):
     return True, bool(re.search(r"^\s*state = running$", result.stdout, re.M))
 
 
+def wait_unloaded(c, unit, timeout=60.0):
+    # bootout can return while the job is still exiting (the Wyoming sidecar holds
+    # a multi-GB model); bootstrapping it then fails with an I/O error.
+    deadline = time.monotonic() + timeout
+    while job(c, unit)[0]:
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Voxhelm launchd job did not unload after bootout")
+        time.sleep(0.5)
+
+
 def restart_marker(c, unit):
     return Path(c["config_dir"]) / (".ops-deploy-restart-" + unit["label"])
 
@@ -358,6 +368,7 @@ def launchd_apply(c):
         reload_unit = marker.exists() and json.loads(marker.read_text()).get("reload", False)
         if reload_unit and loaded:
             run(["/bin/launchctl", "bootout", service], c)
+            wait_unloaded(c, unit)
             loaded = False
         if not loaded:
             run(["/bin/launchctl", "bootstrap", "system", unit["plist"]], c)

@@ -9,6 +9,10 @@
   The launchd default throttled voice STT to 1.2-2.6 s per turn on a busy
   Studio (0.45 s unthrottled), and the first command after each restart took
   about 12 s for the lazy model load.
+  The launchd converge now waits up to 60 s for a booted-out unit to unload
+  before bootstrapping it again: the first deploy with the changed plist
+  left the Wyoming sidecar unloaded because `bootstrap` raced the exiting
+  process (fixed by hand on 2026-11-25, then by this wait).
 
 - openclaw: optional `openclaw_weeknotes_reminder_deliver_to` (Telegram chat
   id). When it is set, the weekday `weeknotes-reminder` job runs the weeknotes
