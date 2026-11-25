@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- voxhelm: the Wyoming sidecar plist gets `ProcessType=Interactive`
+  (`voxhelm_wyoming_stt_process_type`, `""` restores the launchd default),
+  and `voxhelm_wyoming_stt_warmup` (default true) renders
+  `VOXHELM_WYOMING_STT_WARMUP` so the sidecar loads its STT model at start.
+  The launchd default throttled voice STT to 1.2-2.6 s per turn on a busy
+  Studio (0.45 s unthrottled), and the first command after each restart took
+  about 12 s for the lazy model load.
+
 - openclaw: optional `openclaw_weeknotes_reminder_deliver_to` (Telegram chat
   id). When it is set, the weekday `weeknotes-reminder` job runs the weeknotes
   handler's `reminder` command as a command payload, with no model call, and

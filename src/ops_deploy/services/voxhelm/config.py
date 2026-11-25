@@ -161,6 +161,13 @@ class VoxhelmConfig(RoleConfig):
     voxhelm_wyoming_stt_languages: list[str] = Field(default=DEFAULTS["voxhelm_wyoming_stt_languages"])
     voxhelm_wyoming_stt_prompt: str = Field(default=DEFAULTS["voxhelm_wyoming_stt_prompt"])
     voxhelm_wyoming_stt_normalize_transcript: bool = Field(default=DEFAULTS["voxhelm_wyoming_stt_normalize_transcript"])
+    voxhelm_wyoming_stt_warmup: bool = Field(default=DEFAULTS["voxhelm_wyoming_stt_warmup"])
+    # launchd ProcessType of the Wyoming sidecar. Without one, launchd applies light
+    # CPU/IO limits, which tripled voice STT latency under load (2026-11-25).
+    # "" leaves the key out (launchd default).
+    voxhelm_wyoming_stt_process_type: Literal["", "Background", "Standard", "Adaptive", "Interactive"] = Field(
+        default=DEFAULTS["voxhelm_wyoming_stt_process_type"]
+    )
     voxhelm_wyoming_samples_per_chunk: int = Field(default=DEFAULTS["voxhelm_wyoming_samples_per_chunk"])
     voxhelm_lane_scheduler_enabled: bool = Field(default=DEFAULTS["voxhelm_lane_scheduler_enabled"])
     voxhelm_lane_scheduler_dir: str = Field(default=DEFAULTS["voxhelm_lane_scheduler_dir"])

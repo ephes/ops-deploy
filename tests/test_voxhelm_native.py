@@ -136,6 +136,26 @@ def test_control_preserves_periodic_pruning_without_starting_it(tmp_path: Path) 
     assert not plist.get("StartCalendarInterval")
 
 
+def test_control_wyoming_runs_interactive_and_warms_up_by_default(tmp_path: Path) -> None:
+    cfg = control_config(tmp_path)
+    data = control_payload(cfg, control_secrets())
+    wyoming = plistlib.loads(data["contents"][cfg.voxhelm_wyoming_stt_plist_path]["content"].encode())
+    assert wyoming["ProcessType"] == "Interactive"
+    api = plistlib.loads(data["contents"][cfg.voxhelm_launchd_plist_path]["content"].encode())
+    assert "ProcessType" not in api
+    env = data["contents"][cfg.voxhelm_config_dir + "/voxhelm.env"]["content"]
+    assert "VOXHELM_WYOMING_STT_WARMUP=true\n" in env
+
+
+def test_control_wyoming_process_type_and_warm_up_can_be_switched_off(tmp_path: Path) -> None:
+    cfg = control_config(tmp_path, voxhelm_wyoming_stt_process_type="", voxhelm_wyoming_stt_warmup=False)
+    data = control_payload(cfg, control_secrets())
+    wyoming = plistlib.loads(data["contents"][cfg.voxhelm_wyoming_stt_plist_path]["content"].encode())
+    assert "ProcessType" not in wyoming
+    env = data["contents"][cfg.voxhelm_config_dir + "/voxhelm.env"]["content"]
+    assert "VOXHELM_WYOMING_STT_WARMUP=false\n" in env
+
+
 def test_control_false_component_flags_leave_them_unmanaged(tmp_path: Path) -> None:
     cfg = control_config(tmp_path, voxhelm_worker_enabled=False, voxhelm_wyoming_stt_enabled=False)
     data = control_payload(cfg, control_secrets())
@@ -147,6 +167,7 @@ def test_control_false_component_flags_leave_them_unmanaged(tmp_path: Path) -> N
     "overrides",
     [
         {"voxhelm_prune_interval_seconds": 59},
+        {"voxhelm_wyoming_stt_process_type": "Realtime"},
         {"voxhelm_prune_daily_time": "25:00"},
         {"voxhelm_known_speaker_stt_backend": "other"},
         {"voxhelm_csrf_trusted_origins": ["https://example.test/path"]},

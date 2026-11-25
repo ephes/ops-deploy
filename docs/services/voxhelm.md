@@ -115,6 +115,8 @@ Batch URL inputs (`VOXHELM_BATCH_MAX_DOWNLOAD_BYTES`, `VOXHELM_BATCH_URL_FETCH_T
 | `voxhelm_kokoro_artifacts` | `[{"url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx", "sha256": "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5", "dest": "kokoro-v1.0.onnx"}, {"url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx", "sha256": "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb", "dest": "kokoro-v1.0.int8.onnx"}, {"url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin", "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d", "dest": "voices-v1.0.bin"}, {"url": "https://huggingface.co/Godelaune/Kokoro-82M-ONNX-German-Martin/resolve/main/kokoro-martin.onnx", "sha256": "c302f1d8bc7adf40a842cb550e18c39a5026bdb1afdd29dbb700b501cb49276b", "dest": "kokoro-martin.onnx"}, {"url": "https://huggingface.co/Godelaune/Kokoro-82M-ONNX-German-Martin/resolve/main/voices-martin.npz", "sha256": "5b9c8553398d7abf67498ce500c186cefaa7b68fed3e3d415da5380670105acd", "dest": "voices-martin.npz"}]` |
 | `voxhelm_wyoming_stt_host` | `"0.0.0.0"` |
 | `voxhelm_wyoming_stt_port` | `10300` |
+| `voxhelm_wyoming_stt_warmup` | `true` |
+| `voxhelm_wyoming_stt_process_type` | `"Interactive"` |
 | `voxhelm_wyoming_stt_backend` | `"mlx"` |
 | `voxhelm_wyoming_stt_model` | `""` |
 | `voxhelm_wyoming_stt_language` | `""` |
@@ -202,3 +204,14 @@ open the worker control plane.
 The owned Linux workflow tests real Traefik routing, conditional reload/restart,
 transaction-lock failure preservation and zero-change repeats; qualification of
 this additive ingress path is pending its recorded workflow result.
+
+## Wyoming voice latency
+
+The Wyoming sidecar plist sets `ProcessType` to `voxhelm_wyoming_stt_process_type`
+(`Interactive` by default; `""` leaves the key out, the other plists never set it).
+Without a `ProcessType`, launchd applies light CPU and I/O limits to a daemon; on a
+busy Studio this made a warm Home Assistant STT turn take 1.2-2.6 s instead of
+about 0.45 s (measured 2026-11-25). `voxhelm_wyoming_stt_warmup` renders
+`VOXHELM_WYOMING_STT_WARMUP` (voxhelm from `ea77adf` on; older trees ignore it): the sidecar loads its model
+and runs one second of silence right after it starts listening, so the first voice
+command after a restart does not pay the model load (about 12 s cold).

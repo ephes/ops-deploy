@@ -22,6 +22,11 @@
     <key>WorkingDirectory</key>
     <string>{{ voxhelm_app_dir | e }}</string>
 
+{% if voxhelm_launchd_process_type | default('') %}
+    <key>ProcessType</key>
+    <string>{{ voxhelm_launchd_process_type | e }}</string>
+
+{% endif %}
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

@@ -123,6 +123,7 @@ def payload(cfg: VoxhelmConfig, secrets: Mapping[str, str]) -> dict[str, Any]:
             voxhelm_start_script_path=script,
             voxhelm_launchd_stdout_log=stdout,
             voxhelm_launchd_stderr_log=stderr,
+            voxhelm_launchd_process_type=(cfg.voxhelm_wyoming_stt_process_type if name == "wyoming" else ""),
         )
         units.append(
             {
