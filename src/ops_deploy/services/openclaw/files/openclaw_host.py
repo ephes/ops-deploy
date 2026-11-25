@@ -511,20 +511,38 @@ def cron_drifted(request, jobs):
         return False
     job = jobs[0]
     schedule, payload = job.get("schedule", {}), job.get("payload", {})
+    if schedule.get("kind", "") != "cron" or schedule.get("expr", "") != request["cron"]:
+        return True
+    if request.get("deliver_to"):
+        # Command payload announced to one Telegram chat.
+        delivery = job.get("delivery", {})
+        return (
+            job.get("sessionTarget", "") != "isolated"
+            or payload.get("kind", "") != "command"
+            or payload.get("argv", []) != request["argv"]
+            or delivery.get("mode", "") != "announce"
+            or delivery.get("channel", "") != "telegram"
+            or str(delivery.get("to", "")) != request["deliver_to"]
+        )
     return (
-        schedule.get("kind", "") != "cron"
-        or schedule.get("expr", "") != request["cron"]
-        or job.get("sessionTarget", "") != "main"
+        job.get("sessionTarget", "") != "main"
         or payload.get("kind", "") != "systemEvent"
         or payload.get("text", "") != request["command"]
     )
 
 
 def cron_add(request):
-    argv = compose_cli(
-        request, "cron", "add", "--name", "weeknotes-reminder", "--cron", request["cron"],
-        "--session", "main", "--wake", "now", "--system-event", request["command"], "--json",
-    )  # fmt: skip
+    if request.get("deliver_to"):
+        argv = compose_cli(
+            request, "cron", "add", "--name", "weeknotes-reminder", "--cron", request["cron"],
+            "--command-argv", json.dumps(request["argv"]),
+            "--announce", "--channel", "telegram", "--to", request["deliver_to"], "--json",
+        )  # fmt: skip
+    else:
+        argv = compose_cli(
+            request, "cron", "add", "--name", "weeknotes-reminder", "--cron", request["cron"],
+            "--session", "main", "--wake", "now", "--system-event", request["command"], "--json",
+        )  # fmt: skip
     return retried(argv, 6, 3).returncode == 0
 
 

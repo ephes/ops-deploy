@@ -83,6 +83,20 @@ also runs on a freshly seeded file),
 The `check` mode decides while planning, so a converged host gets no mutating
 operation; a failed check runs the step.
 
+The `weeknotes-reminder` cron job (`openclaw_weeknotes_reminder_cron`,
+default weekdays 09:00 in the gateway's timezone) has two forms. With
+`openclaw_weeknotes_reminder_deliver_to` empty (the default, the role's
+behaviour) it is a system event (`openclaw_weeknotes_reminder_command`) in
+the main session, and the agent decides whether to send anything. In
+`message_tool_only` delivery mode the agent can stay silent every day. With a
+Telegram chat id (digits, `-` for groups; any other value is refused before
+any change), the job is an operator command payload instead. It runs the
+weeknotes handler's `reminder` command on the gateway with no model call,
+and `--announce --channel telegram --to <id>` delivers its output. When the
+handler prints nothing (no open todos, or snoozed today) the job prints
+`NO_REPLY` and nothing is sent. A failing handler fails the run. The `cron`
+step replaces a job of the other form, or one with another chat or script.
+
 The role's handlers become change-gated operations where the role flushes them
 (`restart openclaw` before the health check, before the cron registration and
 with the metrics units). The `reload traefik` handler, a Traefik restart, is not

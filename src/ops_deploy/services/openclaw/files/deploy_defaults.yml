@@ -367,6 +367,12 @@ openclaw_weeknotes_rate_limit_writes: 10
 openclaw_weeknotes_rate_limit_window_secs: 600
 openclaw_weeknotes_reminder_cron: "0 9 * * 1-5"
 openclaw_weeknotes_reminder_command: "/todo reminder"
+# Telegram chat id for the reminder. Empty: the reminder is a system event in
+# the main session and the agent decides whether to send it. Set: the job runs
+# the handler's `reminder` command directly (command payload, no model call)
+# and announces its output to this chat; nothing is sent when it prints
+# nothing (no open todos or snoozed today).
+openclaw_weeknotes_reminder_deliver_to: ""
 
 # Weeknotes S3 backend settings (used when openclaw_weeknotes_backend=s3)
 openclaw_weeknotes_s3_endpoint: ""

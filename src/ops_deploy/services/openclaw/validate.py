@@ -18,6 +18,7 @@ several of the asserts read credentials (the role marks them ``no_log``).
 
 from __future__ import annotations
 
+import re
 import shlex
 from functools import cache
 from typing import Any
@@ -137,6 +138,10 @@ def validate(variables: dict[str, Any]) -> None:
     """Run every assert of validate.yml (and metrics.yml) that needs no host; raise :class:`ValidationError`."""
 
     run_asserts(tasks(), variables)
+    # Not in the role: the reminder delivery target is ops-deploy's own variable.
+    deliver_to = str(variables.get("openclaw_weeknotes_reminder_deliver_to") or "").strip()
+    if to_bool(variables["openclaw_weeknotes_enabled"]) and deliver_to and not re.fullmatch(r"-?[0-9]+", deliver_to):
+        raise ValidationError("weeknotes reminder: openclaw_weeknotes_reminder_deliver_to must be a Telegram chat id")
 
 
 def host_checks(variables: dict[str, Any]) -> list[tuple[str, str]]:

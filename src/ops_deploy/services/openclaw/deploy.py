@@ -386,6 +386,13 @@ def _route(v: Vars) -> Meta:
     return route_put(name=f"Write {route.path}", src=route.content.decode(), dest=route.path, mode=route.mode)
 
 
+# The handler prints nothing when there is nothing to remind of; NO_REPLY keeps the
+# announce delivery silent then. A failing handler fails the run.
+REMINDER_SCRIPT = (
+    'out=$({handler} reminder) || exit $?; if [ -n "$out" ]; then printf "%s\\n" "$out"; else echo NO_REPLY; fi'
+)
+
+
 def _cron(v: Vars) -> OperationMeta:
     port = int(v["openclaw_host_port"])
     wait_port(port, host=v["openclaw_bind_host"], retries=30, name="Wait for gateway to accept commands")
@@ -394,6 +401,11 @@ def _cron(v: Vars) -> OperationMeta:
         "cron": v["openclaw_weeknotes_reminder_cron"],
         "command": v["openclaw_weeknotes_reminder_command"],
     }
+    deliver_to = str(v["openclaw_weeknotes_reminder_deliver_to"] or "").strip()
+    if deliver_to:  # a chat id, checked by validate.validate()
+        handler = f"{v['openclaw_weeknotes_container_skills_dir']}/{v['openclaw_weeknotes_skill_name']}/handler.sh"
+        request["deliver_to"] = deliver_to
+        request["argv"] = ["sh", "-c", REMINDER_SCRIPT.format(handler=shlex.quote(handler))]
     state = pending("cron", request)
     return host_step("Register the weeknotes reminder cron job", "cron", request, lambda: state)
 

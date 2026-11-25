@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- openclaw: optional `openclaw_weeknotes_reminder_deliver_to` (Telegram chat
+  id). When it is set, the weekday `weeknotes-reminder` job runs the weeknotes
+  handler's `reminder` command as a command payload, with no model call, and
+  announces its output to that chat. It stays silent (`NO_REPLY`) when there
+  is nothing open or the day is snoozed. Empty (the default) keeps the
+  main-session system event. There the agent decided on its own and the
+  reminder stayed `mute` every day in `message_tool_only` delivery mode. The
+  `cron` step replaces the old form of the job.
+
 - homeassistant: optional pinned ApexCharts card (`apexcharts_card`,
   `RomRider/apexcharts-card` v2.2.3, sha256-checked) installed as
   `config/www/apexcharts-card.js` like the Location Timeline Card; off by

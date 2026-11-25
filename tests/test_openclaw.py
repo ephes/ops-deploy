@@ -512,6 +512,77 @@ def test_drifted_cron_is_removed_then_added(monkeypatch: pytest.MonkeyPatch) -> 
     assert verbs == [["cron", "list"], ["cron", "rm"], ["cron", "rm"], ["cron", "add"]]
 
 
+ARGV = ["sh", "-c", "out=$(handler.sh reminder) || exit $?; echo"]
+DELIVERED = {**CRON, "deliver_to": "42", "argv": ARGV}
+DELIVERY = {"mode": "announce", "channel": "telegram", "to": "42"}
+COMMAND_JOB: dict[str, Any] = {
+    "id": "j3",
+    "name": "weeknotes-reminder",
+    "schedule": {"kind": "cron", "expr": "0 9 * * 1-5"},
+    "sessionTarget": "isolated",
+    "payload": {"kind": "command", "argv": ARGV},
+    "delivery": DELIVERY,
+}
+
+
+@pytest.mark.parametrize(
+    ("jobs", "pending"),
+    [
+        ((COMMAND_JOB,), False),
+        ((JOB,), True),
+        (({**COMMAND_JOB, "delivery": {**DELIVERY, "to": "7"}},), True),
+        (({**COMMAND_JOB, "payload": {"kind": "command", "argv": ["true"]}},), True),
+    ],
+)
+def test_delivered_cron_drift(monkeypatch: pytest.MonkeyPatch, jobs: tuple[dict[str, Any], ...], pending: bool) -> None:
+    script = host_script()
+    monkeypatch.setattr(script, "run", Commands({LIST: cron_list(*jobs)}))
+
+    assert script.cron(DELIVERED, False) is pending
+
+
+def test_main_session_reminder_is_replaced_by_the_delivered_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    script = host_script()
+    commands = Commands({LIST: cron_list(JOB)})
+    monkeypatch.setattr(script, "run", commands)
+    monkeypatch.setattr(script.time, "sleep", lambda _: None)
+
+    assert script.cron(DELIVERED, True) is True
+    add = commands.calls[-1]
+    assert add[7:9] == ["cron", "add"]
+    assert add[add.index("--command-argv") + 1] == json.dumps(ARGV)
+    assert add[add.index("--to") + 1] == "42"
+    assert "--announce" in add
+    assert "--system-event" not in add
+
+
+@pytest.mark.parametrize(
+    ("body", "code", "stdout"),
+    [
+        ("printf 'Daily priorities\\n\\n- [ ] x\\n'", 0, "Daily priorities\n\n- [ ] x\n"),
+        (":", 0, "NO_REPLY\n"),
+        ("exit 3", 3, ""),
+    ],
+)
+def test_reminder_script_is_silent_without_todos(tmp_path: Path, body: str, code: int, stdout: str) -> None:
+    from ops_deploy.services.openclaw.deploy import REMINDER_SCRIPT
+
+    handler = tmp_path / "handler.sh"
+    handler.write_text(f"#!/bin/sh\n{body}\n")
+    handler.chmod(0o755)
+    result = subprocess.run(["sh", "-c", REMINDER_SCRIPT.format(handler=handler)], capture_output=True, text=True)
+    assert (result.returncode, result.stdout) == (code, stdout)
+
+
+def test_reminder_delivery_target_must_be_a_chat_id() -> None:
+    def delivered(to: str) -> OpenClawConfig:
+        return with_variables(openclaw_weeknotes_enabled=True, openclaw_weeknotes_reminder_deliver_to=to)
+
+    with pytest.raises(ValidationError, match="openclaw_weeknotes_reminder_deliver_to"):
+        delivered("@x").role_variables(SECRETS)
+    delivered("-100123").role_variables(SECRETS)
+
+
 def test_legacy_workspace_state_triggers_the_migration(tmp_path: Path) -> None:
     script = host_script()
     workspace = tmp_path / "workspace"
