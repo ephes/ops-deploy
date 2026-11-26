@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly restart of the OpenClaw gateway (upstream openclaw#181687)
+After={{ openclaw_service_name }}.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-restart {{ openclaw_service_name }}.service

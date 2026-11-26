@@ -244,3 +244,17 @@ def metrics_files(v: Vars) -> dict[str, FileSpec]:
         "timer_unit": _root(v, "openclaw-metrics-collector.timer.j2", f"/etc/systemd/system/{timer}.timer"),
         "endpoint_unit": _root(v, "openclaw-metrics-endpoint.service.j2", f"/etc/systemd/system/{service}.service"),
     }
+
+
+# -- the weekly gateway restart --------------------------------------------------------------
+
+WEEKLY_RESTART = "openclaw-gateway-weekly-restart"
+
+
+def weekly_restart_files(v: Vars) -> dict[str, FileSpec]:
+    """The timer and its oneshot service that restart the gateway every Sunday at 04:00."""
+
+    return {
+        "service": _root(v, f"{WEEKLY_RESTART}.service.j2", f"/etc/systemd/system/{WEEKLY_RESTART}.service"),
+        "timer": _root(v, f"{WEEKLY_RESTART}.timer.j2", f"/etc/systemd/system/{WEEKLY_RESTART}.timer"),
+    }

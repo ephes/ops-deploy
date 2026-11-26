@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- openclaw: every deploy installs `openclaw-gateway-weekly-restart.timer`
+  and its oneshot service, which run `systemctl try-restart` of the gateway
+  every Sunday at 04:00 (host time, fixed; a stopped gateway stays stopped).
+  A workaround for upstream openclaw#181687, whose prepared-model-catalog
+  worker grows by about 0.26 GiB a day until the gateway restarts. The
+  removal removes both units.
+
 - base: new pyinfra-only `cpu_tcc_offset` (`CpuTccOffsetConfig(offset=…)`).
   It writes one managed udev rule, `/etc/udev/rules.d/60-cpu-tcc-offset.rules`,
   that sets the CPU's TCC offset through the `intel_tcc_cooling` cooling

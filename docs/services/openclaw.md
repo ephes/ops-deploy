@@ -78,7 +78,9 @@ file is written only while no Traefik transaction holds its lock (like its
 removal).
 
 Every file is the role's bytes, owner and mode (`layout.py`); the templates are
-the role's, rendered as the `template` module renders them. The bind-mounted
+the role's, rendered as the `template` module renders them. The exception is
+the weekly restart timer and its service, which are new in this port (not in
+the role); `tests/test_openclaw.py` pins their bytes. The bind-mounted
 data tree belongs to the container's uid/gid 1000, which may have another name
 on the host, so those files and directories are compared and set by number.
 
@@ -105,6 +107,14 @@ handler prints nothing (no open todos, or snoozed today) the job prints
 `NO_REPLY` and nothing is sent. A failing handler fails the run. The `cron`
 step replaces a job of the other form, or one with another chat or script.
 
+Every deploy also installs `openclaw-gateway-weekly-restart.timer`
+(`OnCalendar=Sun *-*-* 04:00:00`, host local time; a missed run is not made
+up at boot) and its oneshot service, which runs `systemctl try-restart` of
+the gateway unit (a stopped gateway stays stopped). It is a workaround for
+upstream openclaw#181687: the prepared-model-catalog worker grows with every
+catalog sync until the gateway restarts. The schedule is fixed. Check it with
+`systemctl list-timers openclaw-gateway-weekly-restart.timer`.
+
 The role's handlers become change-gated operations where the role flushes them
 (`restart openclaw` before the health check, before the cron registration and
 with the metrics units). The `reload traefik` handler, a Traefik restart, is not
@@ -113,7 +123,8 @@ Traefik.
 
 Removal follows `openclaw_remove`: `confirm` is required; data, image and the
 account stay unless their toggles are set; the route goes by default. Like the
-role it leaves the metrics endpoint in place.
+role it leaves the metrics endpoint in place; the weekly restart timer and its
+service go.
 
 ## Rendered files
 
@@ -123,4 +134,5 @@ seeding first deploy); `tests/golden/openclaw/<case>.json` records what the
 deploy writes for them: each file's sha256, owner, group and mode, the
 directories, the patched `openclaw.json` and the `.env`. They were first
 recorded when they equalled what ansible-core computed from the
-`openclaw_deploy` role's task files.
+`openclaw_deploy` role's task files. They do not hold the weekly restart
+units, which the role never had.

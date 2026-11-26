@@ -555,6 +555,18 @@ def _metrics(v: Vars, cfg: OpenClawConfig, skill_changes: Sequence[Meta]) -> Non
     metrics_httpd.verify(selection)
 
 
+def _weekly_restart(v: Vars) -> None:
+    """The timer that restarts the gateway every Sunday at 04:00 (upstream openclaw#181687)."""
+
+    name = layout.WEEKLY_RESTART
+    specs = layout.weekly_restart_files(v)
+    service = systemd_unit(f"{name}.service", specs["service"].content.decode())
+    timer = systemd_unit(f"{name}.timer", specs["timer"].content.decode())
+    systemd.daemon_reload(name=f"Reload systemd for {name}", _if=changed(service, timer))
+    systemd.service(name=f"Restart {name}.timer", service=f"{name}.timer", command="restart", _if=changed(timer))
+    systemd.service(name=f"Enable and start {name}.timer", service=f"{name}.timer", running=True, enabled=True)
+
+
 def _session_state(v: Vars, workspace_files: Sequence[Meta]) -> None:
     manifest = write(layout.manifest_file(v))
     request = {"path": v["openclaw_session_state_path"]}
@@ -571,6 +583,7 @@ def deploy_openclaw(cfg: OpenClawConfig, secrets: OpenClawSecrets) -> None:
         layout.weeknotes_files,
         layout.metrics_files,
         layout.workspace_skill_files,
+        layout.weekly_restart_files,
     ):
         render_step(v)
     for task, test in host_checks(v):
@@ -607,6 +620,7 @@ def deploy_openclaw(cfg: OpenClawConfig, secrets: OpenClawSecrets) -> None:
     workspace = _workspace_skills(v)
     _metrics(v, cfg, [*skills, *workspace])
     _session_state(v, workspace)
+    _weekly_restart(v)
 
 
 # -- the playbook's post task ----------------------------------------------------------------

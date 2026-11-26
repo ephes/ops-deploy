@@ -5,9 +5,10 @@ playbook sets ``openclaw_data_dir``. Removal needs ``confirm``; data, image
 and account removal stay opt-in and the Traefik route goes by default, as in
 the role. Best-effort steps (the compose ``down``, container and image
 removal) never fail the removal. Like the role, the metrics endpoint units
-are left in place. The role's ``reload traefik`` handler is not ported
-(Traefik's file provider drops the route by itself); the route file is
-removed only while no Traefik transaction holds its lock.
+are left in place; the weekly restart timer and its service go. The role's
+``reload traefik`` handler is not ported (Traefik's file provider drops the
+route by itself); the route file is removed only while no Traefik transaction
+holds its lock.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from pyinfra.operations import server, systemd
 
 from ops_deploy.base._common import RoleConfig, output
 from ops_deploy.services._lifecycle import exists, remove_account, remove_path, stop_disable
+from ops_deploy.services.openclaw.layout import WEEKLY_RESTART
 from ops_deploy.services.openclaw.variables import defaults, resolve, to_bool
 
 FLAGS = ("confirm", "data", "image", "user", "traefik_config", "site_dir", "build_dir", "log_dir")
@@ -62,8 +64,9 @@ def deploy_openclaw_remove(cfg: OpenClawRemoveConfig) -> None:
             "Set openclaw_remove_confirm=true to allow removal. Data deletion is opt-in via openclaw_remove_data=true."
         )
     unit = f"{v['openclaw_service_name']}.service"
-    stop_disable([unit])
-    if remove_path(v["openclaw_systemd_unit_path"]):
+    stop_disable([f"{WEEKLY_RESTART}.timer", unit])
+    weekly = [remove_path(f"/etc/systemd/system/{WEEKLY_RESTART}.{kind}") for kind in ("timer", "service")]
+    if remove_path(v["openclaw_systemd_unit_path"]) or any(weekly):
         systemd.daemon_reload(name="Reload systemd after removing the OpenClaw unit")
     remove_path(v["openclaw_logrotate_path"])
     compose = v["openclaw_compose_path"]
