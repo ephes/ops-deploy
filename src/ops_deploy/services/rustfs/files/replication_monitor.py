@@ -176,15 +176,18 @@ def evaluate(job, payload, lag_seconds, breach_seconds=0, complete=True):
     """Level, critical reasons and warning reasons of one heartbeat.
 
     Lag levels and the parity checks follow the MinIO replica probe, with one
-    difference: a breach whose only cause is a non-empty replication queue
-    (object count and size within tolerance) is the normal state of a backup
-    burst. It stays ``ok`` until parity has been missing for the job's
+    difference: a parity breach is graded by how long it lasts. A backup
+    burst leaves a non-empty replication queue, and because the heartbeat
+    lists the source before the replica, an object that lands in between
+    shows as an object or size delta with an empty queue (2026-11-25/26:
+    1.2 GB, one heartbeat). Such a breach stays ``ok`` (its reasons in the
+    warnings) until parity has been missing for the job's
     ``queue_warning_minutes``, is a warning from then on and critical once
     parity has been missing for ``parity_critical_hours``, the age at which
     the parity marker turns stale. ``breach_seconds`` is the time since the
     last run that saw parity. ``complete`` is false when the heartbeat lacked
-    a field that proves the deltas within tolerance; such a breach gets no
-    grace.
+    a field that proves the deltas; such a breach, and one without a named
+    cause, gets no grace.
     """
     warning, critical = int(job["warning_hours"] * 3600), int(job["critical_hours"] * 3600)
     level = "critical" if lag_seconds >= critical else "warning" if lag_seconds >= warning else "ok"
@@ -199,16 +202,16 @@ def evaluate(job, payload, lag_seconds, breach_seconds=0, complete=True):
             size_ok = size_ok or payload["size_diff_bytes"] <= payload["parity_size_delta_tolerance_bytes"]
         if not size_ok:
             parity.append("size_delta_exceeds_tolerance")
-        queued = payload["queued_count"] != 0
+        causes = (["replication_queue_nonzero"] if payload["queued_count"] != 0 else []) + parity
         # The same threshold as the status endpoint's parity_marker_stale.
-        if queued and not parity and complete and breach_seconds < job["parity_critical_hours"] * 3600:
-            warnings.append("replication_queue_nonzero")
+        if causes and complete and breach_seconds < job["parity_critical_hours"] * 3600:
+            warnings.extend(causes)
             # A jobs file written before queue_warning_minutes existed: its default.
             if breach_seconds >= int(job.get("queue_warning_minutes", 30) * 60) and level == "ok":
                 level = "warning"
         else:
             level = "critical"
-            reasons.extend((["replication_queue_nonzero"] if queued else []) + parity)
+            reasons.extend(causes)
             if not reasons:
                 reasons.append("parity_not_ok")
     return level, reasons, warnings
@@ -279,7 +282,8 @@ def probe(iam, local_endpoint, state_root, jobs):
             if body.get("bucket") != job["bucket"]:
                 raise iam.Refused("heartbeat object describes another bucket")
             payload = {key: cast(body.get(key, 0)) for key, cast in NUMBERS.items()}
-            complete = all(key in body for key in PARITY_FIELDS)
+            # A heartbeat without a boolean parity_ok proves nothing either.
+            complete = all(key in body for key in PARITY_FIELDS) and isinstance(body.get("parity_ok"), bool)
             payload["parity_ok"] = body.get("parity_ok") is True
             heartbeat_epoch = int(modified.timestamp())
             now = int(datetime.now(timezone.utc).timestamp())

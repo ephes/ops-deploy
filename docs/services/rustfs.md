@@ -193,15 +193,21 @@ as its library in `/usr/local/lib/rustfs-replication-monitor`), the jobs file
   sets `lag.marker` to the object's modification time and touches
   `parity.marker` whenever parity holds (created on the first run, so a new
   job starts its parity grace). Levels follow the MinIO probe: warning and
-  critical by lag hours, critical when the object or size delta exceeds the
-  job's tolerances. A breach whose only cause is a non-empty replication
-  queue (a backup burst, counts and sizes within tolerance) is graded by how
-  long parity has been missing, measured from `parity.marker`: `ok` below
-  the job's `queue_warning_minutes` (default 30), `warning` from there,
+  critical by lag hours. A parity breach (a non-empty replication queue, or
+  an object or size delta over the job's tolerances) is graded by how long
+  parity has been missing, measured from `parity.marker`: `ok` below the
+  job's `queue_warning_minutes` (default 30), `warning` from there,
   `critical` from `parity_critical_hours` (default 1 h, where the marker
-  turns stale anyway). `status.json` lists the deciding reasons in
-  `critical_reasons`, a tolerated queue in `warning_reasons`
-  (`replication_queue_nonzero`), and the breach age in
+  turns stale anyway). The heartbeat lists the source before the replica, so
+  during the nightly backup burst one heartbeat can show a delta with an
+  empty queue (2026-11-25/26 at 03:00 CET: `backups` 1.2 GB over its 1 GiB
+  tolerance, gone with the next heartbeat 15 min later); a real gap persists
+  and turns critical after the hour. A breach without a named cause, or from
+  a heartbeat that lacks a parity field, is critical at once.
+  `status.json` lists the deciding reasons in `critical_reasons`, the
+  tolerated causes (`replication_queue_nonzero`,
+  `object_delta_exceeds_tolerance`, `size_delta_exceeds_tolerance`) in
+  `warning_reasons`, and the breach age in
   `parity_breach_seconds`; the journal gets one line per job that is not ok
   or has a warning reason. The service exits 2 when a required job is
   critical. File-age checks on the markers are the operator's alerting hook.

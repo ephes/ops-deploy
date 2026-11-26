@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- rustfs: the replica probe gives an object or size delta the same grace as
+  a non-empty replication queue: `ok` (cause in `warning_reasons`) below
+  `queue_warning_minutes`, `warning` until `parity_critical_hours`, then
+  `critical`. On 2026-11-25 and 26 the `backups` heartbeat at 03:00 CET
+  caught a backup object between the source and the replica listing (1.2 GB
+  over the 1 GiB tolerance, empty queue), which paged the Nyxmon check
+  "RustFS Replica macmini (JSON Metrics)" for 15 minutes. A persistent gap
+  is still critical after an hour, and the status endpoint is unchanged.
+
 - homelab: the default-services probe runs `add_default_services` in
   autocommit, without its outer `transaction.atomic()`. Since homelab
   `96f7f4e` the command refuses to run inside a transaction, so the probe

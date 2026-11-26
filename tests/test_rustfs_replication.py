@@ -620,6 +620,25 @@ def test_a_queue_gets_no_grace_without_its_parity_fields(monitor: types.ModuleTy
     assert backups["critical_reasons"] == ["replication_queue_nonzero"]
 
 
+@pytest.mark.parametrize("parity_ok", [None, "false", 0])
+def test_a_delta_gets_no_grace_without_a_boolean_parity_ok(
+    monitor: types.ModuleType, tmp_path: Path, parity_ok: Any
+) -> None:
+    body = {**json.loads(heartbeat_object("backups")), "size_diff_bytes": 1204861190, "size_diff_percent": 0.49}
+    if parity_ok is None:
+        body.pop("parity_ok")
+    else:
+        body["parity_ok"] = parity_ok
+    FakeApi.objects = {
+        ("backups", "_replication-health/heartbeat.json"): (json.dumps(body).encode(), stamp(timedelta())),
+        ("backups", "_replication-health/jobs/obsidian.json"): (heartbeat_object("obsidian"), stamp(timedelta())),
+    }
+    assert monitor.probe(monitor.library(), "http://100.64.0.10:9020", str(tmp_path), rows()) == 2
+    backups = json.loads((tmp_path / "backups/status.json").read_text())
+    assert backups["level"] == "critical"
+    assert backups["critical_reasons"] == ["size_delta_exceeds_tolerance"]
+
+
 def test_queue_grace_ends_exactly_at_a_fractional_parity_threshold(monitor: types.ModuleType) -> None:
     job = {**rows()[0], "parity_critical_hours": 1.0001}
     payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "queued_count": 1}
@@ -627,13 +646,29 @@ def test_queue_grace_ends_exactly_at_a_fractional_parity_threshold(monitor: type
     assert monitor.evaluate(job, payload, 0, 3601)[0] == "critical"
 
 
-def test_a_queue_with_missing_objects_stays_critical(monitor: types.ModuleType) -> None:
+def test_a_queue_with_missing_objects_lists_every_cause(monitor: types.ModuleType) -> None:
     payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "queued_count": 3, "object_delta": 300}
-    assert monitor.evaluate(rows()[0], payload, 0, 0) == (
-        "critical",
-        ["replication_queue_nonzero", "object_delta_exceeds_tolerance"],
-        [],
-    )
+    causes = ["replication_queue_nonzero", "object_delta_exceeds_tolerance"]
+    assert monitor.evaluate(rows()[0], payload, 0, 0) == ("ok", [], causes)
+    assert monitor.evaluate(rows()[0], payload, 0, 3600) == ("critical", causes, [])
+
+
+@pytest.mark.parametrize(
+    ("breach_minutes", "level", "reasons", "warnings"),
+    [
+        (15, "ok", [], ["size_delta_exceeds_tolerance"]),
+        (30, "warning", [], ["size_delta_exceeds_tolerance"]),
+        (60, "critical", ["size_delta_exceeds_tolerance"], []),
+    ],
+)  # fmt: skip
+def test_a_delta_during_a_backup_burst_escalates_with_its_duration(
+    monitor: types.ModuleType, breach_minutes: int, level: str, reasons: list[str], warnings: list[str]
+) -> None:
+    """2026-11-25/26: one heartbeat listed the source mid-upload (1.2 GB over a 1 GiB tolerance, empty queue)."""
+    payload = {**json.loads(heartbeat_object("backups")), "parity_ok": False, "object_delta": 9,
+               "size_diff_bytes": 1204861190, "size_diff_percent": 0.4926,
+               "parity_size_delta_tolerance_bytes": 1073741824}  # fmt: skip
+    assert monitor.evaluate(rows()[0], payload, 852, breach_minutes * 60) == (level, reasons, warnings)
 
 
 def test_probe_records_a_missing_or_foreign_heartbeat(monitor: types.ModuleType, tmp_path: Path) -> None:
@@ -665,7 +700,8 @@ def test_evaluation_matches_the_minio_probe(
     monitor: types.ModuleType, values: dict[str, Any], lag_hours: float, level: str, reasons: list[str]
 ) -> None:
     payload = {**json.loads(heartbeat_object("backups")), **values}
-    assert monitor.evaluate(rows()[0], payload, int(lag_hours * 3600)) == (level, reasons, [])
+    # Past the parity grace (parity_critical_hours) the levels are the MinIO probe's.
+    assert monitor.evaluate(rows()[0], payload, int(lag_hours * 3600), 3600) == (level, reasons, [])
 
 
 # -- the replica's status endpoint and the retired role's units ---------------------------------------------------
@@ -777,8 +813,8 @@ def test_critical_exit_follows_the_unit_setting(
 ) -> None:
     FakeApi.objects = {
         ("backups", "_replication-health/heartbeat.json"): (
-            heartbeat_object("backups", parity_ok=False, object_delta=300),
-            stamp(timedelta()),
+            heartbeat_object("backups"),
+            stamp(timedelta(hours=7)),
         ),
         ("backups", "_replication-health/jobs/obsidian.json"): (heartbeat_object("obsidian"), stamp(timedelta())),
     }
