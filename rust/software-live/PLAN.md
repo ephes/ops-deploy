@@ -958,7 +958,7 @@ separate helper (section 12); the alternative is not built.
 | resource usage | `nix::sys::resource::getrusage` (`resource` feature, S3f) | `--report-usage` |
 | os-release | own 30-line parser (`os.rs`) with fixtures from `platform._parse_os_release` | decided in S3c: neither crate follows Python's rule — `etc-os-release` 0.1.1 strips an unmatched opening quote and undoes every backslash escape, `os-release` 0.1.0 (unmaintained since 2018) trims lines and reads known keys only — which would change `id`, `cycle`, `codename` or `pretty_name` |
 | regex | `regex` | the patterns of 3.3 |
-| dates | `chrono` (date only, UTC; no default features) | `lifecycle_date` since S3a; the UTC date of `now` and its comparisons (S3c) |
+| dates | `jiff` (`std` only: civil dates, UTC; replaced `chrono`, RUSTSEC-2026-0543) | `lifecycle_date` since S3a; the UTC date of `now` and its comparisons (S3c) |
 | test HTTPS server | `rcgen` (dev only) | a self-signed certificate for the local test server |
 | endpoint HTTP | `hyper` 1 (`server::conn::http1`), `hyper-util` (`TokioIo`), `http-body-util`, `bytes`, `tokio` current-thread (`LocalSet`) | see 5.4 |
 | bcrypt | `bcrypt` (MIT) | 4.2 item 1 |

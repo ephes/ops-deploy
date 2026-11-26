@@ -449,8 +449,12 @@ fn patch_window_end<S: System>(
     if system.now() >= ends as f64 {
         return Ok(None);
     }
-    Ok(chrono::DateTime::from_timestamp(ends, 0)
-        .map(|ends| ends.format("%Y-%m-%dT%H:%M:%SZ").to_string()))
+    // An end after 9999-12-31T23:59:59Z has no `YYYY-MM-DDTHH:MM:SSZ` form:
+    // no window then, the issue as before.
+    Ok(jiff::civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
+        .checked_add(jiff::SignedDuration::from_secs(ends))
+        .ok()
+        .map(|ends| ends.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()))
 }
 
 #[cfg(test)]
@@ -691,6 +695,30 @@ mod tests {
             );
             assert!(!result.contains_key("notices"), "{id}");
             assert!(!result.contains_key("patch_window_ends_at"), "{id}");
+        }
+        // At the end of year 9999: the last writable end is a notice, an end
+        // after it has no `YYYY-MM-DDTHH:MM:SSZ` form and is the issue.
+        for (published, hours, ends) in [
+            ("9999-12-28T23:59:59Z", 72, Some("9999-12-31T23:59:59Z")),
+            ("9999-12-29T00:00:00Z", 72, None),
+            ("9999-12-31T23:59:59Z", 720, None),
+        ] {
+            let (result, _) =
+                patch_window_case(Some(("3.7", hours)), "3.7.12", Some(published), at(1.0));
+            match ends {
+                Some(ends) => {
+                    assert_eq!(result["status"], "ok", "{published}: {result:?}");
+                    assert_eq!(result["patch_window_ends_at"], ends, "{published}");
+                }
+                None => {
+                    assert_eq!(
+                        result["issues"],
+                        serde_json::json!(["outdated_running_version"]),
+                        "{published}: {result:?}"
+                    );
+                    assert!(!result.contains_key("patch_window_ends_at"), "{published}");
+                }
+            }
         }
         // Without a newer release the window changes nothing and reads no clock.
         let (result, calls) =
