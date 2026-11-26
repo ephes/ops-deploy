@@ -64,17 +64,23 @@ pub fn utc_date(now: f64) -> Result<Date, PyError> {
             "timestamp out of range for platform time_t",
         ));
     }
+    // CPython's `gmtime_r` fails first when the year does not fit glibc's
+    // `int tm_year` (year - 1900): `OSError(EOVERFLOW)`. Otherwise Python's
+    // message names `tm_year + 1900` as a C `int`, which wraps for the last
+    // 1900 years below 2^31 + 1900.
+    let Ok(tm_year) = i32::try_from(proleptic_year(seconds as i64) - 1900) else {
+        return Err(PyError::new(
+            "OSError",
+            "[Errno 75] Value too large for defined data type",
+        ));
+    };
+    let year = tm_year.wrapping_add(1900);
     // Civil arithmetic: `jiff::Timestamp` ends at 9999-12-30T22:00:00Z,
     // the civil calendar at the end of year 9999 (it starts at year -9999).
     let date = civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
         .checked_add(SignedDuration::from_secs(seconds as i64))
         .map(|moment| moment.date())
-        .map_err(|_| {
-            PyError::value(format!(
-                "year {} is out of range",
-                proleptic_year(seconds as i64)
-            ))
-        })?;
+        .map_err(|_| PyError::value(format!("year {year} is out of range")))?;
     if !(1..=9999).contains(&date.year()) {
         return Err(PyError::value(format!(
             "year {} is out of range",
@@ -305,6 +311,25 @@ mod tests {
         assert_eq!(utc_date(f64::NAN).unwrap_err().class, "ValueError");
         assert_eq!(utc_date(f64::INFINITY).unwrap_err().class, "OverflowError");
         assert_eq!(utc_date(1e19).unwrap_err().class, "OverflowError");
+        // glibc's `gmtime_r` refuses a year whose `tm_year` (year - 1900)
+        // does not fit an `int`: CPython on Linux raises `OSError`. The
+        // edges are the first second of the year 2147485548 (tm_year 2^31)
+        // and the last second of the year -2147481749 (tm_year -2^31 - 1);
+        // a float there steps by 8 seconds.
+        for now in [
+            1e17,
+            -1e17,
+            8e18,
+            67_768_036_191_676_800.0,
+            -67_768_040_609_740_808.0,
+        ] {
+            let error = utc_date(now).unwrap_err();
+            assert_eq!(error.class, "OSError", "{now}");
+            assert_eq!(
+                error.message, "[Errno 75] Value too large for defined data type",
+                "{now}"
+            );
+        }
         // Python names the year (`datetime.fromtimestamp(now, UTC)`, CPython
         // 3.12): beyond jiff's years -9999 to 9999 and inside them.
         for (now, year) in [
@@ -314,6 +339,9 @@ mod tests {
             (1e15, "31690708"),
             (-1e15, "-31686769"),
             (-377_705_116_800.0 + 0.5, "-9999"),
+            // `tm_year + 1900` wraps in C for year 2147485547.
+            (67_768_036_191_676_792.0, "-2147481749"),
+            (-67_768_040_609_740_800.0, "-2147481748"),
         ] {
             let error = utc_date(now).unwrap_err();
             assert_eq!(error.class, "ValueError", "{now}");
