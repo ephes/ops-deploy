@@ -31,6 +31,7 @@ The operations are named `Deploy livekit | ...` (the Compose app) and
 | `node_ip` | required, IPv4 | `livekit_node_ip` (`rtc.node_ip`, the ICE candidate clients get) |
 | `webhook_url` | required, http(s) | `livekit_webhook_url` |
 | `traefik_host` | required; `None` writes no route | `livekit_traefik_host` (`livekit_traefik_enabled`) |
+| `traefik_internal_ip_ranges` | `None` (everyone) | with ranges, the HTTP router also requires `ClientIP` in them |
 | `site_path`, `config_dir` | `/opt/livekit`, `/etc/livekit` | `livekit_site_dir`, `livekit_config_dir` |
 | `http_port`, `rtc_tcp_port` | `7880`, `7881` | `livekit_http_port`, `livekit_rtc_tcp_port` |
 | `rtc_port_range_start`, `rtc_port_range_end` | `50000`, `50100` (UDP) | the same names |
@@ -130,3 +131,15 @@ the managed store root; LiveKit declares the same metadata for bind validation.
 `egress_chrome_policy_path` optionally binds a prepared managed Chrome policy file read-only at `/etc/opt/chrome/policies/managed/99-emudhra.json` in Egress only. Use the collection `chrome_ca_distrust` role to prepare the policy; native SSL certificate environment settings do not affect Chrome Root Store. Recreate Egress after changing the single-file binding so it sees the new inode. The policy preserves other managed policies and does not touch browser profiles.
 
 When replacement trust is enabled, preconditions require the prepared bundle, empty directory and manifest before any service changes. A missing store fails deployment; prepare the target image first rather than allowing Compose to create a missing source.
+
+## Media from outside the LAN
+
+A client reaches the media ports (`rtc_port_range_*` over UDP, `rtc_tcp_port`)
+only where they are routed to it, and LiveKit advertises `node_ip` only. This
+deploy does not open a way for clients outside the LAN. LiveKit's embedded
+TURN server behind a Traefik TCP router on 443 was built and withdrawn in
+review (2026-11-26): LiveKit v1.12.0 bundles a TURN library whose TCP relay
+does not check peer permissions, so a holder of TURN credentials could reach
+TCP services on the host's networks. Revisit with a LiveKit version that
+confines the relay to the SFU's media ports, or forward the media ports on the
+router and advertise the public address.

@@ -1,11 +1,16 @@
 {% import "_edge.j2" as edge -%}
-# Managed by Ansible (recorder_deploy) - Traefik dynamic config for recorder
+{% if auth_hash -%}
+# Managed by ops-deploy (recorder) - Traefik dynamic config for recorder
 # HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
+# Home LAN and tailnet reach everything without basic auth. Everyone else
+# reaches only the guest paths, behind basic auth; the host dashboard and its
+# API have no router for them (404).
 http:
   routers:
-    {{ route.name }}:
-      rule: "Host(`{{ route.host }}`)"
+    {{ route.name }}-int:
+      rule: "Host(`{{ route.host }}`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
       service: {{ route.name }}
+      priority: 120
       entryPoints:
 {% for ep in entrypoints %}        - "{{ ep }}"
 {% endfor %}{% if route.cert_resolver %}      tls:
@@ -13,9 +18,63 @@ http:
 {% else %}      tls: {}
 {% endif %}      middlewares:
         - {{ route.name }}-headers
-
+{% if external %}
+    {{ route.name }}-ext:
+      rule: "Host(`{{ route.host }}`) && (PathPrefix(`/r/`) || Path(`/studio`) || Path(`/api/join`) || PathRegexp(`^/api/takes/[^/]+/upload$`) || Path(`/app.js`) || Path(`/worklet.js`) || Path(`/health`))"
+      service: {{ route.name }}
+      priority: 100
+      entryPoints:
+{% for ep in entrypoints %}        - "{{ ep }}"
+{% endfor %}{% if route.cert_resolver %}      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}      tls: {}
+{% endif %}      middlewares:
+        - {{ route.name }}-auth
+        - {{ route.name }}-headers
+{% endif %}{% if live_port %}
+    # The live call's signalling, same-origin with the recording page.
+    {{ route.name }}-live-int:
+      rule: "Host(`{{ route.host }}`) && PathPrefix(`/rtc`) && ({% for range in route.internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      service: {{ route.name }}-live
+      priority: 130
+      entryPoints:
+{% for ep in entrypoints %}        - "{{ ep }}"
+{% endfor %}{% if route.cert_resolver %}      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}      tls: {}
+{% endif %}      middlewares:
+        - {{ route.name }}-live-headers
+        - {{ route.name }}-headers
+{% if external %}
+    {{ route.name }}-live-ext:
+      rule: "Host(`{{ route.host }}`) && PathPrefix(`/rtc`)"
+      service: {{ route.name }}-live
+      priority: 110
+      entryPoints:
+{% for ep in entrypoints %}        - "{{ ep }}"
+{% endfor %}{% if route.cert_resolver %}      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}      tls: {}
+{% endif %}      middlewares:
+        - {{ route.name }}-auth
+        - {{ route.name }}-headers
+{% endif %}{% endif %}
   middlewares:
-    {{ route.name }}-headers:
+    {{ route.name }}-auth:
+      basicAuth:
+        users:
+          - "{{ route.basic_auth.user }}:{{ auth_hash }}"
+        removeHeader: true
+
+{% if live_port %}    # LiveKit reads the join token from the URL and refuses a request that
+    # carries any other Authorization header: a browser that once entered the
+    # guest credentials keeps sending them, also from the home network.
+    {{ route.name }}-live-headers:
+      headers:
+        customRequestHeaders:
+          Authorization: ""
+
+{% endif %}    {{ route.name }}-headers:
       headers:
         stsSeconds: 31536000
         stsIncludeSubdomains: true
@@ -31,3 +90,69 @@ http:
       loadBalancer:
         servers:
           - url: "http://{{ route.app_host }}:{{ route.app_port }}"
+{% if live_port %}    {{ route.name }}-live:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ live_port }}"
+{% endif %}{%- else -%}
+# Managed by Ansible (recorder_deploy) - Traefik dynamic config for recorder
+# HTTP->HTTPS redirect is handled globally by the `web` entrypoint.
+http:
+  routers:
+    {{ route.name }}:
+      rule: "Host(`{{ route.host }}`)"
+      service: {{ route.name }}
+{% if live_port %}      # Explicit, below the /rtc router: an implicit priority is the rule's
+      # length, and a long host name would outrank it.
+      priority: 100
+{% endif %}      entryPoints:
+{% for ep in entrypoints %}        - "{{ ep }}"
+{% endfor %}{% if route.cert_resolver %}      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}      tls: {}
+{% endif %}      middlewares:
+        - {{ route.name }}-headers
+{% if live_port %}
+    {{ route.name }}-live:
+      rule: "Host(`{{ route.host }}`) && PathPrefix(`/rtc`)"
+      service: {{ route.name }}-live
+      priority: 130
+      entryPoints:
+{% for ep in entrypoints %}        - "{{ ep }}"
+{% endfor %}{% if route.cert_resolver %}      tls:
+        certResolver: {{ route.cert_resolver }}
+{% else %}      tls: {}
+{% endif %}      middlewares:
+        - {{ route.name }}-live-headers
+        - {{ route.name }}-headers
+{% endif %}
+  middlewares:
+{% if live_port %}    # LiveKit reads the join token from the URL and refuses a request that
+    # carries any other Authorization header: a browser that once entered the
+    # guest credentials keeps sending them, also from the home network.
+    {{ route.name }}-live-headers:
+      headers:
+        customRequestHeaders:
+          Authorization: ""
+
+{% endif %}    {{ route.name }}-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+{{- edge.request_headers(10) }}
+
+  services:
+    {{ route.name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ route.app_host }}:{{ route.app_port }}"
+{% if live_port %}    {{ route.name }}-live:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ live_port }}"
+{% endif %}{%- endif %}

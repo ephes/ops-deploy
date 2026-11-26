@@ -16,7 +16,7 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretValues
 from ops_deploy.services.compose_app.render import render_compose
-from ops_deploy.services.livekit import LivekitConfig, deploy_livekit
+from ops_deploy.services.livekit import LivekitConfig, deploy_livekit, render_route
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 from tests.livekit_fixtures import (
@@ -368,3 +368,28 @@ def test_missing_native_store_stops_before_compose_changes(cfg: LivekitConfig, s
     assert not run.succeeded
     assert not run.mutating_changed_ops
     assert not container_commands(run)
+
+
+# --- the internal-only HTTP route -------------------------------------------
+
+
+def test_the_route_is_public_by_default_and_internal_with_ranges(cfg: LivekitConfig) -> None:
+    import yaml
+
+    doc = yaml.safe_load(render_route(cfg))
+    assert "tcp" not in doc
+    assert doc["http"]["routers"]["livekit"]["rule"] == f"Host(`{cfg.traefik_host}`)"
+
+    home = ("192.168.178.0/24", "100.64.0.0/10")
+    internal = yaml.safe_load(render_route(livekit_config(traefik_internal_ip_ranges=home)))
+    assert internal["http"]["routers"]["livekit"]["rule"] == (
+        "Host(`livekit.example.invalid`) && (ClientIP(`192.168.178.0/24`) || ClientIP(`100.64.0.0/10`))"
+    )
+    # Nothing but the router rule changes; LiveKit's own config is untouched.
+    assert "turn" not in livekit_config(traefik_internal_ip_ranges=home).server_config()
+
+
+def test_internal_ranges_are_validated() -> None:
+    for bad in ({"traefik_internal_ip_ranges": ()}, {"traefik_internal_ip_ranges": ("nonsense",)}):
+        with pytest.raises(ConfigValidationError):
+            livekit_config(**bad)

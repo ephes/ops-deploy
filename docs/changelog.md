@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- recorder: `guest_basic_auth` splits the route: clients in
+  `internal_ip_ranges` reach everything without auth, everyone else only the
+  guest paths (recording pages, their assets, join, chunk upload) behind basic
+  auth; the host dashboard and its API get no router for them.
+  `external_guests=False` drops the external routers again and keeps the
+  internal ones. `livekit_signal_port` serves LiveKit's `/rtc` on the recorder
+  host (in every mode, also as one public router without `guest_basic_auth`)
+  so the signalling WebSocket is same-origin; `livekit_url` overrides the
+  secrets' value and must then be the recorder's own `wss://` URL. With none
+  of these set the route is unchanged. The env-file quoting check applies to
+  the values written, no longer to every key of the secrets.
+- livekit: `traefik_internal_ip_ranges` restricts the HTTP route to those
+  clients (default: unchanged).
+
 - rust: metrics-httpd and software-live use `jiff` instead of the
   unmaintained `chrono` (RUSTSEC-2026-0543); `rust/deny.toml` no longer
   ignores the advisory. Released binaries are unchanged until their next

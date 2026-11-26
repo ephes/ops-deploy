@@ -12,15 +12,16 @@ under ``data_dir`` are never touched.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import os
 import shlex
 import subprocess
 from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Annotated, ClassVar, Literal, Protocol
+from typing import Annotated, ClassVar, Literal, Protocol, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pyinfra import host, logger
 from pyinfra.api import StringCommand, deploy, operation
 from pyinfra.api.command import FileUploadCommand
@@ -32,7 +33,7 @@ from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers import TraefikRoute, mark_read_only, service_rollout, system_user, systemd_unit, traefik_route
-from ops_deploy.helpers.traefik import Hostname
+from ops_deploy.helpers.traefik import DEFAULT_INTERNAL_IP_RANGES, BasicAuth, Hostname
 from ops_deploy.ops import secret_file
 
 TEMPLATE_PACKAGE = "ops_deploy.services.recorder"
@@ -42,6 +43,21 @@ TEMPLATE_PACKAGE = "ops_deploy.services.recorder"
 EnvValue = Annotated[str, Field(pattern=r'^[^"\\\r\n]*$')]
 Url = Annotated[str, Field(pattern=r"^https?://[^\s\"'\\$`]+$")]
 LIVEKIT_HOST_URL = "http://127.0.0.1:7880"
+# Secret key -> the recorder.env variable it is written to.
+ENV_NAMES = {
+    "s3_access_key": "RECORDER_S3_ACCESS_KEY",
+    "s3_secret_key": "RECORDER_S3_SECRET_KEY",
+    "livekit_url": "RECORDER_LIVEKIT_URL",
+    "livekit_host_url": "RECORDER_LIVEKIT_HOST_URL",
+    "livekit_api_key": "RECORDER_LIVEKIT_API_KEY",
+    "livekit_api_secret": "RECORDER_LIVEKIT_API_SECRET",
+    "session_secret": "RECORDER_SESSION_SECRET",
+    "admin_emails": "RECORDER_ADMIN_EMAILS",
+    "mail_api_url": "RECORDER_MAIL_API_URL",
+    "mail_domain": "RECORDER_MAIL_DOMAIN",
+    "mail_token": "RECORDER_MAIL_TOKEN",
+    "mail_from": "RECORDER_MAIL_FROM",
+}
 
 
 @dataclass(frozen=True)
@@ -105,9 +121,47 @@ class RecorderConfig(BaseServiceConfig):
     systemd_memory_max: Annotated[str, Field(pattern=r"^([0-9]+[KMGT]?|infinity)?$")] = "1G"
     healthcheck_retries: int = Field(default=10, ge=1)
     healthcheck_timeout: int = Field(default=30, ge=1)
+    # Guests from the internet: with ``guest_basic_auth`` the route splits. Clients in
+    # ``internal_ip_ranges`` reach everything without auth, as before. Everyone else
+    # reaches only the guest paths (the recording pages, their assets, join and
+    # chunk upload), behind basic auth; the host dashboard and its API have no
+    # router for them. ``None`` keeps the single public router.
+    guest_basic_auth: BasicAuth | None = None
+    internal_ip_ranges: tuple[str, ...] = DEFAULT_INTERNAL_IP_RANGES
+    # ``False`` with ``guest_basic_auth`` drops the external routers and keeps the
+    # internal ones: nobody outside ``internal_ip_ranges`` reaches anything. The
+    # switch for taking guest access away without reopening the dashboard; a
+    # deploy without ``guest_basic_auth`` is then refused before anything is written.
+    external_guests: bool = True
+    # With a port, ``/rtc`` on the recorder host goes to the LiveKit signalling
+    # port on loopback, so the browser's signalling WebSocket is same-origin with
+    # the page and carries the same basic-auth credentials. ``livekit_url`` must
+    # then be this host's own ``wss://`` URL.
+    livekit_signal_port: int | None = Field(default=None, ge=1, le=65535)
+    # Overrides the secrets' ``livekit_url`` (the URL browsers connect to) when set.
+    livekit_url: Annotated[str, Field(pattern=r"^(wss?://[A-Za-z0-9.-]+(:[0-9]{1,5})?)?$")] = ""
     # The playbook's post-deploy gate: scripts/smoke.sh through the external URL. None skips it.
     smoke_url: Url | None = None
     expect_accounts: bool = True
+
+    @field_validator("internal_ip_ranges")
+    @classmethod
+    def _valid_networks(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("internal_ip_ranges must not be empty")
+        for item in value:
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                raise ValueError("internal_ip_ranges must contain IP networks") from None
+        return value
+
+    @model_validator(mode="after")
+    def _guest_route(self) -> Self:
+        if self.livekit_signal_port is not None and self.livekit_url != f"wss://{self.traefik_host}":
+            # Anything else would send browsers to a host that does not serve /rtc.
+            raise ValueError("livekit_signal_port needs livekit_url to be wss://<traefik_host>")
+        return self
 
     @field_validator("source_path", "artifact_path")
     @classmethod
@@ -164,9 +218,6 @@ def env_lines(cfg: RecorderConfig, secrets: SecretValues) -> list[tuple[str, str
     def opt(key: str, default: str = "") -> str:
         return secrets.get(key, default)
 
-    for key, value in secrets.items():
-        if any(c in value for c in '"\\\r\n'):
-            raise ValueError(f"secret {key} must be a single line without double quotes or backslashes")
     out = [
         ("RECORDER_ADDR", f"{cfg.listen_address}:{cfg.port}"),
         ("RECORDER_DB_PATH", f"{cfg.data_dir}/recorder.db"),
@@ -188,7 +239,7 @@ def env_lines(cfg: RecorderConfig, secrets: SecretValues) -> list[tuple[str, str
         ]
     if opt("livekit_api_key"):
         out += [
-            ("RECORDER_LIVEKIT_URL", opt("livekit_url")),
+            ("RECORDER_LIVEKIT_URL", cfg.livekit_url or opt("livekit_url")),
             # The playbook's ``default(..., true)``: empty also falls back.
             ("RECORDER_LIVEKIT_HOST_URL", opt("livekit_host_url") or LIVEKIT_HOST_URL),
             ("RECORDER_LIVEKIT_API_KEY", opt("livekit_api_key")),
@@ -205,6 +256,14 @@ def env_lines(cfg: RecorderConfig, secrets: SecretValues) -> list[tuple[str, str
             ("RECORDER_MAIL_TOKEN", opt("mail_token")),
             ("RECORDER_MAIL_FROM", opt("mail_from", cfg.mail_from)),
         ]
+    # Check what is written, not what the secrets hold: a key that never
+    # reaches the file (the guests' basic-auth password, a ``livekit_url`` the
+    # config overrides) must not stop the deploy. Errors name the key only.
+    written = {name: key for key, name in ENV_NAMES.items()}
+    for name, value in out:
+        if any(c in value for c in '"\\\r\n'):
+            source = f"secret {written[name]}" if name in written else name
+            raise ValueError(f"{source} must be a single line without double quotes or backslashes")
     return out
 
 
@@ -221,13 +280,36 @@ def traefik_config(cfg: RecorderConfig) -> TraefikRoute:
         app_port=cfg.port,
         app_host=cfg.listen_address,
         cert_resolver=cfg.traefik_cert_resolver,
+        basic_auth=cfg.guest_basic_auth,
+        internal_ip_ranges=cfg.internal_ip_ranges,
     )
 
 
-def render_route(cfg: RecorderConfig, route: TraefikRoute) -> str:
-    """The role's own route (security headers, no basic auth), not the shared dual-router one."""
+def render_route(cfg: RecorderConfig, route: TraefikRoute, auth_hash: str | None = None) -> str:
+    """The role's own route (security headers), not the shared dual-router one.
 
-    return render(TEMPLATE_PACKAGE, "recorder-traefik.yml.j2", route=route, entrypoints=cfg.traefik_entrypoints)
+    Without ``guest_basic_auth`` it is the role's single public router, byte for
+    byte. With it, see :class:`RecorderConfig`.
+    """
+
+    if (route.basic_auth is None) != (auth_hash is None):
+        raise ValueError("auth_hash must be given exactly when the route has basic_auth")
+    if not cfg.external_guests and auth_hash is None:
+        # Without basic auth the route is one public router: "closed to guests"
+        # must never be rendered as "open to everyone". Checked here, not in the
+        # config, because callers may add the credentials only at deploy time.
+        raise ValueError("external_guests=False needs guest_basic_auth")
+    text = render(
+        TEMPLATE_PACKAGE,
+        "recorder-traefik.yml.j2",
+        route=route,
+        entrypoints=cfg.traefik_entrypoints,
+        auth_hash=auth_hash,
+        live_port=cfg.livekit_signal_port,
+        external=cfg.external_guests,
+    )
+    # The optional blocks at the end of the template must not change how the file ends.
+    return text.rstrip("\n") + "\n"
 
 
 @operation()
@@ -302,7 +384,11 @@ def deploy_recorder(cfg: RecorderConfig, secrets: SecretValues, runner: CommandR
     unit = systemd_unit(cfg.service_name, render(TEMPLATE_PACKAGE, "recorder.service.j2", cfg=cfg))
     # The role's ``reload traefik`` handler fails (the unit has no ExecReload)
     # and is ignored; the file provider's watch picks the route up.
-    traefik_route(traefik_config(cfg), renderer=lambda route, _hash: render_route(cfg, route), restart="none")
+    traefik_route(
+        traefik_config(cfg),
+        renderer=lambda route, auth_hash: render_route(cfg, route, auth_hash),
+        restart="none",
+    )
     service_rollout(cfg.service_name, units=[unit], restart_when=[binary, env])
 
     _health_check(cfg)
