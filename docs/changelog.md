@@ -12,9 +12,13 @@
   a `published_at` with a leap second (`:60`) or a signed year (`-0001-…`,
   `+10000-…`) no longer counts as GitHub's form, and a Traefik patch window
   that would end after 9999-12-31T23:59:59Z reports
-  `outdated_running_version` instead of a `+10000-…` end. The `ValueError`
-  for a `now` outside the years 1 to 9999 names the year as Python does, now
-  for every year (chrono only up to ±262143).
+  `outdated_running_version` instead of a `+10000-…` end. A `now` outside
+  the years 1 to 9999 fails as CPython on Linux does: a `ValueError` that
+  names the year (chrono named it only up to ±262143); a `now` that fits
+  the 64-bit `time_t` but not the years glibc's `gmtime` can hold (year -
+  1900 outside a 32-bit `int`, about ±2.1 billion) gives an `OSError`
+  (EOVERFLOW) instead of chrono's `ValueError`, and one beyond `time_t`
+  still gives `OverflowError`.
 
 - rustfs: the replica probe gives an object or size delta the same grace as
   a non-empty replication queue: `ok` (cause in `warning_reasons`) below
