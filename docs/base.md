@@ -1376,19 +1376,22 @@ deploy_cpu_tcc_offset(CpuTccOffsetConfig(offset=10))
 
 The kernel's `intel_tcc_cooling` driver shows the offset as the thermal
 cooling device of type `TCC Offset` (`cur_state` is the offset in °C); the
-value is lost at every reboot. The deploy writes one managed file,
+value is lost at every reboot. The deploy keeps one file,
 `/etc/udev/rules.d/60-cpu-tcc-offset.rules` (`root:root 0644`, overwritten
-like any other managed file), which sets `cur_state` whenever that device
-appears, so at every boot. A symlink, directory or other non-regular file at
-that path is refused before any change (it is never written through). When the
-host has the device and the file changes, or the device's `cur_state` is not
-the offset (an earlier run wrote the rule but its apply failed), it runs
-`udevadm control --reload && udevadm trigger --action=add
---subsystem-match=thermal --attr-match='type=TCC Offset' --settle`, so the
-offset applies without a reboot, and then reads `cur_state` back: udev ignores
-a failed attribute write, so the deploy fails unless the device now holds the
-offset. A converged host plans no change. Check it with `grep .
-/sys/class/thermal/cooling_device*/type
+when its content, mode or owner differ), which sets `cur_state` whenever that
+device appears, so at every boot. It writes the file to a temporary file in
+the same directory and renames it over the rule path (`mv -fT`): a symlink at
+that path is replaced, never written through, and a directory there fails the
+deploy. It reads the device's `cur_state` first; a `cur_state` that cannot be
+read fails the deploy before any change (only a host with no `TCC Offset`
+device counts as "no device"). When the host has the device and the file
+changes, or the device's `cur_state` is not the offset (an earlier run wrote
+the rule but its apply failed), it runs `udevadm control --reload && udevadm
+trigger --action=add --subsystem-match=thermal --attr-match='type=TCC Offset'
+--settle`, so the offset applies without a reboot, and then reads `cur_state`
+back: udev ignores a failed attribute write, so the deploy fails unless the
+device now holds the offset. A converged host plans no change. Check it with
+`grep . /sys/class/thermal/cooling_device*/type
 /sys/class/thermal/cooling_device*/cur_state`. On a host without that device
 the rule matches nothing and the deploy only writes the file.
 

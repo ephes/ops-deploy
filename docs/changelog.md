@@ -8,8 +8,10 @@
   device at every boot, so the processor throttles itself `offset` °C below
   TjMax; when the rule changed, or the device holds another offset, the
   deploy replays that device's udev event and fails unless `cur_state` then
-  reads back as the offset. A symlink or other non-regular file at the rule
-  path is refused, never written through. For macmini (i5-8500B, TjMax
+  reads back as the offset. The rule is renamed into place from a temporary
+  file next to it, so a symlink at the rule path is replaced, never written
+  through; an unreadable `cur_state` fails the deploy (only a host without the
+  device skips the apply). For macmini (i5-8500B, TjMax
   100 °C), which reached 100 °C in short turbo bursts.
 
 - rust: metrics-httpd and software-live use `jiff` instead of the

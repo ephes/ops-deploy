@@ -5,23 +5,28 @@ package reaches TjMax minus the TCC offset. The kernel's ``intel_tcc_cooling``
 driver shows that offset as the thermal cooling device of type ``TCC Offset``
 (``cur_state`` is the offset in °C); the value is lost at every reboot.
 
-The deploy installs one managed file, ``/etc/udev/rules.d/60-cpu-tcc-offset.rules``,
-which sets ``cur_state`` whenever that device appears, so at every boot. A
-symlink, directory or other non-regular file at that path is refused before
-any change, never written through. When the host has the device and the file
-changes, or the device holds another offset (a failed apply of an earlier
-run), it reloads udev, replays the ``add`` event of that one device and reads
-``cur_state`` back: udev ignores a failed attribute write, so the deploy fails
-unless the device now holds the offset. A converged host plans no change.
+The deploy keeps one file, ``/etc/udev/rules.d/60-cpu-tcc-offset.rules``
+(``root:root 0644``), which sets ``cur_state`` whenever that device appears,
+so at every boot. The file is written to a temporary file in the same
+directory and renamed over the rule path (``mv -fT``): the rename replaces a
+symlink at that path instead of writing through it, and fails on a directory.
+When the host has the device and the file changes, or the device holds another
+offset (a failed apply of an earlier run), it reloads udev, replays the
+``add`` event of that one device and reads ``cur_state`` back: udev ignores a
+failed attribute write, so the deploy fails unless the device now holds the
+offset. ``cur_state`` that cannot be read fails the deploy before any change;
+only a host without a ``TCC Offset`` device skips the apply. A converged host
+plans no change.
 """
 
 from __future__ import annotations
 
-from io import StringIO
+import hashlib
+import shlex
 
 from pydantic import Field
 from pyinfra.api import DeployError, deploy
-from pyinfra.operations import files, server
+from pyinfra.operations import server
 
 from ops_deploy.base._common import RoleConfig, output, require_linux
 
@@ -31,10 +36,17 @@ APPLY = (
     "udevadm control --reload && udevadm trigger --action=add --subsystem-match=thermal "
     "--attr-match='type=TCC Offset' --settle"
 )
-# The ``cur_state`` of the TCC Offset device; empty when the host has none.
-STATE = "for d in /sys/class/thermal/cooling_device*; do grep -qx 'TCC Offset' $d/type && cat $d/cur_state; done"
-# ``stat`` file type of the rule path, not following a symlink (C locale: English names).
-KIND = f"LC_ALL=C LANG=C stat -c %F {RULE_PATH} 2>/dev/null || echo missing"
+# The ``cur_state`` of the TCC Offset device, ``absent`` when the host has
+# none, ``unreadable`` when its ``cur_state`` cannot be read.
+STATE = (
+    "{ found=; for d in /sys/class/thermal/cooling_device*; do "
+    "grep -qx 'TCC Offset' \"$d/type\" || continue; found=1; "
+    'cat "$d/cur_state" || echo unreadable; done; [ -n "$found" ] || echo absent; }'
+)
+# File type, mode and owner of the rule path, not following a symlink (C locale: English names).
+KIND = f"LC_ALL=C LANG=C stat -c '%F %a %U:%G' {RULE_PATH} || echo missing"
+DIGEST = f"sha256sum {RULE_PATH}"
+CONVERGED_KIND = "regular file 644 root:root"
 
 
 class CpuTccOffsetConfig(RoleConfig):
@@ -60,23 +72,43 @@ def render_rule(cfg: CpuTccOffsetConfig) -> str:
     )
 
 
+def write_command(cfg: CpuTccOffsetConfig) -> str:
+    """Writes the rule to a temporary file next to it and renames it over the rule path.
+
+    ``mv -T`` renames onto the path itself: a symlink there is replaced, not
+    followed, and a directory there fails the rename. udev reads only
+    ``*.rules``, so the temporary file is never loaded.
+    """
+
+    return (
+        "tmp=$(mktemp /etc/udev/rules.d/.60-cpu-tcc-offset.rules.XXXXXX) && "
+        f'{{ printf %s {shlex.quote(render_rule(cfg))} >"$tmp" && chown root:root "$tmp" && chmod 0644 "$tmp" '
+        f'&& mv -fT "$tmp" {RULE_PATH} || {{ rm -f "$tmp"; exit 1; }}; }}'
+    )
+
+
+def device_state() -> str | None:
+    """The device's ``cur_state``; ``None`` when the host has no TCC Offset device."""
+
+    state = output(STATE).strip()
+    if state == "absent":
+        return None
+    if not state.isdigit():
+        raise DeployError(f"cpu_tcc_offset: cannot read the TCC Offset cur_state ({state or 'no output'})")
+    return state
+
+
 @deploy("CPU TCC offset")
 def deploy_cpu_tcc_offset(cfg: CpuTccOffsetConfig) -> None:
     require_linux("cpu_tcc_offset")
-    kind = output(KIND).strip()
-    if kind not in ("missing", "regular file", "regular empty file"):
-        raise DeployError(f"cpu_tcc_offset: {RULE_PATH} is a {kind or 'file of unknown type'}, not a regular file")
-    state = output(STATE).strip()
-    rule = files.put(
-        name=f"Install {RULE_PATH}",
-        src=StringIO(render_rule(cfg)),
-        dest=RULE_PATH,
-        user="root",
-        group="root",
-        mode="0644",
-    )
-    # No device (``state`` empty): the rule matches nothing, there is nothing to apply.
-    if state and (rule.will_change or state != str(cfg.offset)):
+    state = device_state()
+    digest = hashlib.sha256(render_rule(cfg).encode()).hexdigest()
+    current = output(DIGEST).split()
+    changed = output(KIND).strip() != CONVERGED_KIND or current[:1] != [digest]
+    if changed:
+        server.shell(name=f"Install {RULE_PATH}", commands=[write_command(cfg)])
+    # No device: the rule matches nothing, there is nothing to apply.
+    if state is not None and (changed or state != str(cfg.offset)):
         server.shell(
             name="Apply the TCC offset through the udev rule",
             commands=[APPLY, verify_command(cfg)],
