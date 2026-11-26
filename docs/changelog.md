@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- base: new pyinfra-only `cpu_tcc_offset` (`CpuTccOffsetConfig(offset=…)`).
+  It writes one managed udev rule, `/etc/udev/rules.d/60-cpu-tcc-offset.rules`,
+  that sets the CPU's TCC offset through the `intel_tcc_cooling` cooling
+  device at every boot, so the processor throttles itself `offset` °C below
+  TjMax; when the rule changed, or the device holds another offset, the
+  deploy replays that device's udev event. For macmini (i5-8500B, TjMax
+  100 °C), which reached 100 °C in short turbo bursts.
+
 - rust: metrics-httpd and software-live use `jiff` instead of the
   unmaintained `chrono` (RUSTSEC-2026-0543); `rust/deny.toml` no longer
   ignores the advisory. Released binaries are unchanged until their next
