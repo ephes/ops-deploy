@@ -32,6 +32,7 @@ ops-control registers it with secrets from two SOPS files (see its
 | `s3_access_key`, `s3_secret_key` | when `s3_endpoint` is set | `RECORDER_S3_*` |
 | `livekit_api_key` | no | enables the live path (`RECORDER_LIVEKIT_*`) |
 | `livekit_url`, `livekit_api_secret` | with `livekit_api_key` | |
+| any other key | no | ignored; only values that are written to the env file must fit its quoting |
 | `livekit_host_url` | no | empty or missing: `http://127.0.0.1:7880` |
 
 Values are written inside double quotes into a systemd `EnvironmentFile`, so
@@ -54,6 +55,8 @@ Defaults follow the role's `defaults/main.yml` and the playbook, except
 | `data_dir`, `config_dir` | `/var/lib/recorder`, `/etc/recorder` | env file `<config_dir>/recorder.env` |
 | `listen_address`, `port` | `127.0.0.1`, `10015` | |
 | `traefik_entrypoints`, `traefik_cert_resolver` | `("web-secure",)`, `""` | empty resolver: `tls: {}` (wildcard cert) |
+| `guest_basic_auth`, `internal_ip_ranges`, `external_guests` | `None`, the helper's internal ranges, `True` | see "Guests from the internet" |
+| `livekit_signal_port`, `livekit_url` | `None`, `""` | see "Guests from the internet"; `livekit_url` overrides the secrets' value and must be `wss://<traefik_host>` with a signal port |
 | `live_room_prefix` | `rec-` | |
 | `max_chunk_bytes` | `None` | `None` leaves `RECORDER_MAX_CHUNK_BYTES` out |
 | `upload_buffer_bytes` | `None` | `None` leaves `RECORDER_UPLOAD_BUFFER_BYTES` out (the binary's 64 MiB): chunk-upload bytes buffered at once over all takes |
@@ -117,3 +120,56 @@ failures, secret handling) and `tests/smoke/test_recorder_smoke.py` (fresh
 install, converged rerun, and a new binary replacing the running one on the
 smoke VM; needs Go, npm and `RECORDER_SOURCE` or
 `$PROJECTS_ROOT/podcast/apps/recorder`).
+
+## Guests from the internet
+
+Without `guest_basic_auth` the route is the role's single router: every client
+that reaches Traefik reaches the whole app, the host dashboard and its login
+included.
+
+With `guest_basic_auth` (a `BasicAuth`, as for `TraefikRoute`) the route file
+holds:
+
+| Router | Matches | Auth |
+|---|---|---|
+| `recorder-int` (priority 120) | the host, clients in `internal_ip_ranges` | none; everything |
+| `recorder-ext` (priority 100) | the host and a guest path: `/r/…`, `/studio`, `/api/join`, `/api/takes/<id>/upload`, `/app.js`, `/worklet.js`, `/health` | basic auth |
+
+Any other path from outside `internal_ip_ranges` has no router and gets
+Traefik's 404: the dashboard (`/`), the account pages (`/activate`, `/reset`,
+`/verify`) and the host and admin API. The guest paths are the recording pages
+and what they call; an invite token in the link remains the per-person
+capability, basic auth is the shared outer door. The middleware removes the
+`Authorization` header before the request reaches recorderd. The bcrypt hash
+is computed on the controller and the file is written without a diff, as for
+every route with basic auth.
+
+`external_guests=False` (only with `guest_basic_auth`) drops `recorder-ext`
+and `recorder-live-ext`: clients outside `internal_ip_ranges` then reach
+nothing, while the internal routers stay. It takes guest access away without
+going back to the single public router; a deploy with `external_guests=False`
+and no `guest_basic_auth` is refused when the route is rendered. It stops new
+requests only: a WebSocket that is already open (a guest's signalling
+connection) can outlive Traefik's reload of the route file, so a call in
+progress may continue until it ends or LiveKit is restarted.
+
+`livekit_signal_port` adds `recorder-live-int` and `recorder-live-ext` for
+`PathPrefix(/rtc)` on the same host, in front of `http://127.0.0.1:<port>`
+(LiveKit's signalling); without `guest_basic_auth` it adds one public
+`recorder-live` router next to the single app router, so `/rtc` reaches
+LiveKit in every mode. `livekit_url` must be `wss://<traefik_host>` with it
+(anything else is refused: browsers would be sent to a host without `/rtc`).
+The routers without basic auth carry `recorder-live-headers`, which deletes
+the `Authorization` header: LiveKit takes its join token from the URL and
+refuses a request with any other `Authorization`, and a browser that once
+entered the guest credentials keeps sending them, also from the home network
+(on the external router the basic-auth middleware removes the header itself).
+The browser's signalling WebSocket is then same-origin with the recording page
+and carries the basic-auth credentials the guest entered for the page. A
+WebSocket to another host would not: browsers neither reuse credentials across
+origins nor prompt for a WebSocket. The media itself is not HTTP; see the
+livekit page ("Media from outside the LAN").
+
+Add a new browser-reachable path of the recorder to the `recorder-ext` rule in
+`recorder-traefik.yml.j2` when guests need it; `tests/test_recorder.py` pins
+the list.

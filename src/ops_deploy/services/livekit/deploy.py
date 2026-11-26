@@ -99,6 +99,9 @@ class LivekitConfig(BaseServiceConfig):
     s3_endpoint: Url = "http://127.0.0.1:9001"
     s3_bucket: Bucket = "recorder"
     traefik_host: Hostname | None
+    # With ranges, the HTTP route answers only these clients (browsers then reach
+    # the signalling through another route, e.g. the recorder's ``/rtc``).
+    traefik_internal_ip_ranges: tuple[str, ...] | None = None
     # Optional prepared per-container CA stores, retaining pinned application images.
     ca_store_root: PlainPath | None = None
     egress_chrome_policy_path: PlainPath | None = None
@@ -121,6 +124,20 @@ class LivekitConfig(BaseServiceConfig):
             ipaddress.IPv4Address(value)
         except ValueError:
             raise ValueError("node_ip must be an IPv4 address") from None
+        return value
+
+    @field_validator("traefik_internal_ip_ranges")
+    @classmethod
+    def _valid_networks(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("traefik_internal_ip_ranges must not be empty")
+        for item in value:
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                raise ValueError("traefik_internal_ip_ranges must contain IP networks") from None
         return value
 
     @model_validator(mode="after")

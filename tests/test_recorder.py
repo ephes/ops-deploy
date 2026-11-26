@@ -263,3 +263,199 @@ def test_relative_controller_paths_are_made_absolute(tmp_path: Path, monkeypatch
 
 def test_route_sends_hsts_without_preload(cfg: RecorderConfig) -> None:
     assert len(hsts_headers(render_route(cfg, traefik_config(cfg)), seconds=31536000)) == 1
+
+
+# --- guests from the internet: split route with basic auth -----------------
+
+GUEST_HASH = "$2y$05$" + "a" * 53
+HOME = ("192.168.178.0/24", "100.64.0.0/10")
+
+
+def guest_cfg(cfg: RecorderConfig, **changes: Any) -> RecorderConfig:
+    from pydantic import SecretStr
+
+    from ops_deploy.helpers.traefik import BasicAuth
+
+    return cfg.model_copy(
+        update={
+            "guest_basic_auth": BasicAuth(user="admin", password=SecretStr("recorder-fixture-guest-password")),
+            "internal_ip_ranges": HOME,
+            **changes,
+        }
+    )
+
+
+def guest_route(cfg: RecorderConfig) -> dict[str, Any]:
+    import yaml
+
+    doc = yaml.safe_load(render_route(cfg, traefik_config(cfg), GUEST_HASH))["http"]
+    assert isinstance(doc, dict)
+    return doc
+
+
+def test_guest_route_keeps_the_dashboard_internal_and_puts_guests_behind_basic_auth(cfg: RecorderConfig) -> None:
+    doc = guest_route(guest_cfg(cfg))
+    internal = "(ClientIP(`192.168.178.0/24`) || ClientIP(`100.64.0.0/10`))"
+
+    assert list(doc["routers"]) == ["recorder-int", "recorder-ext"]
+    assert doc["routers"]["recorder-int"] == {
+        "rule": f"Host(`{HOST}`) && {internal}",
+        "service": "recorder",
+        "priority": 120,
+        "entryPoints": ["web-secure"],
+        "tls": {},
+        "middlewares": ["recorder-headers"],
+    }
+    ext = doc["routers"]["recorder-ext"]
+    assert ext["priority"] == 100
+    assert ext["middlewares"] == ["recorder-auth", "recorder-headers"]
+    # Only the recording pages, their assets, join and chunk upload.
+    assert ext["rule"] == (
+        f"Host(`{HOST}`) && (PathPrefix(`/r/`) || Path(`/studio`) || Path(`/api/join`) || "
+        "PathRegexp(`^/api/takes/[^/]+/upload$`) || Path(`/app.js`) || Path(`/worklet.js`) || Path(`/health`))"
+    )
+    for private in ("/api/auth", "/api/rooms", "/api/sessions", "/api/invites", "/api/admin", "/activate", "/reset"):
+        assert private not in ext["rule"]
+    assert doc["middlewares"]["recorder-auth"] == {
+        "basicAuth": {"users": [f"admin:{GUEST_HASH}"], "removeHeader": True}
+    }
+    assert list(doc["services"]) == ["recorder"]
+    # No router without a client or path restriction is left.
+    assert all("ClientIP" in r["rule"] or "Path" in r["rule"] for r in doc["routers"].values())
+
+
+def test_guest_route_serves_the_live_signalling_same_origin(cfg: RecorderConfig) -> None:
+    doc = guest_route(guest_cfg(cfg, livekit_signal_port=7880, livekit_url=f"wss://{HOST}"))
+
+    assert list(doc["routers"]) == ["recorder-int", "recorder-ext", "recorder-live-int", "recorder-live-ext"]
+    live_int, live_ext = doc["routers"]["recorder-live-int"], doc["routers"]["recorder-live-ext"]
+    assert live_int["service"] == live_ext["service"] == "recorder-live"
+    assert "ClientIP" in live_int["rule"]
+    assert "PathPrefix(`/rtc`)" in live_int["rule"]
+    # A browser that once entered the guest credentials keeps sending them, and
+    # LiveKit refuses any Authorization header but its own token: strip it.
+    assert live_int["middlewares"] == ["recorder-live-headers", "recorder-headers"]
+    assert doc["middlewares"]["recorder-live-headers"] == {"headers": {"customRequestHeaders": {"Authorization": ""}}}
+    assert live_ext["rule"] == f"Host(`{HOST}`) && PathPrefix(`/rtc`)"
+    assert live_ext["middlewares"] == ["recorder-auth", "recorder-headers"]
+    # /rtc wins over the app's routers for both kinds of client.
+    assert live_int["priority"] > doc["routers"]["recorder-int"]["priority"]
+    app_int, app_ext = doc["routers"]["recorder-int"], doc["routers"]["recorder-ext"]
+    assert app_int["priority"] > live_ext["priority"] > app_ext["priority"]
+    assert doc["services"]["recorder-live"] == {"loadBalancer": {"servers": [{"url": "http://127.0.0.1:7880"}]}}
+    guest = guest_cfg(cfg)
+    assert len(hsts_headers(render_route(guest, traefik_config(guest), GUEST_HASH), seconds=31536000)) == 1
+
+
+def test_guest_route_needs_its_hash_and_the_plain_route_takes_none(cfg: RecorderConfig) -> None:
+    with pytest.raises(ValueError, match="auth_hash"):
+        render_route(guest_cfg(cfg), traefik_config(guest_cfg(cfg)))
+    with pytest.raises(ValueError, match="auth_hash"):
+        render_route(cfg, traefik_config(cfg), GUEST_HASH)
+
+
+def test_livekit_url_override_reaches_the_env_file(cfg: RecorderConfig, secrets: SecretValues) -> None:
+    live = values(cfg, livekit_api_key="k", livekit_api_secret="s", livekit_url="wss://old.example.invalid")
+    assert 'RECORDER_LIVEKIT_URL="wss://old.example.invalid"' in render_env(cfg, live).reveal().decode()
+    same_origin = cfg.model_copy(update={"livekit_url": f"wss://{HOST}"})
+    assert f'RECORDER_LIVEKIT_URL="wss://{HOST}"' in render_env(same_origin, live).reveal().decode()
+
+
+def test_guest_route_config_is_validated(tmp_path: Path) -> None:
+    base: dict[str, Any] = {
+        "source_path": make_source(tmp_path),
+        "secrets": SecretRef("secrets/prod/recorder.yml"),
+        "public_url": f"https://{HOST}",
+        "traefik_host": HOST,
+    }
+    RecorderConfig(**base, livekit_signal_port=7880, livekit_url=f"wss://{HOST}")
+    for bad in (
+        {"livekit_signal_port": 7880},  # needs the same-origin URL
+        {"livekit_signal_port": 7880, "livekit_url": "wss://livekit.example.invalid"},  # another host: no /rtc there
+        {"livekit_url": "https://not-a-websocket.example"},
+        {"livekit_url": 'wss://x.example/"'},
+        {"internal_ip_ranges": ("not-a-network",)},
+        {"internal_ip_ranges": ()},
+    ):
+        with pytest.raises(ConfigValidationError):
+            RecorderConfig(**{**base, **bad})
+
+
+def test_switching_to_the_guest_route_rewrites_only_the_route_without_showing_it(
+    cfg: RecorderConfig, secrets: SecretValues
+) -> None:
+    guest = guest_cfg(cfg, livekit_signal_port=7880, livekit_url=f"wss://{HOST}")
+    # The host still has the single public router.
+    run = deploy(guest, secrets, converged(cfg, secrets))
+
+    assert run.mutating_changed_ops == ["Deploy recorder | Write Traefik route recorder"]
+    # A route that holds a hash is written like a secret (no upload a diff could show).
+    assert ROUTE not in run.uploaded_paths
+    assert "recorder-fixture-guest-password" not in run.all_text() + repr(run.ops)
+
+
+def test_signalling_route_without_guest_auth_keeps_the_public_router_and_adds_rtc(cfg: RecorderConfig) -> None:
+    import yaml
+
+    live = cfg.model_copy(update={"livekit_signal_port": 7880, "livekit_url": f"wss://{HOST}"})
+    doc = yaml.safe_load(render_route(live, traefik_config(live)))["http"]
+
+    # The same-origin URL is only valid when /rtc really reaches LiveKit, in every mode.
+    assert list(doc["routers"]) == ["recorder", "recorder-live"]
+    assert doc["routers"]["recorder"]["rule"] == f"Host(`{HOST}`)"
+    assert doc["routers"]["recorder-live"]["rule"] == f"Host(`{HOST}`) && PathPrefix(`/rtc`)"
+    # Explicit priorities: an implicit one is the rule's length, so a long host
+    # name would otherwise let the app router take /rtc.
+    assert doc["routers"]["recorder"]["priority"] == 100
+    assert doc["routers"]["recorder-live"]["priority"] == 130
+    assert "priority" not in yaml.safe_load(render_route(cfg, traefik_config(cfg)))["http"]["routers"]["recorder"]
+    assert doc["routers"]["recorder-live"]["middlewares"] == ["recorder-live-headers", "recorder-headers"]
+    assert doc["services"]["recorder-live"] == {"loadBalancer": {"servers": [{"url": "http://127.0.0.1:7880"}]}}
+
+
+def test_external_guests_off_leaves_only_the_internal_routers(cfg: RecorderConfig) -> None:
+    closed = guest_cfg(cfg, livekit_signal_port=7880, livekit_url=f"wss://{HOST}", external_guests=False)
+    doc = guest_route(closed)
+
+    assert list(doc["routers"]) == ["recorder-int", "recorder-live-int"]
+    assert all("ClientIP" in router["rule"] for router in doc["routers"].values())
+
+
+def test_closed_guest_access_is_never_rendered_as_the_public_router(cfg: RecorderConfig, secrets: SecretValues) -> None:
+    closed = cfg.model_copy(update={"external_guests": False})
+    with pytest.raises(ValueError, match="external_guests=False needs guest_basic_auth"):
+        render_route(closed, traefik_config(closed))
+    # The deploy stops on it while planning, before any operation runs.
+    with pytest.raises(ValueError, match="external_guests=False needs guest_basic_auth"):
+        run_deploy_fake(deploy_recorder, closed, secrets, runner=FakeToolchain(), responses=converged(cfg, secrets))
+
+
+def test_every_rendered_route_ends_with_one_newline(cfg: RecorderConfig) -> None:
+    live = {"livekit_signal_port": 7880, "livekit_url": f"wss://{HOST}"}
+    texts = [
+        render_route(cfg, traefik_config(cfg)),
+        render_route(cfg.model_copy(update=live), traefik_config(cfg)),
+        render_route(guest_cfg(cfg), traefik_config(guest_cfg(cfg)), GUEST_HASH),
+        render_route(guest_cfg(cfg, **live), traefik_config(guest_cfg(cfg)), GUEST_HASH),
+        render_route(guest_cfg(cfg, **live, external_guests=False), traefik_config(guest_cfg(cfg)), GUEST_HASH),
+    ]
+    for text in texts:
+        assert text.endswith('"\n')
+        assert not text.endswith("\n\n")
+
+
+def test_only_values_written_to_the_env_file_must_fit_its_quoting(cfg: RecorderConfig) -> None:
+    live = {"livekit_api_key": "k", "livekit_api_secret": "s"}
+    # The guests' basic-auth password travels in the same secrets but is only hashed.
+    odd = values(cfg, guest_basic_auth_password='pa"ss\\word')
+    assert "pa" not in render_env(cfg, odd).reveal().decode()
+    # A secret the config overrides never reaches the file either.
+    same_origin = cfg.model_copy(update={"livekit_url": f"wss://{HOST}"})
+    overridden = values(cfg, **live, livekit_url="wss://old\\host")
+    assert f'RECORDER_LIVEKIT_URL="wss://{HOST}"' in render_env(same_origin, overridden).reveal().decode()
+    # Written values are still refused, by key name only.
+    with pytest.raises(ValueError, match="secret livekit_url must be a single line") as caught:
+        render_env(cfg, overridden)
+    assert "old" not in str(caught.value)
+    with pytest.raises(ValueError, match="secret mail_token must be a single line"):
+        render_env(cfg, values(cfg, mail_token='to"ken'))

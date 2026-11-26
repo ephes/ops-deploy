@@ -4,7 +4,7 @@
 http:
   routers:
     livekit:
-      rule: "Host(`{{ cfg.traefik_host }}`)"
+      rule: "Host(`{{ cfg.traefik_host }}`){% if cfg.traefik_internal_ip_ranges %} && ({% for range in cfg.traefik_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %}){% endif %}"
       entryPoints:
         - web-secure
       middlewares:
