@@ -7,7 +7,9 @@
   that sets the CPU's TCC offset through the `intel_tcc_cooling` cooling
   device at every boot, so the processor throttles itself `offset` °C below
   TjMax; when the rule changed, or the device holds another offset, the
-  deploy replays that device's udev event. For macmini (i5-8500B, TjMax
+  deploy replays that device's udev event and fails unless `cur_state` then
+  reads back as the offset. A symlink or other non-regular file at the rule
+  path is refused, never written through. For macmini (i5-8500B, TjMax
   100 °C), which reached 100 °C in short turbo bursts.
 
 - rust: metrics-httpd and software-live use `jiff` instead of the
