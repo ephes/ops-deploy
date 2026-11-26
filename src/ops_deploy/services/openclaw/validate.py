@@ -25,6 +25,7 @@ from typing import Any
 
 import yaml
 
+from ops_deploy.services.openclaw.layout import WEEKLY_RESTART
 from ops_deploy.services.openclaw.variables import FILES, evaluate, to_bool
 
 HOST_REGISTERED = ("openclaw_weeknotes_s3_mc_stat", "openclaw_ca_bundle")
@@ -142,6 +143,15 @@ def validate(variables: dict[str, Any]) -> None:
     deliver_to = str(variables.get("openclaw_weeknotes_reminder_deliver_to") or "").strip()
     if to_bool(variables["openclaw_weeknotes_enabled"]) and deliver_to and not re.fullmatch(r"-?[0-9]+", deliver_to):
         raise ValidationError("weeknotes reminder: openclaw_weeknotes_reminder_deliver_to must be a Telegram chat id")
+    # Not in the role: the weekly restart units' fixed name stays free for them.
+    for name in (
+        "openclaw_service_name",
+        "openclaw_metrics_endpoint_service_name",
+        "openclaw_metrics_endpoint_timer_name",
+    ):
+        value = str(variables[name])
+        if value == WEEKLY_RESTART or value.startswith(f"{WEEKLY_RESTART}."):
+            raise ValidationError(f"{name}: {WEEKLY_RESTART} is reserved for the weekly gateway restart units")
 
 
 def host_checks(variables: dict[str, Any]) -> list[tuple[str, str]]:

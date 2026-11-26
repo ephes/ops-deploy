@@ -41,6 +41,9 @@ DATA = "/mnt/cryptdata/openclaw/data"
 HOST_STEPS = ("config", "doctor", "plugins", "migrations", "audio", "cron")
 
 
+RESTART = layout.WEEKLY_RESTART
+
+
 def with_variables(**changes: Any) -> OpenClawConfig:
     return OpenClawConfig(variables={**CFG.variables, **changes}, httpd=CFG.httpd)
 
@@ -89,6 +92,7 @@ def converged(v: dict[str, Any] = V) -> dict[str, Any]:
         *layout.workspace_skill_files(v),
         *layout.metrics_files(v).values(),
         layout.manifest_file(v),
+        *layout.weekly_restart_files(v).values(),
     ]
     for spec in specs:
         responses.update(written(spec))
@@ -104,7 +108,12 @@ def converged(v: dict[str, Any] = V) -> dict[str, Any]:
     for path in ("/etc/systemd/system", "/usr/local/bin", "/etc/logrotate.d"):
         responses.update(fakehost.directory(path))
     responses.update(fakehost.file("/etc/openclaw-metrics-endpoint/htpasswd", f"nyxmon:{HASH}\n"))
-    for unit in ("openclaw.service", "openclaw-metrics-collector.timer", "openclaw-metrics-endpoint.service"):
+    for unit in (
+        "openclaw.service",
+        "openclaw-metrics-collector.timer",
+        "openclaw-metrics-endpoint.service",
+        f"{RESTART}.timer",
+    ):
         responses.update(fakehost.service(unit))
     return responses
 
@@ -660,9 +669,14 @@ def test_session_reset_clears_cached_skill_snapshots(tmp_path: Path) -> None:
 R = "Remove OpenClaw | "
 
 
-def units(active: str = "inactive", enabled: str = "disabled") -> dict[str, list[str]]:
+def units(active: str = "inactive", enabled: str = "disabled", *, timer: bool = False) -> dict[str, list[str]]:
+    """``systemctl show`` of the weekly restart timer (present when ``timer``), then of ``openclaw.service``."""
+
+    timer_lines = [f"Id={RESTART}.timer", "LoadState=" + ("loaded" if timer else "not-found")]
+    timer_lines += ["ActiveState=" + ("active" if timer else "inactive")]
+    timer_lines += ["UnitFileState=" + ("enabled" if timer else ""), "---"]
     lines = ["Id=openclaw.service", "LoadState=loaded", f"ActiveState={active}", f"UnitFileState={enabled}", "---"]
-    return {"systemctl show --property Id": lines}
+    return {"systemctl show --property Id": timer_lines + lines}
 
 
 def test_removal_requires_confirmation() -> None:
@@ -724,9 +738,91 @@ def test_removal_keeps_data_image_and_account_by_default() -> None:
     assert "userdel" not in commands
 
 
+def test_removal_takes_the_weekly_restart_timer_and_its_service() -> None:
+    timer, service = (f"/etc/systemd/system/{RESTART}.{kind}" for kind in ("timer", "service"))
+    responses = {
+        **fakehost.UBUNTU,
+        **units(timer=True),
+        f"test -e {timer} || test -L {timer}; echo $?": ["0"],
+        f"test -e {service} || test -L {service}; echo $?": ["0"],
+    }
+    cfg = OpenClawRemoveConfig(confirm=True, variables={"openclaw_data_dir": DATA})
+    result = run_deploy_fake(deploy_openclaw_remove, cfg, responses=responses)
+
+    assert result.succeeded, result.error
+    assert result.changed_ops == [
+        f"{R}Stop {RESTART}.timer",
+        f"{R}Disable {RESTART}.timer",
+        f"{R}Remove {timer}",
+        f"{R}Remove {service}",
+        f"{R}Reload systemd after removing the OpenClaw unit",
+    ]
+
+
+def test_removal_takes_a_dangling_weekly_restart_link() -> None:
+    timer = f"/etc/systemd/system/{RESTART}.timer"
+    responses = {**fakehost.UBUNTU, **units(), f"test -e {timer} || test -L {timer}; echo $?": ["0"]}
+    cfg = OpenClawRemoveConfig(confirm=True, variables={"openclaw_data_dir": DATA})
+    result = run_deploy_fake(deploy_openclaw_remove, cfg, responses=responses)
+
+    assert result.succeeded, result.error
+    assert result.changed_ops == [f"{R}Remove {timer}", f"{R}Reload systemd after removing the OpenClaw unit"]
+    assert f"rm -f {timer}" in result.executed_commands
+
+
+@pytest.mark.parametrize(
+    "variable",
+    ["openclaw_service_name", "openclaw_metrics_endpoint_service_name", "openclaw_metrics_endpoint_timer_name"],
+)
+@pytest.mark.parametrize("suffix", ["", ".service", ".timer"])
+def test_weekly_restart_name_is_reserved(variable: str, suffix: str) -> None:
+    with pytest.raises(ValueError, match="reserved for the weekly gateway restart"):
+        with_variables(**{variable: RESTART + suffix}).role_variables(SECRETS)
+
+
 def test_removal_toggles_are_not_variables() -> None:
     with pytest.raises(ValueError, match="openclaw_remove_data"):
         OpenClawRemoveConfig(variables={"openclaw_remove_data": True})
+
+
+# -- weekly gateway restart (upstream openclaw#181687) -----------------------------------------
+
+
+def test_weekly_restart_installs_and_starts_its_timer() -> None:
+    responses = converged()
+    for spec in layout.weekly_restart_files(V).values():
+        for key in root_file(spec):
+            responses.pop(key)
+    responses.update(fakehost.service(f"{RESTART}.timer", running=False, enabled=False))
+    result = run(responses)
+
+    assert [op for op in result.mutating_changed_ops if RESTART in op] == [
+        f"{P}Install systemd unit {RESTART}.service",
+        f"{P}Install systemd unit {RESTART}.timer",
+        f"{P}Reload systemd for {RESTART}",
+        f"{P}Restart {RESTART}.timer",
+        f"{P}Enable and start {RESTART}.timer",
+    ]
+    assert result.written(f"/etc/systemd/system/{RESTART}.timer").decode() == (
+        "[Unit]\n"
+        "Description=Weekly restart of the OpenClaw gateway, Sunday 04:00\n"
+        "\n"
+        "[Timer]\n"
+        "OnCalendar=Sun *-*-* 04:00:00\n"
+        "AccuracySec=1min\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=timers.target\n"
+    )
+    assert result.written(f"/etc/systemd/system/{RESTART}.service").decode() == (
+        "[Unit]\n"
+        "Description=Weekly restart of the OpenClaw gateway (upstream openclaw#181687)\n"
+        "After=openclaw.service\n"
+        "\n"
+        "[Service]\n"
+        "Type=oneshot\n"
+        "ExecStart=/usr/bin/systemctl try-restart openclaw.service\n"
+    )
 
 
 # -- Nyxmon ----------------------------------------------------------------------------------

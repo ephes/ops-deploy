@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- base: new pyinfra-only `cpu_tcc_offset` (`CpuTccOffsetConfig(offset=…)`).
+  It writes one managed udev rule, `/etc/udev/rules.d/60-cpu-tcc-offset.rules`,
+  that sets the CPU's TCC offset through the `intel_tcc_cooling` cooling
+  device at every boot, so the processor throttles itself `offset` °C below
+  TjMax; when the rule changed, the deploy replays that device's udev event.
+  For macmini (i5-8500B, TjMax 100 °C), which reached 100 °C in short turbo
+  bursts.
+
+- openclaw: every deploy installs `openclaw-gateway-weekly-restart.timer`
+  and its oneshot service, which run `systemctl try-restart` of the gateway
+  every Sunday at 04:00 (host time, fixed). A workaround for upstream
+  openclaw#181687, whose prepared-model-catalog worker grows by about
+  0.26 GiB a day until the gateway restarts. The removal removes both units.
+  `openclaw_service_name`, `openclaw_metrics_endpoint_service_name` and
+  `openclaw_metrics_endpoint_timer_name` now refuse that unit name (with or
+  without a `.service`/`.timer` suffix).
+
 - rust: metrics-httpd and software-live use `jiff` instead of the
   unmaintained `chrono` (RUSTSEC-2026-0543); `rust/deny.toml` no longer
   ignores the advisory. Released binaries are unchanged until their next

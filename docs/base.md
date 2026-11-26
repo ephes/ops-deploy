@@ -47,6 +47,7 @@ change.
 | `nfs_client_mount` | none (new) | `NfsClientConfig`, `NfsClientMount`, `NfsHostsEntry` | `deploy_nfs_client_mount` |
 | `default_qdisc` | none (pyinfra only) | `DefaultQdiscConfig` | `deploy_default_qdisc` |
 | `darwin_log_trim` | none (new, macOS) | `DarwinLogTrimConfig` | `deploy_darwin_log_trim` |
+| `cpu_tcc_offset` | none (pyinfra only) | `CpuTccOffsetConfig` | `deploy_cpu_tcc_offset` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -1354,6 +1355,40 @@ never remounted: new options apply at the next mount.
 disabled (if enabled), the unit file and the docker drop-in are removed, and
 systemd reloads if one was removed. On a host that never had them this is a
 no-op; the mount point is not probed.
+
+## cpu_tcc_offset
+
+No ops-library role: a pyinfra-only base deploy. It sets the CPU's TCC
+offset, so the processor's own thermal control circuit throttles at TjMax
+minus `offset` instead of at TjMax. On an i5-8500B (TjMax 100 °C) `offset:
+10` throttles at 90 °C. The throttling is the CPU's, immediate and without a
+daemon; the fan stays under the firmware's control.
+
+```python
+from ops_deploy.base import CpuTccOffsetConfig, deploy_cpu_tcc_offset
+
+deploy_cpu_tcc_offset(CpuTccOffsetConfig(offset=10))
+```
+
+| Field | Default | |
+|---|---|---|
+| `offset` | required | 1 to 63 °C below TjMax |
+
+The kernel's `intel_tcc_cooling` driver shows the offset as the thermal
+cooling device of type `TCC Offset` (`cur_state` is the offset in °C); the
+value is lost at every reboot. The deploy writes one managed file,
+`/etc/udev/rules.d/60-cpu-tcc-offset.rules` (`root:root 0644`, overwritten
+like any other managed file), which sets `cur_state` whenever that device
+appears, so at every boot. When the file changed it runs `udevadm control
+--reload && udevadm trigger --action=add --subsystem-match=thermal
+--attr-match='type=TCC Offset' --settle`, so the new offset applies without a
+reboot. A converged host plans no change. The deploy does not read the
+device; check it after a first deploy with `grep . /sys/class/thermal/cooling_device*/type
+/sys/class/thermal/cooling_device*/cur_state`. On a host without that device
+the rule matches nothing.
+
+Rollback: remove the rule file and write `0` to the device's `cur_state` (or
+reboot after removing the rule).
 
 ## default_qdisc
 
