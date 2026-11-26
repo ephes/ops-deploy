@@ -1,0 +1,11 @@
+# Managed by ops-deploy (openclaw). Do not edit on the host.
+[Unit]
+Description=Weekly restart of the OpenClaw gateway ({{ openclaw_weekly_restart_on_calendar }})
+
+[Timer]
+OnCalendar={{ openclaw_weekly_restart_on_calendar }}
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

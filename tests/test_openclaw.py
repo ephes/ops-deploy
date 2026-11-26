@@ -678,9 +678,128 @@ def test_removal_keeps_data_image_and_account_by_default() -> None:
     assert "userdel" not in commands
 
 
+def test_removal_takes_the_weekly_restart_timer_first() -> None:
+    timer, service = (f"/etc/systemd/system/{RESTART}.{kind}" for kind in ("timer", "service"))
+    responses = {
+        **fakehost.UBUNTU,
+        f"for unit in {RESTART}.timer;": [f"Id={RESTART}.timer", "ActiveState=active", "UnitFileState=enabled", "---"],
+        **units(),
+        f"test -e {timer} && echo yes": ["yes"],
+        f"test -e {service} && echo yes": ["yes"],
+        layout.weekly_restart_ours(timer): ["ours"],
+        layout.weekly_restart_ours(service): ["ours"],
+    }
+    cfg = OpenClawRemoveConfig(confirm=True, variables={"openclaw_data_dir": DATA})
+    result = run_deploy_fake(deploy_openclaw_remove, cfg, responses=responses)
+
+    assert result.succeeded, result.error
+    assert result.changed_ops == [
+        f"{R}Stop {RESTART}.timer",
+        f"{R}Disable {RESTART}.timer",
+        f"{R}Remove {timer}",
+        f"{R}Remove {service}",
+        f"{R}Reload systemd after removing the OpenClaw unit",
+    ]
+
+
+def test_removal_leaves_a_foreign_unit_of_the_weekly_restart_name() -> None:
+    timer = f"/etc/systemd/system/{RESTART}.timer"
+    responses = {**fakehost.UBUNTU, **units(), f"test -e {timer} && echo yes": ["yes"]}
+    cfg = OpenClawRemoveConfig(confirm=True, variables={"openclaw_data_dir": DATA})
+    result = run_deploy_fake(deploy_openclaw_remove, cfg, responses=responses)
+
+    assert result.succeeded, result.error
+    assert result.changed_ops == []
+
+
 def test_removal_toggles_are_not_variables() -> None:
     with pytest.raises(ValueError, match="openclaw_remove_data"):
         OpenClawRemoveConfig(variables={"openclaw_remove_data": True})
+
+
+# -- weekly restart (upstream openclaw#181687) ------------------------------------------------
+
+
+RESTART = "openclaw-weekly-restart"
+WEEKLY = with_variables(openclaw_weekly_restart_enabled=True)
+
+
+def with_weekly_restart(v: dict[str, Any]) -> dict[str, Any]:
+    responses: dict[str, Any] = {}
+    for spec in layout.weekly_restart_files(v).values():
+        responses.update(root_file(spec))
+        responses[layout.weekly_restart_ours(spec.path)] = ["ours"]
+    responses.update(fakehost.service(f"{RESTART}.timer"))
+    return responses
+
+
+def test_weekly_restart_is_off_by_default_and_plans_nothing() -> None:
+    result = run(converged())
+
+    # Not even a conditional operation: a host that never had the units gets no plan line for them.
+    assert not any(RESTART in op.name for op in result.ops)
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("openclaw_service_name", RESTART),
+        ("openclaw_service_name", f"{RESTART}.service"),
+        ("openclaw_metrics_endpoint_service_name", RESTART),
+        ("openclaw_metrics_endpoint_timer_name", RESTART),
+    ],
+)
+def test_weekly_restart_unit_names_are_reserved_before_any_change(variable: str, value: str) -> None:
+    result = run({**fakehost.UBUNTU}, with_variables(**{variable: value}), ok=False)
+
+    assert "reserved for the weekly restart units" in str(result.error)
+    assert result.uploads == []
+
+
+def test_an_invalid_calendar_stops_before_any_write() -> None:
+    cfg = with_variables(openclaw_weekly_restart_enabled=True, openclaw_weekly_restart_on_calendar="--version")
+    result = run({**fakehost.UBUNTU, "systemd-analyze calendar -- --version": {"success": False}}, cfg, ok=False)
+
+    assert result.uploads == []
+
+
+def test_weekly_restart_installs_and_starts_its_timer() -> None:
+    v = WEEKLY.role_variables(SECRETS)
+    result = run(converged(v), WEEKLY)
+
+    assert result.mutating_changed_ops == [
+        f"{P}Install systemd unit {RESTART}.service",
+        f"{P}Install systemd unit {RESTART}.timer",
+        f"{P}Reload systemd for {RESTART}",
+        f"{P}Restart {RESTART}.timer",
+        f"{P}Enable and start {RESTART}.timer",
+    ]
+    timer = result.written(f"/etc/systemd/system/{RESTART}.timer").decode()
+    assert "OnCalendar=Sun *-*-* 04:00:00\n" in timer
+    assert "Persistent=false\n" in timer
+    assert "WantedBy=timers.target\n" in timer
+    service = result.written(f"/etc/systemd/system/{RESTART}.service").decode()
+    assert "Type=oneshot\n" in service
+    assert "ExecStart=/usr/bin/systemctl try-restart openclaw.service\n" in service
+    assert any("systemd-analyze calendar -- 'Sun *-*-* 04:00:00'" in command for command in result.executed_commands)
+
+
+def test_converged_weekly_restart_changes_nothing() -> None:
+    v = WEEKLY.role_variables(SECRETS)
+    result = run({**converged(v), **with_weekly_restart(v)}, WEEKLY)
+
+    assert result.mutating_changed_ops == []
+
+
+def test_disabled_weekly_restart_removes_its_units() -> None:
+    result = run({**converged(), **with_weekly_restart(V)})
+
+    assert result.mutating_changed_ops == [
+        f"{P}Stop and disable {RESTART}.timer",
+        f"{P}Remove /etc/systemd/system/{RESTART}.service",
+        f"{P}Remove /etc/systemd/system/{RESTART}.timer",
+        f"{P}Reload systemd after removing {RESTART}",
+    ]
 
 
 # -- Nyxmon ----------------------------------------------------------------------------------

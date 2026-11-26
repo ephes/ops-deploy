@@ -8,6 +8,7 @@ recorded host state (``tests/golden/openclaw``).
 from __future__ import annotations
 
 import posixpath
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -243,4 +244,29 @@ def metrics_files(v: Vars) -> dict[str, FileSpec]:
         "collector_unit": _root(v, "openclaw-metrics-collector.service.j2", f"/etc/systemd/system/{timer}.service"),
         "timer_unit": _root(v, "openclaw-metrics-collector.timer.j2", f"/etc/systemd/system/{timer}.timer"),
         "endpoint_unit": _root(v, "openclaw-metrics-endpoint.service.j2", f"/etc/systemd/system/{service}.service"),
+    }
+
+
+# -- the weekly restart ----------------------------------------------------------------------
+
+
+# A fixed unit name: the removal and a disabled deploy find exactly these units,
+# and touch a file of that name only when it carries the units' Description.
+WEEKLY_RESTART = "openclaw-weekly-restart"
+WEEKLY_RESTART_UNITS = (f"{WEEKLY_RESTART}.service", f"{WEEKLY_RESTART}.timer")
+WEEKLY_RESTART_MARK = "Description=Weekly restart of the OpenClaw gateway"
+
+
+def weekly_restart_ours(path: str) -> str:
+    """A command printing ``ours`` when ``path`` is one of the weekly restart units."""
+
+    return f"grep -qs {shlex.quote('^' + WEEKLY_RESTART_MARK)} {shlex.quote(path)} && echo ours"
+
+
+def weekly_restart_files(v: Vars) -> dict[str, FileSpec]:
+    """The timer and its oneshot service that restart the gateway once a week."""
+
+    return {
+        "service": _root(v, f"{WEEKLY_RESTART}.service.j2", f"/etc/systemd/system/{WEEKLY_RESTART}.service"),
+        "timer": _root(v, f"{WEEKLY_RESTART}.timer.j2", f"/etc/systemd/system/{WEEKLY_RESTART}.timer"),
     }

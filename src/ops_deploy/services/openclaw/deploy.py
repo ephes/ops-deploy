@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from pyinfra import host, logger
-from pyinfra.api import StringCommand, deploy, operation
+from pyinfra.api import DeployError, StringCommand, deploy, operation
 from pyinfra.api.operation import OperationMeta
 from pyinfra.facts.files import FileContents
 from pyinfra.facts.server import Command
@@ -41,6 +41,7 @@ from pyinfra.operations import apt, files, server, systemd
 from ops_deploy.core.secrets import SecretContent
 from ops_deploy.helpers import mark_read_only, systemd_unit, wait_port
 from ops_deploy.helpers.probes import probe, stdin_arguments, verify_probe
+from ops_deploy.helpers.systemd import unit_name
 from ops_deploy.helpers.traefik import hash_password
 from ops_deploy.infra import docker_steps
 from ops_deploy.ops import secret_file, secret_stdin
@@ -554,6 +555,48 @@ def _metrics(v: Vars, cfg: OpenClawConfig, skill_changes: Sequence[Meta]) -> Non
     metrics_httpd.verify(selection)
 
 
+def _weekly_restart_preflight(v: Vars) -> None:
+    """Before any change: the weekly restart's unit names are free, and its OnCalendar parses."""
+
+    timer = v["openclaw_metrics_endpoint_timer_name"]
+    others = {
+        unit_name(v["openclaw_service_name"]),
+        unit_name(v["openclaw_metrics_endpoint_service_name"]),
+        f"{timer}.service",
+        f"{timer}.timer",
+    }
+    if others & set(layout.WEEKLY_RESTART_UNITS):
+        raise DeployError(f"OpenClaw: {layout.WEEKLY_RESTART} is reserved for the weekly restart units")
+    if bool_(v["openclaw_weekly_restart_enabled"]):
+        calendar = shlex.quote(str(v["openclaw_weekly_restart_on_calendar"]))
+        check = f"systemd-analyze calendar -- {calendar} >/dev/null"
+        mark_read_only(server.shell(name=f"Check the OnCalendar of {layout.WEEKLY_RESTART}.timer", commands=[check]))
+
+
+def _weekly_restart(v: Vars) -> None:
+    """The weekly gateway restart timer (upstream openclaw#181687); disabled, its units go."""
+
+    name = layout.WEEKLY_RESTART
+    timer = f"{name}.timer"
+    if not bool_(v["openclaw_weekly_restart_enabled"]):
+        paths = [str(SYSTEMD / unit) for unit in layout.WEEKLY_RESTART_UNITS]
+        paths = [path for path in paths if (probe(layout.weekly_restart_ours(path), name=path) or "").strip() == "ours"]
+        if not paths:
+            return
+        if str(SYSTEMD / timer) in paths:
+            systemd.service(name=f"Stop and disable {timer}", service=timer, running=False, enabled=False)
+        for path in paths:
+            files.file(name=f"Remove {path}", path=path, present=False)
+        systemd.daemon_reload(name=f"Reload systemd after removing {name}")
+        return
+    specs = layout.weekly_restart_files(v)
+    units = [systemd_unit(f"{name}.service", specs["service"].content.decode())]
+    units.append(systemd_unit(timer, specs["timer"].content.decode()))
+    systemd.daemon_reload(name=f"Reload systemd for {name}", _if=changed(*units))
+    systemd.service(name=f"Restart {timer}", service=timer, command="restart", _if=changed(units[1]))
+    systemd.service(name=f"Enable and start {timer}", service=timer, running=True, enabled=True)
+
+
 def _session_state(v: Vars, workspace_files: Sequence[Meta]) -> None:
     manifest = write(layout.manifest_file(v))
     request = {"path": v["openclaw_session_state_path"]}
@@ -575,6 +618,7 @@ def deploy_openclaw(cfg: OpenClawConfig, secrets: OpenClawSecrets) -> None:
     for task, test in host_checks(v):
         failure = f"{test} || {{ echo {shlex.quote(task + ' failed')} >&2; exit 1; }}"
         mark_read_only(server.shell(name=task, commands=[failure]))
+    _weekly_restart_preflight(v)
     if bool_(v["openclaw_install_docker"]):
         docker_steps(cfg.docker)
         mark_read_only(server.shell(name="Verify Docker Compose v2 is available", commands=["docker compose version"]))
@@ -606,6 +650,7 @@ def deploy_openclaw(cfg: OpenClawConfig, secrets: OpenClawSecrets) -> None:
     workspace = _workspace_skills(v)
     _metrics(v, cfg, [*skills, *workspace])
     _session_state(v, workspace)
+    _weekly_restart(v)
 
 
 # -- the playbook's post task ----------------------------------------------------------------
