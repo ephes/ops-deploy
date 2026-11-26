@@ -69,7 +69,12 @@ pub fn utc_date(now: f64) -> Result<Date, PyError> {
     let date = civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
         .checked_add(SignedDuration::from_secs(seconds as i64))
         .map(|moment| moment.date())
-        .map_err(|_| PyError::value("year is out of range"))?;
+        .map_err(|_| {
+            PyError::value(format!(
+                "year {} is out of range",
+                proleptic_year(seconds as i64)
+            ))
+        })?;
     if !(1..=9999).contains(&date.year()) {
         return Err(PyError::value(format!(
             "year {} is out of range",
@@ -77,6 +82,21 @@ pub fn utc_date(now: f64) -> Result<Date, PyError> {
         )));
     }
     Ok(date)
+}
+
+/// The proleptic Gregorian year (year 0 = 1 BC) of `seconds` since the
+/// epoch, for the message of a year jiff cannot represent (Python names the
+/// year, e.g. `year 10000 is out of range`). Days to civil after Howard
+/// Hinnant's `civil_from_days`; no overflow for any `seconds` that passed
+/// the `time_t` check.
+fn proleptic_year(seconds: i64) -> i64 {
+    let z = seconds.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    yoe + era * 400 + i64::from(mp >= 10)
 }
 
 /// `str(item.get("cycle")) == cycle`. A string, a number, a bool and `null`
@@ -285,6 +305,24 @@ mod tests {
         assert_eq!(utc_date(f64::NAN).unwrap_err().class, "ValueError");
         assert_eq!(utc_date(f64::INFINITY).unwrap_err().class, "OverflowError");
         assert_eq!(utc_date(1e19).unwrap_err().class, "OverflowError");
+        // Python names the year (`datetime.fromtimestamp(now, UTC)`, CPython
+        // 3.12): beyond jiff's years -9999 to 9999 and inside them.
+        for (now, year) in [
+            (253_402_300_800.0, "10000"),
+            (-62_135_596_801.0, "0"),
+            (-377_705_116_801.0, "-10000"),
+            (1e15, "31690708"),
+            (-1e15, "-31686769"),
+            (-377_705_116_800.0 + 0.5, "-9999"),
+        ] {
+            let error = utc_date(now).unwrap_err();
+            assert_eq!(error.class, "ValueError", "{now}");
+            assert_eq!(
+                error.message,
+                format!("year {year} is out of range"),
+                "{now}"
+            );
+        }
     }
 
     #[test]
