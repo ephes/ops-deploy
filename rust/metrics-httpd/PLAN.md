@@ -828,7 +828,7 @@ are small and may stay async via `tokio::fs`, subprocesses via
 | base64 | `base64` | |
 | URL query encoding | `form_urlencoded` | D-13 |
 | CLI | `clap` 4 (derive, minimal features) | as the precedents |
-| time | `chrono` (`clock`, `std`) | UTC ISO strings, local time for the access log |
+| time | `jiff` (`std`, `tz-system`, `tzdb-zoneinfo`; replaced `chrono`, RUSTSEC-2026-0543) | UTC ISO strings (civil arithmetic, so the years 1–9999 fit), local time for the access log |
 | uname, process-group kill, `access(X_OK)` | `rustix` (`fs` from S1; `system` from S2c; `process` in S2b) | `os.uname().release` equivalent; D-8; `--check-config` of the script |
 | JSON serialisation trait | `serde` (no derive) | the `Formatter` writes `serde_json::Value`s |
 | tests | `tempfile`, `httparse` (reading raw responses in the fixture replay) | |

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- rust: metrics-httpd and software-live use `jiff` instead of the
+  unmaintained `chrono` (RUSTSEC-2026-0543); `rust/deny.toml` no longer
+  ignores the advisory. Released binaries are unchanged until their next
+  release. The output stays byte for byte the same (meta `generated_at`, the
+  access-log time, lifecycle dates, `patch_window_ends_at`; compared with
+  chrono over two million instants of the years 1 to 9999), with two
+  deliberate edge changes in software-live: a `published_at` with a leap
+  second (`:60`) no longer counts as GitHub's form, and a Traefik patch
+  window that would end after 9999-12-31T23:59:59Z reports
+  `outdated_running_version` instead of a `+10000-…` end. A `now` after the
+  year 9999 still fails with `ValueError`, but its message is `year is out
+  of range` (software-live PLAN.md 6.1 records library messages by class
+  only).
+
 - rustfs: the replica probe gives an object or size delta the same grace as
   a non-empty replication queue: `ok` (cause in `warning_reasons`) below
   `queue_warning_minutes`, `warning` until `parity_critical_hours`, then

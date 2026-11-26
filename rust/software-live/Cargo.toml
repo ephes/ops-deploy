@@ -17,8 +17,6 @@ publish.workspace = true
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
 bytes = "1.12.1"
-# Lifecycle dates (`date.fromisoformat`, PLAN.md 3.3 and 4.2 item 6).
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 # `subprocess`'s close_fds for every child without `unsafe` (probe.rs).
 close_fds = "0.3.2"
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
@@ -26,6 +24,9 @@ hex = "0.4"
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1.21", default-features = false, features = ["tokio"] }
+# Lifecycle dates (`date.fromisoformat`, PLAN.md 3.3 and 4.2 item 6), UTC
+# only: no time zone support.
+jiff = { version = "1.0.3", default-features = false, features = ["std"] }
 # `grp.getgrnam` of the export and state groups (PLAN.md 3.6, 5.3);
 # `getrusage` of `collect --report-usage` (PLAN.md 3.1).
 nix = { version = "0.31.3", default-features = false, features = ["user", "resource"] }

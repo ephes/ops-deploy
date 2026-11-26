@@ -8,7 +8,8 @@
 //! "Upstream lookups and caches"): an object with `status` and, when `ok`,
 //! the validated `cycles` (objects with a string `cycle`).
 
-use chrono::{DateTime, Datelike, NaiveDate};
+use jiff::SignedDuration;
+use jiff::civil::{self, Date};
 use serde_json::{Map, Value};
 
 use crate::error::PyError;
@@ -23,7 +24,7 @@ const EVIDENCE_KEYS: [&str; 5] = ["status", "product", "checked_at_epoch", "cach
 /// a date has passed when `today >= end`, `null` never ends.
 pub fn lifecycle_ended(
     value: &Value,
-    today: NaiveDate,
+    today: Date,
     true_means_ended: bool,
 ) -> Result<bool, PyError> {
     if let Value::Bool(flag) = value {
@@ -35,7 +36,7 @@ pub fn lifecycle_ended(
 /// `datetime.fromtimestamp(now, UTC).date()`. As CPython, the timestamp is
 /// first rounded to microseconds, half to even, so a time a fraction of a
 /// microsecond before midnight is already the next day.
-pub fn utc_date(now: f64) -> Result<NaiveDate, PyError> {
+pub fn utc_date(now: f64) -> Result<Date, PyError> {
     if now.is_nan() {
         return Err(PyError::value("Invalid value NaN (not a number)"));
     }
@@ -63,9 +64,12 @@ pub fn utc_date(now: f64) -> Result<NaiveDate, PyError> {
             "timestamp out of range for platform time_t",
         ));
     }
-    let date = DateTime::from_timestamp(seconds as i64, 0)
-        .map(|moment| moment.date_naive())
-        .ok_or_else(|| PyError::value("year is out of range"))?;
+    // Civil arithmetic: `jiff::Timestamp` ends at 9999-12-30T22:00:00Z,
+    // the civil calendar at the end of year 9999 (it starts at year -9999).
+    let date = civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
+        .checked_add(SignedDuration::from_secs(seconds as i64))
+        .map(|moment| moment.date())
+        .map_err(|_| PyError::value("year is out of range"))?;
     if !(1..=9999).contains(&date.year()) {
         return Err(PyError::value(format!(
             "year {} is out of range",
@@ -222,7 +226,7 @@ mod tests {
         serde_json::from_str(include_str!("../fixtures/lifecycle.json")).unwrap()
     }
 
-    fn iso(date: Option<NaiveDate>) -> Value {
+    fn iso(date: Option<Date>) -> Value {
         date.map_or(Value::Null, |d| {
             Value::String(format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
         })
