@@ -8,13 +8,13 @@
   release. The output stays byte for byte the same (meta `generated_at`, the
   access-log time, lifecycle dates, `patch_window_ends_at`; compared with
   chrono over two million instants of the years 1 to 9999), with two
-  deliberate edge changes in software-live: a `published_at` with a leap
-  second (`:60`) no longer counts as GitHub's form, and a Traefik patch
-  window that would end after 9999-12-31T23:59:59Z reports
-  `outdated_running_version` instead of a `+10000-…` end. A `now` after the
-  year 9999 still fails with `ValueError`, but its message is `year is out
-  of range` (software-live PLAN.md 6.1 records library messages by class
-  only).
+  deliberate edge changes in software-live (README "Traefik patch window"):
+  a `published_at` with a leap second (`:60`) or a signed year (`-0001-…`,
+  `+10000-…`) no longer counts as GitHub's form, and a Traefik patch window
+  that would end after 9999-12-31T23:59:59Z reports
+  `outdated_running_version` instead of a `+10000-…` end. The `ValueError`
+  for a `now` outside the years 1 to 9999 names the year as Python does, now
+  for every year (chrono only up to ±262143).
 
 - rustfs: the replica probe gives an object or size delta the same grace as
   a non-empty replication queue: `ok` (cause in `warning_reasons`) below

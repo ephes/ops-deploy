@@ -40,7 +40,8 @@ Nyxmon check `summary.traefik_ok` warned.
   0.1.2 ignores them (a policy may carry extra keys).
 - Upstream: the Traefik lookup keeps GitHub's `published_at` of the latest
   release (result and cache) when it has GitHub's `YYYY-MM-DDTHH:MM:SSZ`
-  form. A cache written by 0.1.2 has none; it is used until it expires (one
+  form: a four-digit year from 0000 to 9999 without a sign, and no leap
+  second (`:60`). A cache written by 0.1.2 has none; it is used until it expires (one
   day), and until then no window applies.
 - Observation: when the running release is older than the latest one, both
   are in the policy's patch line, the latest has `published_at`, and the
@@ -48,8 +49,10 @@ Nyxmon check `summary.traefik_ok` warned.
   `notices: ["newer_patch_in_patch_window"]` and `patch_window_ends_at`
   (`YYYY-MM-DDTHH:MM:SSZ`) instead of the issue `outdated_running_version`;
   without other issues its status stays `ok`, so `summary.traefik_ok` is
-  `true`. Outside the window, for another line (a new minor release) or
-  without `published_at` the issue is reported as before. Only the latest
+  `true`. Outside the window, for another line (a new minor release),
+  without `published_at`, or when the end would lie after
+  9999-12-31T23:59:59Z (it has no `YYYY-MM-DDTHH:MM:SSZ` form) the issue is
+  reported as before. Only the latest
   release is known: a host that skipped an older patch whose own window has
   passed is still within the window of the newest one.
 
