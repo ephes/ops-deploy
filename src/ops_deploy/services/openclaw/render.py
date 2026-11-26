@@ -21,7 +21,7 @@ from typing import Any
 import jinja2
 
 from ops_deploy.core.templates import template_loader
-from ops_deploy.services.openclaw.variables import dict2items
+from ops_deploy.services.openclaw.variables import dict2items, version_at_least
 from ops_deploy.services.openclaw.variables import to_bool as bool_
 
 TEMPLATE_PACKAGE = "ops_deploy.services.openclaw"
@@ -180,8 +180,16 @@ def managed_plugins(v: Mapping[str, Any]) -> tuple[dict[str, Any], list[str], li
         ([v["openclaw_codex_plugin_id"]] if codex else [])
         + ([v["openclaw_opsgate_extension_id"]] if opsgate else [])
         + (["heartbeat-recovery"] if heartbeat else [])
+        + [str(plugin) for plugin in v["openclaw_plugin_allow_extra"]]
     )
     return entries, load, allow
+
+
+def plugin_install_spec(package: str, version: str) -> str:
+    """``plugins install`` spec: 2026.11.5 resolves bare names on ClawHub, ``npm:`` keeps npm (and ``--pin``)."""
+
+    npm = "npm:" if version_at_least(version, "2026.11.5") else ""
+    return f"{npm}{package}@{version}"
 
 
 def gateway_settings(v: Mapping[str, Any]) -> dict[str, Any]:

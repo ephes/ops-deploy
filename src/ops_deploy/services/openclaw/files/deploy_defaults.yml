@@ -69,6 +69,10 @@ openclaw_codex_plugin_enabled: false  # Install and enable the official Codex ap
 openclaw_codex_plugin_id: "codex"
 openclaw_codex_plugin_package: "@openclaw/codex"
 openclaw_codex_plugin_version: "{{ openclaw_version | regex_replace('^v', '') }}"
+# Further plugin ids appended to plugins.allow. Since 2026.11.5 the allowlist
+# also gates bundled plugins (e.g. "senseaudio" for audio transcription,
+# "memory-core" for memory), which earlier releases loaded regardless.
+openclaw_plugin_allow_extra: []
 # Exact-version backport for upstream commit 26e5c2858a. Disable management when
 # production advances beyond the affected @openclaw/codex 2026.9.1 package.
 openclaw_codex_v2026_9_1_registration_backport_managed: false

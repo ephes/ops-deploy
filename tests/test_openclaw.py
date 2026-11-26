@@ -311,6 +311,23 @@ def test_data_dir_moves_every_path_below_it() -> None:
     assert resolved["openclaw_codex_plugin_version"] == "2026.10.2"
 
 
+def test_plugin_install_spec_and_extra_allow() -> None:
+    from ops_deploy.services.openclaw import render
+
+    assert render.plugin_install_spec("@openclaw/codex", "2026.10.2") == "@openclaw/codex@2026.10.2"
+    assert render.plugin_install_spec("@openclaw/codex", "2026.11.10") == "npm:@openclaw/codex@2026.11.10"
+    resolved = resolve(
+        {
+            "openclaw_version": "v2026.11.10",
+            "openclaw_codex_plugin_enabled": True,
+            "openclaw_plugin_allow_extra": ["senseaudio", "memory-core", "codex"],
+        }
+    )
+    _entries, _load, allow = render.managed_plugins(resolved)
+    assert allow == ["codex", "senseaudio", "memory-core"]
+    assert render.managed_plugins(resolve({"openclaw_version": "v2026.11.10"}))[2] == []
+
+
 def test_semver_comparisons() -> None:
     assert version_at_least("v2026.10.2", "2026.9.7")
     assert not version_at_least("v2026.9.6", "2026.9.7")
@@ -463,6 +480,35 @@ def test_plugin_check_verifies_the_identity(monkeypatch: pytest.MonkeyPatch) -> 
     assert script.plugins(request, False) is True
     with pytest.raises(script.StepError, match="identity or version"):
         script.plugins(request, True)
+
+
+def test_plugin_install_uses_the_npm_spec_from_2026_11_5(monkeypatch: pytest.MonkeyPatch) -> None:
+    script = host_script()
+    request = {
+        **REQUEST,
+        "plugin_id": "codex",
+        "plugin_package": "@openclaw/codex",
+        "plugin_version": "2026.11.10",
+        "plugin_spec": "npm:@openclaw/codex@2026.11.10",
+    }
+    old = {"plugin": {"id": "codex"}, "install": {"resolvedName": "@openclaw/codex", "version": "2026.10.2"}}
+    new = {"plugin": {"id": "codex"}, "install": {"resolvedName": "@openclaw/codex", "version": "2026.11.10"}}
+    answers = iter([json.dumps(old), "", json.dumps(new)])
+
+    calls: list[list[str]] = []
+
+    def fake(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        if argv[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(argv, 1, "", "")
+        return subprocess.CompletedProcess(argv, 0, next(answers), "")
+
+    monkeypatch.setattr(script, "run", fake)
+
+    assert script.plugins(request, True) is True
+    install = next(call for call in calls if "install" in call)
+    assert install[-4:] == ["install", "--force", "--pin", "npm:@openclaw/codex@2026.11.10"]
+    assert script.plugin_spec({k: v for k, v in request.items() if k != "plugin_spec"}) == "@openclaw/codex@2026.11.10"
 
 
 def cron_list(*jobs: dict[str, Any]) -> tuple[int, str]:

@@ -402,6 +402,10 @@ def plugin_identity(request, inspected):
     )
 
 
+def plugin_spec(request):
+    return request.get("plugin_spec") or request["plugin_package"] + "@" + request["plugin_version"]
+
+
 def plugins(request, apply):
     if not apply and not cli_ready(request):
         return True
@@ -415,7 +419,7 @@ def plugins(request, apply):
     else:
         if not apply:
             return True
-        result = run(argv + ["plugins", "install", "--force", "--pin", request["plugin_package"] + "@" + request["plugin_version"]])
+        result = run(argv + ["plugins", "install", "--force", "--pin", plugin_spec(request)])
         if result.returncode != 0:
             raise StepError(f"Installing {request['plugin_package']} failed: {result.stderr.strip()[-400:]}")
         changed = True

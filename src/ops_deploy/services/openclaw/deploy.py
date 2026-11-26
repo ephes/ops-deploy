@@ -353,6 +353,7 @@ def _runtime(v: Vars) -> list[Meta]:
     if bool_(v["openclaw_codex_plugin_enabled"]):
         names = ("plugin_id", "plugin_package", "plugin_version")
         request = {**base, **{name: str(v[f"openclaw_codex_{name}"]) for name in names}}
+        request["plugin_spec"] = r.plugin_install_spec(request["plugin_package"], request["plugin_version"])
         plugin = pending("plugins", request)
         metas.append(host_step("Install the official Codex runtime plugin", "plugins", request, lambda: plugin))
     if bool_(v["openclaw_upgrade_migrations_enabled"]) and version_at_least(v["openclaw_version"], "2026.9.1"):

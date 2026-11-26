@@ -64,6 +64,14 @@ calendar, Paperless, Home Assistant and OpsGate skills; the workspace skills;
 the metrics endpoint (with the metrics-httpd switch); the managed-skills
 manifest and the session reset.
 
+The Codex plugin is installed with `plugins install --force --pin <spec>`. From
+OpenClaw 2026.11.5 a bare package name resolves on ClawHub, so the spec is
+`npm:@openclaw/codex@<version>` there and `@openclaw/codex@<version>` before
+(`render.plugin_install_spec`). Since 2026.11.5 `plugins.allow` also gates
+bundled plugins; `openclaw_plugin_allow_extra` (default `[]`) appends further
+plugin ids, such as `senseaudio` for audio transcription and `memory-core`.
+The runtime patch only adds to an existing allowlist; it never removes ids.
+
 The release checkout follows `openclaw_repo_url`: an existing checkout with
 another `origin` is repointed and fetched, as the `git` module does. The route
 file is written only while no Traefik transaction holds its lock (like its
