@@ -8,7 +8,8 @@
 //! "Upstream lookups and caches"): an object with `status` and, when `ok`,
 //! the validated `cycles` (objects with a string `cycle`).
 
-use chrono::{DateTime, Datelike, NaiveDate};
+use jiff::SignedDuration;
+use jiff::civil::{self, Date};
 use serde_json::{Map, Value};
 
 use crate::error::PyError;
@@ -23,7 +24,7 @@ const EVIDENCE_KEYS: [&str; 5] = ["status", "product", "checked_at_epoch", "cach
 /// a date has passed when `today >= end`, `null` never ends.
 pub fn lifecycle_ended(
     value: &Value,
-    today: NaiveDate,
+    today: Date,
     true_means_ended: bool,
 ) -> Result<bool, PyError> {
     if let Value::Bool(flag) = value {
@@ -35,7 +36,7 @@ pub fn lifecycle_ended(
 /// `datetime.fromtimestamp(now, UTC).date()`. As CPython, the timestamp is
 /// first rounded to microseconds, half to even, so a time a fraction of a
 /// microsecond before midnight is already the next day.
-pub fn utc_date(now: f64) -> Result<NaiveDate, PyError> {
+pub fn utc_date(now: f64) -> Result<Date, PyError> {
     if now.is_nan() {
         return Err(PyError::value("Invalid value NaN (not a number)"));
     }
@@ -63,9 +64,23 @@ pub fn utc_date(now: f64) -> Result<NaiveDate, PyError> {
             "timestamp out of range for platform time_t",
         ));
     }
-    let date = DateTime::from_timestamp(seconds as i64, 0)
-        .map(|moment| moment.date_naive())
-        .ok_or_else(|| PyError::value("year is out of range"))?;
+    // CPython's `gmtime_r` fails first when the year does not fit glibc's
+    // `int tm_year` (year - 1900): `OSError(EOVERFLOW)`. Otherwise Python's
+    // message names `tm_year + 1900` as a C `int`, which wraps for the last
+    // 1900 years below 2^31 + 1900.
+    let Ok(tm_year) = i32::try_from(proleptic_year(seconds as i64) - 1900) else {
+        return Err(PyError::new(
+            "OSError",
+            "[Errno 75] Value too large for defined data type",
+        ));
+    };
+    let year = tm_year.wrapping_add(1900);
+    // Civil arithmetic: `jiff::Timestamp` ends at 9999-12-30T22:00:00Z,
+    // the civil calendar at the end of year 9999 (it starts at year -9999).
+    let date = civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
+        .checked_add(SignedDuration::from_secs(seconds as i64))
+        .map(|moment| moment.date())
+        .map_err(|_| PyError::value(format!("year {year} is out of range")))?;
     if !(1..=9999).contains(&date.year()) {
         return Err(PyError::value(format!(
             "year {} is out of range",
@@ -73,6 +88,21 @@ pub fn utc_date(now: f64) -> Result<NaiveDate, PyError> {
         )));
     }
     Ok(date)
+}
+
+/// The proleptic Gregorian year (year 0 = 1 BC) of `seconds` since the
+/// epoch, for the message of a year jiff cannot represent (Python names the
+/// year, e.g. `year 10000 is out of range`). Days to civil after Howard
+/// Hinnant's `civil_from_days`; no overflow for any `seconds` that passed
+/// the `time_t` check.
+fn proleptic_year(seconds: i64) -> i64 {
+    let z = seconds.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    yoe + era * 400 + i64::from(mp >= 10)
 }
 
 /// `str(item.get("cycle")) == cycle`. A string, a number, a bool and `null`
@@ -222,7 +252,7 @@ mod tests {
         serde_json::from_str(include_str!("../fixtures/lifecycle.json")).unwrap()
     }
 
-    fn iso(date: Option<NaiveDate>) -> Value {
+    fn iso(date: Option<Date>) -> Value {
         date.map_or(Value::Null, |d| {
             Value::String(format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
         })
@@ -281,6 +311,46 @@ mod tests {
         assert_eq!(utc_date(f64::NAN).unwrap_err().class, "ValueError");
         assert_eq!(utc_date(f64::INFINITY).unwrap_err().class, "OverflowError");
         assert_eq!(utc_date(1e19).unwrap_err().class, "OverflowError");
+        // glibc's `gmtime_r` refuses a year whose `tm_year` (year - 1900)
+        // does not fit an `int`: CPython on Linux raises `OSError`. The
+        // edges are the first second of the year 2147485548 (tm_year 2^31)
+        // and the last second of the year -2147481749 (tm_year -2^31 - 1);
+        // a float there steps by 8 seconds.
+        for now in [
+            1e17,
+            -1e17,
+            8e18,
+            67_768_036_191_676_800.0,
+            -67_768_040_609_740_808.0,
+        ] {
+            let error = utc_date(now).unwrap_err();
+            assert_eq!(error.class, "OSError", "{now}");
+            assert_eq!(
+                error.message, "[Errno 75] Value too large for defined data type",
+                "{now}"
+            );
+        }
+        // Python names the year (`datetime.fromtimestamp(now, UTC)`, CPython
+        // 3.12): beyond jiff's years -9999 to 9999 and inside them.
+        for (now, year) in [
+            (253_402_300_800.0, "10000"),
+            (-62_135_596_801.0, "0"),
+            (-377_705_116_801.0, "-10000"),
+            (1e15, "31690708"),
+            (-1e15, "-31686769"),
+            (-377_705_116_800.0 + 0.5, "-9999"),
+            // `tm_year + 1900` wraps in C for year 2147485547.
+            (67_768_036_191_676_792.0, "-2147481749"),
+            (-67_768_040_609_740_800.0, "-2147481748"),
+        ] {
+            let error = utc_date(now).unwrap_err();
+            assert_eq!(error.class, "ValueError", "{now}");
+            assert_eq!(
+                error.message,
+                format!("year {year} is out of range"),
+                "{now}"
+            );
+        }
     }
 
     #[test]

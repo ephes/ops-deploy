@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- rust: metrics-httpd and software-live use `jiff` instead of the
+  unmaintained `chrono` (RUSTSEC-2026-0543); `rust/deny.toml` no longer
+  ignores the advisory. Released binaries are unchanged until their next
+  release. The output stays byte for byte the same (meta `generated_at`, the
+  access-log time, lifecycle dates, `patch_window_ends_at`; compared with
+  chrono over two million instants of the years 1 to 9999), with two
+  deliberate edge changes in software-live (README "Traefik patch window"):
+  a `published_at` with a leap second (`:60`) or a signed year (`-0001-…`,
+  `+10000-…`) no longer counts as GitHub's form, and a Traefik patch window
+  that would end after 9999-12-31T23:59:59Z reports
+  `outdated_running_version` instead of a `+10000-…` end. A `now` outside
+  the years 1 to 9999 fails as CPython on Linux does: a `ValueError` that
+  names the year (chrono named it only up to ±262143); a `now` that fits
+  the 64-bit `time_t` but not the years glibc's `gmtime` can hold (year -
+  1900 outside a 32-bit `int`, about ±2.1 billion) gives an `OSError`
+  (EOVERFLOW) instead of chrono's `ValueError`, and one beyond `time_t`
+  still gives `OverflowError`.
+
 - rustfs: the replica probe gives an object or size delta the same grace as
   a non-empty replication queue: `ok` (cause in `warning_reasons`) below
   `queue_warning_minutes`, `warning` until `parity_critical_hours`, then

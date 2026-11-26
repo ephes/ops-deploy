@@ -21,7 +21,7 @@
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{self, Date};
 use serde_json::{Map, Value};
 
 use crate::error::PyError;
@@ -94,7 +94,7 @@ pub fn cache_variant(cache_path: &Path, name: &str) -> Result<PathBuf, PyError> 
 /// Only `YYYY-MM-DD` with ASCII digits is a date here (PLAN.md 4.2 item 6):
 /// Python 3.11+ `date.fromisoformat` also reads `YYYYMMDD` and ISO week
 /// dates, which endoflife.date never sends.
-pub fn lifecycle_date(value: Option<&Value>) -> Result<Option<NaiveDate>, PyError> {
+pub fn lifecycle_date(value: Option<&Value>) -> Result<Option<Date>, PyError> {
     match value {
         None | Some(Value::Null | Value::Bool(_)) => Ok(None),
         Some(Value::String(text)) => iso_date(text)
@@ -105,7 +105,7 @@ pub fn lifecycle_date(value: Option<&Value>) -> Result<Option<NaiveDate>, PyErro
 }
 
 /// `YYYY-MM-DD`, year 1 to 9999 (`datetime.MINYEAR`, `MAXYEAR`).
-fn iso_date(text: &str) -> Option<NaiveDate> {
+fn iso_date(text: &str) -> Option<Date> {
     let bytes = text.as_bytes();
     let digits = |range: std::ops::Range<usize>| -> Option<u32> {
         let part = &bytes[range];
@@ -120,7 +120,12 @@ fn iso_date(text: &str) -> Option<NaiveDate> {
     if year == 0 {
         return None;
     }
-    NaiveDate::from_ymd_opt(i32::try_from(year).ok()?, month, day)
+    Date::new(
+        i16::try_from(year).ok()?,
+        i8::try_from(month).ok()?,
+        i8::try_from(day).ok()?,
+    )
+    .ok()
 }
 
 /// `json.loads(response.read(…))` ([`pyjson::loads_bytes`]).
@@ -203,11 +208,20 @@ fn epoch_value(now: f64) -> Value {
 }
 
 /// The epoch seconds of a GitHub timestamp `YYYY-MM-DDTHH:MM:SSZ` (UTC).
+///
+/// The text must be exactly what the format writes back (no `+2026`, no
+/// single-digit fields), with a year from 0 to 9999; a leap second (`:60`)
+/// is refused.
 pub fn published_epoch(text: &str) -> Option<i64> {
-    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%SZ")
+    civil::DateTime::strptime("%Y-%m-%dT%H:%M:%SZ", text)
         .ok()
-        .filter(|parsed| parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() == text)
-        .map(|parsed| parsed.and_utc().timestamp())
+        .filter(|parsed| parsed.year() >= 0)
+        .filter(|parsed| parsed.strftime("%Y-%m-%dT%H:%M:%SZ").to_string() == text)
+        .map(|parsed| {
+            parsed
+                .duration_since(civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0))
+                .as_secs()
+        })
 }
 
 /// `upstream(cache_path, now)`: the latest stable Traefik release.
@@ -598,7 +612,24 @@ mod tests {
     #[test]
     fn release_keeps_github_published_at() {
         assert_eq!(published_epoch("2026-11-17T12:00:00Z"), Some(1_794_916_800));
+        // The ends of the range (chrono gave the same epochs).
+        assert_eq!(published_epoch("1969-12-31T23:59:59Z"), Some(-1));
+        assert_eq!(
+            published_epoch("0000-01-01T00:00:00Z"),
+            Some(-62_167_219_200)
+        );
+        assert_eq!(
+            published_epoch("9999-12-31T23:59:59Z"),
+            Some(253_402_300_799)
+        );
         for invalid in [
+            "2026-11-17T12:00:60Z",
+            "-001-01-01T00:00:00Z",
+            "+2026-11-17T12:00:00Z",
+            "2026-1-17T12:00:00Z",
+            "2026-11-17T12:00:00z",
+            "2026-11-17T12:00:00Z ",
+            "2026-11-17T24:00:00Z",
             "2026-11-17T12:00:00+00:00",
             "2026-11-17 12:00:00Z",
             "2026-11-17T12:00:00.5Z",
@@ -662,10 +693,7 @@ mod tests {
     #[test]
     fn lifecycle_dates() {
         let date = |text: &str| lifecycle_date(Some(&Value::String(text.into())));
-        assert_eq!(
-            date("2024-02-29").unwrap(),
-            NaiveDate::from_ymd_opt(2024, 2, 29)
-        );
+        assert_eq!(date("2024-02-29").unwrap(), Date::new(2024, 2, 29).ok());
         for invalid in [
             "2023-02-29",
             "0000-01-01",

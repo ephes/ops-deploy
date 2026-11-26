@@ -12,13 +12,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use chrono::{DateTime, Local};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Method, Response, StatusCode, Version};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::graceful::GracefulShutdown;
+use jiff::ZonedDateTime;
+use jiff::tz::TimeZone;
 use tokio::net::{TcpListener, TcpSocket};
 use tokio::sync::Semaphore;
 
@@ -241,7 +242,11 @@ async fn handle<S: Service, B>(
         let status = response.status().as_u16();
         match config.access_log {
             AccessLog::Stderr => {
-                let time: DateTime<Local> = config.clock.now().into();
+                // Only a test clock can lie outside jiff's range (years
+                // -9999 to 9999); the line then carries the real time.
+                let now = jiff::Timestamp::try_from(config.clock.now())
+                    .unwrap_or_else(|_| jiff::Timestamp::now());
+                let time = now.to_zoned_datetime(TimeZone::system());
                 log_line(&access_line(client, &time, &line, status));
             }
             AccessLog::Stdout => {
@@ -258,13 +263,13 @@ async fn handle<S: Service, B>(
 /// One access line of PLAN.md 4.1.6.
 pub fn access_line(
     client: IpAddr,
-    time: &DateTime<Local>,
+    time: &ZonedDateTime,
     request_line: &str,
     status: u16,
 ) -> String {
     format!(
         "{client} - - [{}] \"{}\" {status} -",
-        time.format("%d/%b/%Y %H:%M:%S"),
+        time.strftime("%d/%b/%Y %H:%M:%S"),
         escape_control(request_line)
     )
 }
@@ -398,7 +403,6 @@ pub async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
     #[test]
     fn python_path_rules() {
@@ -422,7 +426,10 @@ mod tests {
 
     #[test]
     fn access_line_format() {
-        let time = Local.with_ymd_and_hms(2026, 10, 1, 9, 5, 7).unwrap();
+        let time = jiff::civil::date(2026, 10, 1)
+            .at(9, 5, 7, 0)
+            .to_zoned_datetime(TimeZone::system())
+            .unwrap();
         assert_eq!(
             access_line("127.0.0.1".parse().unwrap(), &time, "GET /x HTTP/1.1", 401),
             "127.0.0.1 - - [01/Oct/2026 09:05:07] \"GET /x HTTP/1.1\" 401 -"
@@ -436,6 +443,22 @@ mod tests {
             ),
             "::1 - - [01/Oct/2026 09:05:07] \"GET /\\x1b[1m HTTP/1.1\" 404 -"
         );
+        // Python's `log_date_time_string`: English month, zero padding, the
+        // local wall time of the instant (here a fixed UTC+05:45 zone).
+        let plus_0545 = TimeZone::fixed(jiff::tz::Offset::from_seconds(20_700).unwrap());
+        for (epoch, expected) in [
+            (0, "01/Jan/1970 05:45:00"),
+            (1_759_309_507, "01/Oct/2025 14:50:07"),
+            (-62_135_596_800, "01/Jan/0001 05:45:00"),
+        ] {
+            let time = jiff::Timestamp::from_second(epoch)
+                .unwrap()
+                .to_zoned_datetime(plus_0545.clone());
+            assert_eq!(
+                access_line("127.0.0.1".parse().unwrap(), &time, "GET / HTTP/1.1", 200),
+                format!("127.0.0.1 - - [{expected}] \"GET / HTTP/1.1\" 200 -")
+            );
+        }
     }
 
     #[test]

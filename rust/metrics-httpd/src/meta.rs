@@ -19,7 +19,7 @@ use std::io::{self, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use chrono::DateTime;
+use jiff::{SignedDuration, civil};
 use serde_json::{Map, Value};
 
 use crate::clock::{SharedClock, epoch_seconds};
@@ -89,8 +89,12 @@ pub fn iso_utc(epoch: i64) -> Option<String> {
     if !(FIRST..=LAST).contains(&epoch) {
         return None;
     }
-    let time = DateTime::from_timestamp(epoch, 0)?;
-    Some(time.format("%Y-%m-%dT%H:%M:%S+00:00").to_string())
+    // Civil arithmetic, not `jiff::Timestamp`: a Timestamp ends at
+    // 9999-12-30T22:00:00Z, the civil calendar at the end of year 9999.
+    let time = civil::DateTime::constant(1970, 1, 1, 0, 0, 0, 0)
+        .checked_add(SignedDuration::from_secs(epoch))
+        .ok()?;
+    Some(time.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string())
 }
 
 /// The four keys every file-backed variant adds; `None` when Python's
