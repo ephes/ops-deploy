@@ -156,6 +156,14 @@ openclaw_healthcheck_delay: 5
 # Log rotation
 openclaw_logrotate_days: 7
 
+# Weekly gateway restart: a timer runs `systemctl try-restart` of the gateway
+# unit at openclaw_weekly_restart_on_calendar (systemd OnCalendar, host's
+# local time) through openclaw-weekly-restart.timer/.service. A workaround
+# for upstream openclaw#181687 (the prepared-model-catalog worker grows until
+# the gateway restarts); disabling it removes the timer and its service again.
+openclaw_weekly_restart_enabled: false
+openclaw_weekly_restart_on_calendar: "Sun *-*-* 04:00:00"
+
 # Nyxmon/OpenClaw metrics endpoint (json-metrics compatible)
 openclaw_metrics_endpoint_enabled: false
 openclaw_metrics_endpoint_user: metrics

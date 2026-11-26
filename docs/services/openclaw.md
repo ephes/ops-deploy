@@ -105,6 +105,18 @@ handler prints nothing (no open todos, or snoozed today) the job prints
 `NO_REPLY` and nothing is sent. A failing handler fails the run. The `cron`
 step replaces a job of the other form, or one with another chat or script.
 
+`openclaw_weekly_restart_enabled` (default off) installs
+`openclaw-weekly-restart.timer` (`openclaw_weekly_restart_on_calendar`,
+default `Sun *-*-* 04:00:00` in the host's local time, checked with
+`systemd-analyze calendar` before any unit is written; `Persistent=false`,
+so a missed run is not made up at boot) and its oneshot service, which runs
+`systemctl try-restart` of the gateway unit (a stopped gateway stays
+stopped). It is a workaround for upstream openclaw#181687: the
+prepared-model-catalog worker grows with every catalog sync until the
+gateway restarts. The unit name is fixed (a gateway or metrics unit with
+that name is refused). Switched off again, the deploy stops the timer and
+removes both units; the removal removes them too.
+
 The role's handlers become change-gated operations where the role flushes them
 (`restart openclaw` before the health check, before the cron registration and
 with the metrics units). The `reload traefik` handler, a Traefik restart, is not
@@ -113,7 +125,8 @@ Traefik.
 
 Removal follows `openclaw_remove`: `confirm` is required; data, image and the
 account stay unless their toggles are set; the route goes by default. Like the
-role it leaves the metrics endpoint in place.
+role it leaves the metrics endpoint in place; the weekly restart timer and its
+service go.
 
 ## Rendered files
 

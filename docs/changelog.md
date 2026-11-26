@@ -20,6 +20,24 @@
   (EOVERFLOW) instead of chrono's `ValueError`, and one beyond `time_t`
   still gives `OverflowError`.
 
+- base: new pyinfra-only `cpu_tcc_offset` (`CpuTccOffsetConfig(offset=…)`).
+  It sets the CPU's TCC offset through the `intel_tcc_cooling` cooling
+  device, so the processor throttles itself `offset` °C below TjMax. A udev
+  rule (`/etc/udev/rules.d/60-cpu-tcc-offset.rules`) applies it at every
+  boot; the deploy applies it with `udevadm trigger` for that one device and
+  reads it back. Hosts without exactly one `TCC Offset` device are refused.
+  For macmini (i5-8500B, TjMax 100 °C), which reached 100 °C in short turbo
+  bursts while its fan stayed at minimum.
+
+- openclaw: `openclaw_weekly_restart_enabled` installs
+  `openclaw-weekly-restart.timer`, which runs `systemctl try-restart` of the
+  gateway unit at `openclaw_weekly_restart_on_calendar` (default
+  `Sun *-*-* 04:00:00`, host time, validated with `systemd-analyze
+  calendar`). A workaround for upstream openclaw#181687, whose
+  prepared-model-catalog worker grows by about 0.26 GiB a day until the
+  gateway restarts. Off by default; switched off, the deploy removes the
+  timer and its service, and the removal removes them as well.
+
 - rustfs: the replica probe gives an object or size delta the same grace as
   a non-empty replication queue: `ok` (cause in `warning_reasons`) below
   `queue_warning_minutes`, `warning` until `parity_critical_hours`, then

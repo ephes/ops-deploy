@@ -47,6 +47,7 @@ change.
 | `nfs_client_mount` | none (new) | `NfsClientConfig`, `NfsClientMount`, `NfsHostsEntry` | `deploy_nfs_client_mount` |
 | `default_qdisc` | none (pyinfra only) | `DefaultQdiscConfig` | `deploy_default_qdisc` |
 | `darwin_log_trim` | none (new, macOS) | `DarwinLogTrimConfig` | `deploy_darwin_log_trim` |
+| `cpu_tcc_offset` | none (pyinfra only) | `CpuTccOffsetConfig` | `deploy_cpu_tcc_offset` |
 
 Field names follow the role variables without the role prefix
 (`headless_mode_apply_now` is `apply_now`). Defaults are the role defaults
@@ -1354,6 +1355,44 @@ never remounted: new options apply at the next mount.
 disabled (if enabled), the unit file and the docker drop-in are removed, and
 systemd reloads if one was removed. On a host that never had them this is a
 no-op; the mount point is not probed.
+
+## cpu_tcc_offset
+
+No ops-library role: a pyinfra-only base deploy. It sets the CPU's TCC
+offset, so the processor's own thermal control circuit throttles at TjMax
+minus `offset` instead of at TjMax. On an i5-8500B (TjMax 100 °C) `offset:
+10` throttles at 90 °C. The throttling is the CPU's, immediate and without a
+daemon; the fan stays under the firmware's control.
+
+```python
+from ops_deploy.base import CpuTccOffsetConfig, deploy_cpu_tcc_offset
+
+deploy_cpu_tcc_offset(CpuTccOffsetConfig(offset=10))
+```
+
+| Field | Default | |
+|---|---|---|
+| `offset` | required | 1 to 63 °C below TjMax, at most the device's `max_state` |
+
+The kernel's `intel_tcc_cooling` driver shows the offset as the thermal
+cooling device of type `TCC Offset` (`cur_state` is the offset in °C); the
+value is lost at every reboot. The deploy installs
+`/etc/udev/rules.d/60-cpu-tcc-offset.rules` (0644), which writes
+`cur_state` whenever that device appears, so at every boot. When the running
+offset differs or the rule changed it runs `udevadm control --reload &&
+udevadm trigger --action=add --subsystem-match=thermal
+--attr-match='type=TCC Offset' --settle` (only that device) and then reads
+`cur_state` back: the run sets the value through the same rule a boot uses
+and fails if it did not take. It never writes `cur_state` itself.
+
+While planning it reads every `/sys/class/thermal/cooling_device*` and logs
+the TCC device's current and maximum offset. A host with none or more than
+one such device (another CPU vendor, an offset locked by the firmware, the
+driver not loaded) or an offset above `max_state` is refused before any
+change. A converged host plans no change.
+
+Rollback: `offset` cannot be 0 here; remove the rule file and write `0` to
+the device's `cur_state` (or reboot after removing the rule).
 
 ## default_qdisc
 
