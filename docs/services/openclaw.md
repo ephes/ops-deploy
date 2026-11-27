@@ -5,6 +5,13 @@ gateway (a Docker Compose project built on the host from a release tag), its
 managed skills and plugins, the Traefik route, log rotation and the Nyxmon
 metrics endpoint, plus the private playbook's Nyxmon json-metrics checks.
 
+With the Traefik route enabled, the gateway config gets
+`gateway.publicOrigin` and `gateway.controlUi.allowedOrigins` set to
+`https://<openclaw_traefik_host>`. `publicOrigin` is the address that mobile
+setup codes (Control UI **Connect a device**, `openclaw qr`) give to the iOS
+and Android apps. A gateway bound to loopback refuses to create setup codes
+without it.
+
 ```python
 from ops_deploy.services.openclaw import (
     OpenClawConfig,

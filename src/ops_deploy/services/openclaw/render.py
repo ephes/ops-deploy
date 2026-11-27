@@ -224,7 +224,10 @@ def rate_limit_patch(v: Mapping[str, Any]) -> dict[str, Any]:
 def control_ui_patch(v: Mapping[str, Any]) -> dict[str, Any]:
     if not bool_(v["openclaw_traefik_enabled"]):
         return {}
-    return {"gateway": {"controlUi": {"allowedOrigins": ["https://" + str(v["openclaw_traefik_host"])]}}}
+    origin = "https://" + str(v["openclaw_traefik_host"])
+    # publicOrigin: the address mobile setup codes (Control UI "Connect a device",
+    # `openclaw qr`) hand to the app; without it a loopback-bound gateway refuses them.
+    return {"gateway": {"publicOrigin": origin, "controlUi": {"allowedOrigins": [origin]}}}
 
 
 def policy_patches(v: Mapping[str, Any]) -> list[dict[str, Any]]:

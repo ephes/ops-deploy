@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- openclaw: with the Traefik route enabled, the gateway config also sets
+  `gateway.publicOrigin` to `https://<openclaw_traefik_host>`, so the Control UI
+  can create mobile setup codes (**Connect a device**) and `openclaw qr` works.
+  Before this, a gateway bound to loopback refused both.
+
 - docs: describe the current pyinfra deployment and lifecycle commands, remove
   retired Ansible rollback and coexistence instructions, and mark migration
   plans and role comparisons as historical.
