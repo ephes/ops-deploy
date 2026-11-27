@@ -21,7 +21,12 @@ from ops_deploy.services.vaultwarden import (
     render_env,
     render_route,
 )
-from ops_deploy.services.vaultwarden.deploy import smtp_command, smtp_request, sources_line
+from ops_deploy.services.vaultwarden.deploy import (
+    ADMIN_CONFIG_KEYS,
+    smtp_command,
+    smtp_request,
+    sources_line,
+)
 from ops_deploy.testing import FakeRun, run_deploy_fake
 from tests import fakehost
 
@@ -44,6 +49,8 @@ READ_ONLY = [
 ]
 # The config.json check runs ``smtp_config_sync.py check`` (a substring of the fact command).
 SMTP_CHECK = "' check )"
+# The admin panel probe (a substring of its fact command).
+ADMIN_CHECK = "grep -qF 'The admin panel is disabled'"
 
 
 @pytest.fixture
@@ -240,35 +247,55 @@ def test_without_smtp_host_config_json_is_not_probed(secrets: SecretValues) -> N
     assert SMTP_PASSWORD not in env
 
 
-def test_admin_panel_disabled_drops_the_token_from_config_json(cfg: VaultwardenConfig) -> None:
+def test_admin_panel_disabled_drops_the_admin_keys_from_config_json(cfg: VaultwardenConfig) -> None:
     secrets = values(cfg, admin_enabled="false", admin_token="")
-    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"]}))
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"], ADMIN_CHECK: ["disabled"]}))
 
     assert run.mutating_changed_ops == changed("Sync SMTP settings to config.json", "Restart vaultwarden.service")
     apply = next(c for c in run.executed_commands if c.endswith(" apply"))
-    request = smtp_request(cfg, ("admin_token",))
-    assert '"remove": ["admin_token"]' in request
+    request = smtp_request(cfg, ADMIN_CONFIG_KEYS)
+    assert '"remove": ["admin_token", "disable_admin_token"]' in request
     assert [stdin for command, stdin in run.stdin if command == apply] == [request]
+    assert run.op(f"{P}Probe again: vaultwarden admin panel").read_only
 
 
-def test_admin_panel_enabled_sends_no_removal(cfg: VaultwardenConfig) -> None:
+def test_admin_panel_enabled_sends_no_removal_and_never_probes_admin(
+    cfg: VaultwardenConfig, secrets: SecretValues
+) -> None:
     assert "remove" not in smtp_request(cfg)
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+    assert not any(ADMIN_CHECK in c for c in run.fact_commands + run.executed_commands)
+
+
+def test_a_still_open_admin_panel_restarts_without_any_change(cfg: VaultwardenConfig) -> None:
+    # A run that removed the keys but failed before its restart leaves the old process.
+    secrets = values(cfg, admin_enabled="false", admin_token="")
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{ADMIN_CHECK: ["open"]}))
+
+    assert run.mutating_changed_ops == changed("Restart vaultwarden.service")
+
+
+def test_a_closed_admin_panel_with_current_config_changes_nothing(cfg: VaultwardenConfig) -> None:
+    secrets = values(cfg, admin_enabled="false", admin_token="")
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{ADMIN_CHECK: ["disabled"]}))
+
+    assert run.mutating_changed_ops == []
 
 
 def test_admin_panel_disabled_without_smtp_still_checks_config_json() -> None:
     cfg = VaultwardenConfig(domain="https://vault.example.com", secrets=SecretRef("secrets/prod/vaultwarden.yml"))
     secrets = values(cfg, admin_enabled="false", admin_token="")
-    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"]}))
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"], ADMIN_CHECK: ["disabled"]}))
 
     apply = next(c for c in run.executed_commands if c.endswith(" apply"))
     request = [stdin for command, stdin in run.stdin if command == apply]
-    assert request == [smtp_request(cfg, ("admin_token",))]
+    assert request == [smtp_request(cfg, ADMIN_CONFIG_KEYS)]
     assert '"settings": {}' in request[0]
 
 
 def test_admin_panel_disabled_needs_no_token(cfg: VaultwardenConfig) -> None:
     secrets = values(cfg, admin_enabled="false", admin_token="")
-    run = deploy(cfg, secrets, converged(cfg, secrets))
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{ADMIN_CHECK: ["disabled"]}))
 
     env = render_env(cfg, secrets).reveal().decode()
     assert "# Admin panel disabled (vaultwarden_admin_enabled=False)" in env

@@ -3,12 +3,15 @@
 ## Unreleased
 
 - vaultwarden: with `admin_enabled: false` the deploy also removes
-  `admin_token` from `/var/lib/vaultwarden/data/config.json` (on the host, in
-  the existing config.json step; its request gains an optional `remove`
-  list), and restarts Vaultwarden when it did. A token the admin panel saved
-  there overrides the environment file, so until now switching the panel off
-  left `/admin` open on a host where the panel had saved settings. Deploys
-  with the panel on send the same request as before.
+  `admin_token` and `disable_admin_token` from
+  `/var/lib/vaultwarden/data/config.json` (on the host, in the existing
+  config.json step; its request gains an optional `remove` list), restarts
+  Vaultwarden when it did or when the running process still serves the admin
+  panel (loopback probe of `/admin`), and fails unless `/admin` then serves
+  Vaultwarden's panel-off page. Both keys in config.json override the
+  environment file, so until now switching the panel off left `/admin` open
+  on a host where the panel had saved settings. Deploys with the panel on
+  send the same request as before and never probe `/admin`.
 
 - openclaw: every deploy installs `openclaw-gateway-weekly-restart.timer`
   and its oneshot service, which run `systemctl try-restart` of the gateway

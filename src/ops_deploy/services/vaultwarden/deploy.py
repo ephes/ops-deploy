@@ -362,8 +362,8 @@ def smtp_settings(cfg: VaultwardenConfig) -> dict[str, Any]:
 def smtp_request(cfg: VaultwardenConfig, remove: tuple[str, ...] = ()) -> str:
     """The stdin of ``smtp_config_sync.py`` (non-secret settings; one JSON line).
 
-    ``remove`` names config.json keys to drop (``admin_token`` while the admin
-    panel is off); the key is added to the request only when it is non-empty,
+    ``remove`` names config.json keys to drop (``ADMIN_CONFIG_KEYS`` while the
+    admin panel is off); the key is added to the request only when it is non-empty,
     so the request of a deploy with the panel on is unchanged.
     """
 
@@ -380,6 +380,27 @@ def smtp_request(cfg: VaultwardenConfig, remove: tuple[str, ...] = ()) -> str:
 
 def smtp_command(action: str) -> str:
     return shlex.join(["python3", "-I", "-c", SMTP_SYNC, action])
+
+
+# config.json keys that keep /admin open whatever the environment file says:
+# a saved token, and the switch that drops token authentication altogether.
+ADMIN_CONFIG_KEYS = ("admin_token", "disable_admin_token")
+# What Vaultwarden serves at /admin when it mounts only its disabled route
+# (src/api/admin.rs ``admin_disabled``, 1.37.5).
+ADMIN_DISABLED_TEXT = "The admin panel is disabled"
+
+
+def admin_state_command(cfg: VaultwardenConfig) -> str:
+    """Prints ``disabled`` when the running Vaultwarden serves the panel-off page, else ``open``.
+
+    The page body is matched on the host and never printed.
+    """
+
+    url = f"http://{cfg.rocket_address}:{cfg.rocket_port}/admin"
+    return (
+        f"if curl -fsS --max-time 10 {shlex.quote(url)} | grep -qF {shlex.quote(ADMIN_DISABLED_TEXT)}; "
+        "then echo disabled; else echo open; fi"
+    )
 
 
 # -- the role's task files ------------------------------------------------------------------
@@ -471,9 +492,10 @@ def _packages() -> OperationMeta:
 def _smtp_sync(cfg: VaultwardenConfig, remove: tuple[str, ...] = ()) -> OperationMeta | None:
     """configure.yml's config.json SMTP sync, when it exists and SMTP is configured.
 
-    With the admin panel off it also drops ``admin_token`` from config.json
-    (``remove``), with or without SMTP: a token the panel saved overrides the
-    environment file and would keep ``/admin`` open.
+    With the admin panel off it also drops ``ADMIN_CONFIG_KEYS`` from
+    config.json (``remove``), with or without SMTP: a token the panel saved, or
+    ``disable_admin_token``, overrides the environment file and would keep
+    ``/admin`` open.
     A read-only check while planning decides; the merge runs on the host, so
     the file (which holds the admin token once the admin panel saved it) never
     reaches the controller.
@@ -519,7 +541,14 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
         group=cfg.user,
         mode="0640",
     )
-    smtp = _smtp_sync(cfg, () if admin_enabled(secrets) else ("admin_token",))
+    admin_off = not admin_enabled(secrets)
+    smtp = _smtp_sync(cfg, ADMIN_CONFIG_KEYS if admin_off else ())
+    # A run that removed the keys but failed before the restart leaves a
+    # process with the old settings; the next run sees the panel still open
+    # and restarts, whatever changed in that run.
+    admin_open = (
+        admin_off and (probe(admin_state_command(cfg), name="vaultwarden admin panel") or "").strip() != "disabled"
+    )
     files.directory(name=f"Ensure {DROPIN_DIR}", path=str(DROPIN_DIR), user="root", group="root", mode="0755")
     dropin = files.put(
         name="Deploy systemd override for security hardening",
@@ -539,7 +568,7 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
 
     # service.yml and the role's handlers.
     restart = [op for op in (install, env, smtp) if op is not None]
-    service_rollout(UNIT, units=[dropin], restart_when=restart)
+    service_rollout(UNIT, units=[dropin], restart_when=restart, always_restart=admin_open)
 
     # health.yml
     if cfg.healthcheck_enabled:
@@ -549,3 +578,5 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
             delay=5,
             name="Wait for Vaultwarden to be ready",
         )
+    if admin_off:
+        verify_probe(admin_state_command(cfg), name="vaultwarden admin panel", expect="disabled")
