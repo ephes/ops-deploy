@@ -337,6 +337,18 @@ def test_plugin_install_spec_and_extra_allow() -> None:
     assert render.managed_plugins(resolve({"openclaw_version": "v2026.11.10"}))[2] == []
 
 
+def test_node_commands_allow() -> None:
+    from ops_deploy.services.openclaw import render
+
+    assert render.node_commands_patch(resolve({"openclaw_version": "v2026.11.10"})) == {}
+    resolved = resolve(
+        {"openclaw_version": "v2026.11.10", "openclaw_gateway_node_commands_allow": [" reminders.add ", ""]}
+    )
+    expected = {"gateway": {"nodes": {"commands": {"allow": ["reminders.add"]}}}}
+    assert render.node_commands_patch(resolved) == expected
+    assert render.runtime_inputs(resolved)["base"]["gateway"]["nodes"] == expected["gateway"]["nodes"]
+
+
 def test_semver_comparisons() -> None:
     assert version_at_least("v2026.10.2", "2026.9.7")
     assert not version_at_least("v2026.9.6", "2026.9.7")

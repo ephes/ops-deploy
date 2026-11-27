@@ -79,6 +79,12 @@ bundled plugins; `openclaw_plugin_allow_extra` (default `[]`) appends further
 plugin ids, such as `senseaudio` for audio transcription and `memory-core`.
 The runtime patch only adds to an existing allowlist; it never removes ids.
 
+`openclaw_gateway_node_commands_allow` (default `[]`) writes
+`gateway.nodes.commands.allow`. Use it to opt in to node commands that OpenClaw
+blocks by default as dangerous or privacy-heavy, such as `reminders.add` on a
+paired iPhone. The runtime patch merges the list into the existing config.
+Emptying the variable later does not remove a key that was already written.
+
 The release checkout follows `openclaw_repo_url`: an existing checkout with
 another `origin` is repointed and fetched, as the `git` module does. The route
 file is written only while no Traefik transaction holds its lock (like its

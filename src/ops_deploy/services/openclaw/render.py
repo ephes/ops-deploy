@@ -230,6 +230,13 @@ def control_ui_patch(v: Mapping[str, Any]) -> dict[str, Any]:
     return {"gateway": {"publicOrigin": origin, "controlUi": {"allowedOrigins": [origin]}}}
 
 
+def node_commands_patch(v: Mapping[str, Any]) -> dict[str, Any]:
+    allow = [trimmed(c) for c in v["openclaw_gateway_node_commands_allow"] if len(trimmed(c)) > 0]
+    if len(allow) == 0:
+        return {}
+    return {"gateway": {"nodes": {"commands": {"allow": allow}}}}
+
+
 def policy_patches(v: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The model policy, reasoning and auth-order patches (in the role's combine order)."""
 
@@ -317,7 +324,10 @@ def built_config(v: Mapping[str, Any]) -> dict[str, Any]:
         config = combine(config, {"plugins": {"allow": allow}})
     if len(load) > 0:
         config = combine(config, {"plugins": {"load": {"paths": load}}})
-    access = combine(combine({"gateway": gateway_settings(v)}, rate_limit_patch(v)), control_ui_patch(v))
+    access = combine(
+        combine(combine({"gateway": gateway_settings(v)}, rate_limit_patch(v)), control_ui_patch(v)),
+        node_commands_patch(v),
+    )
     config = combine(config, access)
     for patch in policy_patches(v):
         config = combine(config, patch)
@@ -356,7 +366,7 @@ def runtime_inputs(v: Mapping[str, Any]) -> dict[str, Any]:
     }
     model, reasoning, auth = policy_patches(v)
     return {
-        "base": combine(base, rate_limit_patch(v)),
+        "base": combine(combine(base, rate_limit_patch(v)), node_commands_patch(v)),
         "plugin_allow": allow,
         "control_ui": control_ui_patch(v),
         "plugin_load_paths": load,

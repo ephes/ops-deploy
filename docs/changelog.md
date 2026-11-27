@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- openclaw: `openclaw_gateway_node_commands_allow` (default `[]`) sets
+  `gateway.nodes.commands.allow`, for opting in to node commands such as
+  `reminders.add` on the iOS app.
+
 - openclaw: with the Traefik route enabled, the gateway config also sets
   `gateway.publicOrigin` to `https://<openclaw_traefik_host>`, so the Control UI
   can create mobile setup codes (**Connect a device**) and `openclaw qr` works.
