@@ -63,14 +63,19 @@ option is unavailable with its stock packages.
 The control user can start and stop the configured unit with `systemctl`
 without sudo. The deploy installs
 `/etc/polkit-1/rules.d/50-minecraft-java-control.rules` as root:root with mode
-`0644`. When `control_user` is empty, the deploy removes the rule before
-runtime changes. Polkit picks up the change automatically. The rule makes
-no decision on unmatched requests. Those fall through to the host's other
-polkit policy, which by default denies unmatched systemd management requests
-from a non-admin system user without a session.
+`0644`. The rule matches start and stop jobs by verb and exact authentication
+message. Freeze, thaw, and other unmatched requests fall through to the host's
+other polkit policy, which by default denies unmatched systemd management
+requests from a non-admin system user without a session.
 
-The deployment accepts a residual risk in systemd 255, which passes only the
-unit and verb to polkit and omits the job mode. The control user can submit a
+When `control_user` is empty, rule removal is the first scheduled operation,
+before the loader/world guard and UFW check.
+If planning aborts, for example because UFW is inactive for a started deployment,
+run `rm -f /etc/polkit-1/rules.d/50-minecraft-java-control.rules` as root on
+the host to revoke access (polkit reloads rules automatically).
+
+The deployment accepts a residual risk in systemd 255, which omits the job
+mode from its polkit request. The control user can submit a
 start or stop job with `--job-mode=flush`, which can cancel other units'
 pending jobs. Systemd refuses `isolate` because the Minecraft unit has no
 `AllowIsolate`.

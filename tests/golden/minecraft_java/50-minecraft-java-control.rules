@@ -3,7 +3,9 @@ polkit.addRule(function(action, subject) {
         subject.user == "homelab" &&
         action.lookup("unit") == "minecraft-java.service") {
         var verb = action.lookup("verb");
-        if (verb == "start" || verb == "stop") {
+        var message = action.lookup("polkit.message");
+        if ((verb === "start" && message === "Authentication is required to start '$(unit)'.") ||
+            (verb === "stop" && message === "Authentication is required to stop '$(unit)'.")) {
             return polkit.Result.YES;
         }
     }

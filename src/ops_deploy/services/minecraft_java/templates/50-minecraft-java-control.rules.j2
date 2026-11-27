@@ -3,7 +3,9 @@ polkit.addRule(function(action, subject) {
         subject.user == {{ minecraft_java_control_user | tojson }} &&
         action.lookup("unit") == {{ (minecraft_java_service_name ~ '.service') | tojson }}) {
         var verb = action.lookup("verb");
-        if (verb == "start" || verb == "stop") {
+        var message = action.lookup("polkit.message");
+        if ((verb === "start" && message === "Authentication is required to start '$(unit)'.") ||
+            (verb === "stop" && message === "Authentication is required to stop '$(unit)'.")) {
             return polkit.Result.YES;
         }
     }

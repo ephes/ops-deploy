@@ -232,7 +232,9 @@ def test_deploy_with_empty_control_user_revokes_the_grant() -> None:
         ("stopped", "systemctl stop minecraft-java"),
     ],
 )
-def test_deploy_revokes_control_before_runtime_failure(service_state: str, failing_command: str) -> None:
+def test_deploy_plans_control_revocation_before_checks_and_executes_it_first(
+    service_state: str, failing_command: str
+) -> None:
     cfg = config(service_state=service_state)
     responses = {
         **converged(cfg),
@@ -241,16 +243,24 @@ def test_deploy_revokes_control_before_runtime_failure(service_state: str, faili
     }
     run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
     assert not run.succeeded
-    revoke = run.executed_commands.index(f"rm -rf {CONTROL_RULE_PATH}")
-    failure = next(index for index, command in enumerate(run.executed_commands) if failing_command in command)
-    assert revoke < failure
+    plan_facts = [event.value for event in run.events if event.phase == "plan" and event.kind == "fact"]
+    rule_check = next(index for index, command in enumerate(plan_facts) if CONTROL_RULE_PATH in command)
+    assert rule_check < plan_facts.index(guard_command(cfg))
+    if service_state == "started":
+        assert rule_check < plan_facts.index("LC_ALL=C ufw status")
+    assert run.executed_commands[0] == f"rm -rf {CONTROL_RULE_PATH}"
+    assert any(failing_command in command for command in run.executed_commands[1:])
 
 
-def test_control_rule_uses_the_configured_unit() -> None:
+def test_control_rule_matches_the_configured_unit_and_exact_start_stop_messages() -> None:
     cfg = config(control_user="_tile-01", service_name="minecraft-custom")
     rule = rendered(cfg, "50-minecraft-java-control.rules.j2", values(cfg))
     assert 'subject.user == "_tile-01"' in rule
     assert 'action.lookup("unit") == "minecraft-custom.service"' in rule
+    assert 'var message = action.lookup("polkit.message");' in rule
+    assert re.findall(r"""\bverb\s*={2,3}\s*["']([^"']+)["']""", rule) == ["start", "stop"]
+    for verb in ("start", "stop"):
+        assert f"""(verb === "{verb}" && message === "Authentication is required to {verb} '$(unit)'.")""" in rule
 
 
 def test_changed_properties_restart_and_secret_stays_on_stdin() -> None:
@@ -265,7 +275,7 @@ def test_changed_properties_restart_and_secret_stays_on_stdin() -> None:
     assert "fixture-rcon-password" not in "\n".join(run.executed_commands)
 
 
-def test_mode_guard_failure_precedes_all_operations() -> None:
+def test_mode_guard_failure_aborts_planning() -> None:
     cfg = config()
     with pytest.raises(ValueError, match="guard did not pass"):
         run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses={guard_command(cfg): ["unsafe"]})
@@ -401,10 +411,13 @@ def test_existing_ufw_comments_and_protocol_order_do_not_schedule_changes() -> N
     assert not run.mutating_changed_ops, run.mutating_changed_ops
 
 
-def test_inactive_firewall_aborts_before_service_start() -> None:
-    cfg = config()
-    responses = converged(cfg)
-    responses["LC_ALL=C ufw status"] = ["Status: inactive"]
+def test_inactive_firewall_aborts_planning_even_with_control_revocation() -> None:
+    cfg = config(control_user="", service_state="started")
+    responses = {
+        **converged(cfg),
+        **fakehost.file(CONTROL_RULE_PATH, "old rule"),
+        "LC_ALL=C ufw status": ["Status: inactive"],
+    }
     with pytest.raises(ValueError, match="active UFW"):
         run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
 
@@ -679,7 +692,7 @@ def test_production_mcrcon_probe_and_verification_shell(tmp_path: Path, version:
     assert (verify_result.returncode == 0) is (version == "0.7.2")
 
 
-def test_started_with_inactive_ufw_refuses_before_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_started_with_inactive_ufw_refuses_before_package_planning(monkeypatch: pytest.MonkeyPatch) -> None:
     called: list[str] = []
     monkeypatch.setattr(
         "ops_deploy.services.minecraft_java.deploy.apt.packages", lambda **kwargs: called.append("packages")

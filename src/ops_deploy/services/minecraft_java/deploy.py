@@ -340,8 +340,9 @@ def _require_polkit_rules() -> None:
 @deploy("Deploy Minecraft Java")
 def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> None:
     validate_secrets(secrets)
-    # A remote guard is first, before any managed files or packages change. No
-    # server.properties contents (including RCON credentials) leave the host.
+    if not cfg.control_user:
+        absent("Remove Minecraft start and stop polkit rule when disabled", CONTROL_RULE_PATH)
+    # Inspect loader/world state without sending server.properties off the host.
     result = host.get_fact(Command, command=guard_command(cfg))
     if not result or not result.startswith("safe "):
         raise ValueError("Minecraft loader/world guard did not pass")
@@ -352,11 +353,9 @@ def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> No
     if cfg.service_state == "started":
         ufw_status = host.get_fact(Command, command="LC_ALL=C ufw status") or ""
         if ufw_status.splitlines()[:1] != ["Status: active"]:
-            raise ValueError("Minecraft requires active UFW before starting; no changes scheduled")
+            raise ValueError("Minecraft requires active UFW before starting")
     if cfg.control_user:
         _require_polkit_rules()
-    else:
-        absent("Remove Minecraft start and stop polkit rule when disabled", CONTROL_RULE_PATH)
     if cfg.service_state == "stopped":
         # Stop before replacing any runtime inputs, including the old unit/env.
         systemd.service(name="Keep Minecraft stopped", service=cfg.service_name, running=False)
