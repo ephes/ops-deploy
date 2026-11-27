@@ -25,3 +25,26 @@ http:
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:{{ cfg.http_port }}"
+{%- if cfg.turn_domain %}
+
+tcp:
+  routers:
+    livekit-turn:
+      rule: "HostSNI(`{{ cfg.turn_domain }}`)"
+      entryPoints:
+        - web-secure
+      service: livekit-turn
+      tls: {}
+
+  services:
+    livekit-turn:
+      loadBalancer:
+        serversTransport: livekit-turn
+        servers:
+          - address: "127.0.0.1:{{ cfg.turn_tls_port }}"
+
+  serversTransports:
+    livekit-turn:
+      proxyProtocol:
+        version: 2
+{%- endif %}

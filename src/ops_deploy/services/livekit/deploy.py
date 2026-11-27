@@ -102,6 +102,18 @@ class LivekitConfig(BaseServiceConfig):
     # With ranges, the HTTP route answers only these clients (browsers then reach
     # the signalling through another route, e.g. the recorder's ``/rtc``).
     traefik_internal_ip_ranges: tuple[str, ...] | None = None
+    # LiveKit's embedded TURN over TLS on 443 for clients that cannot reach the
+    # media ports. With ``external_tls`` LiveKit listens for plain TCP on
+    # ``turn_tls_port`` and hands clients ``turns:<turn_domain>:443``; the route
+    # file gets a TCP router that terminates TLS for the name (a certificate in
+    # Traefik's store must cover it) and forwards to that port with a PROXY
+    # protocol v2 header (LiveKit's ``proxy_protocol``, trusted from loopback),
+    # so TURN sees the client's address, not Traefik's. Relays may reach
+    # ``node_ip`` only (the SFU's candidate); every other peer is denied.
+    # Needs livekit-server v1.13.10 or newer (TCP relays refused, relays to
+    # this host confined to the media ports). ``None`` leaves TURN off.
+    turn_domain: Hostname | None = None
+    turn_tls_port: Port = 5349
     # Optional prepared per-container CA stores, retaining pinned application images.
     ca_store_root: PlainPath | None = None
     egress_chrome_policy_path: PlainPath | None = None
@@ -148,6 +160,18 @@ class LivekitConfig(BaseServiceConfig):
             raise ValueError("livekit runs as root; user must be root")
         if self.site_path == self.config_dir:
             raise ValueError("site_path and config_dir must differ")
+        if self.turn_domain is not None:
+            if self.traefik_host is None:
+                raise ValueError("turn_domain needs traefik_host: the TURN router lives in the route file")
+            if self.turn_domain.lower() == self.traefik_host.lower():
+                raise ValueError("turn_domain must differ from traefik_host")
+            # A numeric last label (``192.0.513``, ``192.0.2.01``) is an IPv4
+            # address to a browser, which then sends no SNI.
+            last = self.turn_domain.rstrip(".").rpartition(".")[2]
+            if "." not in self.turn_domain or _is_ip(self.turn_domain) or last.isdigit():
+                raise ValueError("turn_domain must be a dotted DNS name (LiveKit and SNI need one)")
+            if self.turn_tls_port in {self.http_port, self.rtc_tcp_port}:
+                raise ValueError("turn_tls_port collides with http_port or rtc_tcp_port")
         return self
 
     @property
@@ -159,9 +183,9 @@ class LivekitConfig(BaseServiceConfig):
         return self.config_dir / "egress.yaml"
 
     def server_config(self) -> dict[str, Any]:
-        """``livekit.yaml``: the role's template as data."""
+        """``livekit.yaml``: the role's template as data, plus ``turn`` with ``turn_domain``."""
 
-        return {
+        config: dict[str, Any] = {
             "port": self.http_port,
             "rtc": {
                 "tcp_port": self.rtc_tcp_port,
@@ -174,6 +198,34 @@ class LivekitConfig(BaseServiceConfig):
             "keys": SecretKeyed(secret_key=Secret(secret="api_key"), value=Secret(secret="api_secret")),
             "webhook": {"api_key": Secret(secret="api_key"), "urls": [self.webhook_url]},
             "logging": {"level": "info"},
+        }
+        if self.turn_domain is not None:
+            config["turn"] = self.turn_config()
+        return config
+
+    def turn_config(self) -> dict[str, Any]:
+        """The embedded TURN server: TLS-only behind Traefik, relays to the SFU's address only.
+
+        ``allow_restricted_peer_cidrs`` lets relays reach ``node_ip`` (a private
+        address, denied by default); ``deny_peer_cidrs`` takes precedence over it
+        and covers every other IPv4 and IPv6 address, so relayed media can go
+        nowhere but the SFU (LiveKit additionally confines relays to this host's
+        addresses to the media UDP ports). No ``udp_port``: TURN over UDP stays off.
+        ``proxy_protocol`` makes every connection on ``turn_tls_port`` carry the
+        PROXY header Traefik sends (LiveKit trusts it from loopback only and
+        closes connections without it).
+        """
+
+        node = ipaddress.IPv4Network(f"{self.node_ip}/32")
+        others = sorted(ipaddress.IPv4Network("0.0.0.0/0").address_exclude(node))
+        return {
+            "enabled": True,
+            "domain": self.turn_domain,
+            "tls_port": self.turn_tls_port,
+            "external_tls": True,
+            "proxy_protocol": True,
+            "allow_restricted_peer_cidrs": [str(node)],
+            "deny_peer_cidrs": [*(str(n) for n in others), "::/0"],
         }
 
     def egress_config(self) -> dict[str, Any]:
@@ -316,6 +368,14 @@ class LivekitConfig(BaseServiceConfig):
         if self.traefik_host is None:
             return None
         return TraefikRoute(name=ROUTE_NAME, host=self.traefik_host, app_port=self.http_port)
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
 
 
 def render_route(cfg: LivekitConfig) -> str:

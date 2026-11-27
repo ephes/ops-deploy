@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- livekit: `turn_domain` switches on LiveKit's embedded TURN server over
+  TLS on 443: `livekit.yaml` gains `turn` (`external_tls`, no UDP TURN,
+  relays allowed to `node_ip` only, every other peer denied, PROXY protocol
+  from loopback) and the route file a TCP router `livekit-turn`
+  (`HostSNI(<turn_domain>)`, TLS terminated by Traefik) to
+  `127.0.0.1:<turn_tls_port>` (default 5349) with a PROXY v2 header. Needs
+  livekit-server v1.13.10 or newer. Without it both files are unchanged.
+
 - openclaw: every deploy installs `openclaw-gateway-weekly-restart.timer`
   and its oneshot service, which run `systemctl try-restart` of the gateway
   every Sunday at 04:00 (host time, fixed; a stopped gateway stays stopped).

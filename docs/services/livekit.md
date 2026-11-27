@@ -32,6 +32,7 @@ The operations are named `Deploy livekit | ...` (the Compose app) and
 | `webhook_url` | required, http(s) | `livekit_webhook_url` |
 | `traefik_host` | required; `None` writes no route | `livekit_traefik_host` (`livekit_traefik_enabled`) |
 | `traefik_internal_ip_ranges` | `None` (everyone) | with ranges, the HTTP router also requires `ClientIP` in them |
+| `turn_domain`, `turn_tls_port` | `None` (TURN off), `5349` | see "Media from outside the LAN" |
 | `site_path`, `config_dir` | `/opt/livekit`, `/etc/livekit` | `livekit_site_dir`, `livekit_config_dir` |
 | `http_port`, `rtc_tcp_port` | `7880`, `7881` | `livekit_http_port`, `livekit_rtc_tcp_port` |
 | `rtc_port_range_start`, `rtc_port_range_end` | `50000`, `50100` (UDP) | the same names |
@@ -54,10 +55,10 @@ the digests its containers run, so the switch from the role changes no image.
 | File | Owner, mode | Content |
 |---|---|---|
 | `/opt/livekit/docker-compose.yml` | root `0644` | compose_app's render: project `livekit`, containers `livekit-server` and `livekit-egress`, `network_mode: host` (WebRTC media reaches the NIC; Redis and S3 listen on host loopback), Egress with `SYS_ADMIN` and `shm_size: 1g`, each config file bind-mounted read-only (long syntax, `create_host_path: false`), `restart: unless-stopped`, no published ports |
-| `/etc/livekit/livekit.yaml` | root `0600` | the role's values: `port`, `rtc` (TCP port, UDP range, `use_external_ip: false`, `node_ip`), `redis`, `keys: {<api_key>: <api_secret>}` (a `SecretKeyed` mapping), `webhook`, `logging` |
+| `/etc/livekit/livekit.yaml` | root `0600` | the role's values: `port`, `rtc` (TCP port, UDP range, `use_external_ip: false`, `node_ip`), `redis`, `keys: {<api_key>: <api_secret>}` (a `SecretKeyed` mapping), `webhook`, `logging`; with `turn_domain` also `turn` |
 | `/etc/livekit/egress.yaml` | root `0640` | the role's values: `redis`, `api_key`, `api_secret`, `ws_url`, `s3` (region `us-east-1`, `force_path_style`), `logging`; the Egress image's user has primary group root (gid 0), so group read is enough |
 | `/etc/systemd/system/livekit.service` | root `0644` | compose_app's unit (`ExecReload` = `up -d --remove-orphans`, `-p livekit`) |
-| `/etc/traefik/dynamic/livekit.yml` | root `0644` | the role's template byte for byte (header included): router `livekit` on `web-secure` with `tls: {}`, middleware `livekit-headers` (`X-Forwarded-Proto: https`, `X-Forwarded-Host`), service `livekit` at `http://127.0.0.1:<http_port>` |
+| `/etc/traefik/dynamic/livekit.yml` | root `0644` | the role's template byte for byte (header included): router `livekit` on `web-secure` with `tls: {}`, middleware `livekit-headers` (`X-Forwarded-Proto: https`, `X-Forwarded-Host`), service `livekit` at `http://127.0.0.1:<http_port>`; with `turn_domain` also the TCP router `livekit-turn` |
 | `/var/lib/ops-deploy/livekit/` | root `0700` | compose_app's applied stamp |
 
 The route is open to every client, as the role's is (no `ClientIP` rule):
@@ -135,11 +136,47 @@ When replacement trust is enabled, preconditions require the prepared bundle, em
 ## Media from outside the LAN
 
 A client reaches the media ports (`rtc_port_range_*` over UDP, `rtc_tcp_port`)
-only where they are routed to it, and LiveKit advertises `node_ip` only. This
-deploy does not open a way for clients outside the LAN. LiveKit's embedded
-TURN server behind a Traefik TCP router on 443 was built and withdrawn in
-review (2026-11-26): LiveKit v1.12.0 bundles a TURN library whose TCP relay
-does not check peer permissions, so a holder of TURN credentials could reach
-TCP services on the host's networks. Revisit with a LiveKit version that
-confines the relay to the SFU's media ports, or forward the media ports on the
-router and advertise the public address.
+only where they are routed to it, and LiveKit advertises `node_ip` only.
+Behind a home router that forwards 443 alone, that is the LAN. ICE over TCP
+(`rtc_tcp_port`) cannot share 443: it is plain TCP without a server name.
+TURN over TLS can, because Traefik routes it by SNI.
+
+`turn_domain` switches on LiveKit's embedded TURN server for those clients:
+
+- `livekit.yaml` gains `turn` with `enabled`, `domain: <turn_domain>`,
+  `tls_port: <turn_tls_port>`, `external_tls: true`, no `udp_port` (TURN over
+  UDP stays off). LiveKit then listens for plain TCP on `tls_port` (all
+  addresses) and hands every participant `turns:<turn_domain>:443?transport=tcp`
+  with its own short-lived credentials (port 443 is fixed in LiveKit).
+- Peers: `allow_restricted_peer_cidrs: [<node_ip>/32]` lets a relay reach the
+  SFU's own candidate (a private address is denied by default), and
+  `deny_peer_cidrs` lists every other IPv4 address (the complement of
+  `node_ip`, 32 networks) and `::/0`. The deny list takes precedence, so a
+  relay can reach `node_ip` and nothing else.
+- The route file gains a TCP router `livekit-turn` on `web-secure` with
+  `HostSNI(<turn_domain>)` and `tls: {}`: Traefik terminates TLS with a
+  certificate from its store that covers the name and forwards the stream to
+  `127.0.0.1:<turn_tls_port>` with a PROXY protocol v2 header (TCP
+  `serversTransports.livekit-turn`). HTTP routers for other names are
+  untouched.
+- `proxy_protocol: true`: LiveKit reads that header (trusted from loopback
+  only, its default) and uses the client's address; without it TURN would
+  report Traefik's `127.0.0.1` as the client's mapped address, which Firefox
+  rejects. A connection to `turn_tls_port` without the header, or from
+  anywhere but loopback, is closed; a process on the host itself could send
+  a header, and still needs TURN credentials like any client.
+
+**Needs livekit-server v1.13.10 or newer.** Older servers (v1.12.0 bundles
+pion/turn v5.0.4) accept RFC 6062 TCP relays without a peer permission check,
+so a holder of TURN credentials could open TCP connections to services on the
+host's networks. v1.13.10 (upstream #4992) refuses every TCP relay and limits
+relays to the host's own addresses to the media UDP ports. The deploy does
+not read the image's version: the consumer's pin decides it.
+
+`turn_domain` must be a dotted DNS name (LiveKit refuses others at start,
+and TLS clients send no SNI for an IP), must differ from `traefik_host` (case
+ignored) and needs it (the TCP router
+lives in the same route file); `turn_tls_port` must differ from `http_port`
+and `rtc_tcp_port`. Setting or changing either rewrites `livekit.yaml` and
+restarts the server, which ends running calls. Without `turn_domain`
+`livekit.yaml` and the route are byte for byte as before.

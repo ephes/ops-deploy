@@ -22,7 +22,9 @@ from tests import fakehost
 from tests.livekit_fixtures import (
     EGRESS_IMAGE,
     EGRESS_YAML,
+    HOST,
     IMAGE_IDS,
+    NODE_IP,
     ROUTE,
     SECRET_VALUES,
     SERVER_IMAGE,
@@ -393,3 +395,82 @@ def test_internal_ranges_are_validated() -> None:
     for bad in ({"traefik_internal_ip_ranges": ()}, {"traefik_internal_ip_ranges": ("nonsense",)}):
         with pytest.raises(ConfigValidationError):
             livekit_config(**bad)
+
+
+# --- TURN over TLS on 443 ----------------------------------------------------
+
+
+def test_turn_is_off_by_default_and_the_files_stay_as_before(cfg: LivekitConfig) -> None:
+    import yaml
+
+    assert "turn" not in cfg.server_config()
+    assert "tcp" not in yaml.safe_load(render_route(cfg))
+
+
+def test_turn_domain_adds_tls_only_turn_that_relays_to_the_sfu_alone() -> None:
+    import ipaddress
+
+    turn = livekit_config(turn_domain="turn.example.invalid").server_config()["turn"]
+    deny = turn.pop("deny_peer_cidrs")
+    assert turn == {
+        "enabled": True,
+        "domain": "turn.example.invalid",
+        "tls_port": 5349,
+        "external_tls": True,
+        "proxy_protocol": True,
+        "allow_restricted_peer_cidrs": [f"{NODE_IP}/32"],
+    }
+    # No udp_port: LiveKit then opens no UDP TURN listener.
+    assert "udp_port" not in turn
+    assert "::/0" in deny
+    v4 = [ipaddress.ip_network(n) for n in deny if n != "::/0"]
+    # The denied networks are exactly every IPv4 address except node_ip.
+    assert sum(n.num_addresses for n in v4) == 2**32 - 1
+    assert not any(ipaddress.ip_address(NODE_IP) in n for n in v4)
+    for other in ("192.0.2.9", "192.0.2.11", "192.168.178.1", "100.100.100.100", "127.0.0.1", "8.8.8.8"):
+        assert any(ipaddress.ip_address(other) in n for n in v4), other
+
+
+def test_turn_domain_adds_one_tcp_router_for_that_name_only() -> None:
+    import yaml
+
+    plain = yaml.safe_load(render_route(livekit_config()))
+    doc = yaml.safe_load(render_route(livekit_config(turn_domain="turn.example.invalid", turn_tls_port=5350)))
+    assert doc["http"] == plain["http"]
+    assert doc["tcp"] == {
+        "routers": {
+            "livekit-turn": {
+                "rule": "HostSNI(`turn.example.invalid`)",
+                "entryPoints": ["web-secure"],
+                "service": "livekit-turn",
+                "tls": {},
+            }
+        },
+        "services": {
+            "livekit-turn": {
+                "loadBalancer": {"serversTransport": "livekit-turn", "servers": [{"address": "127.0.0.1:5350"}]}
+            }
+        },
+        # LiveKit's proxy_protocol needs the header on every connection.
+        "serversTransports": {"livekit-turn": {"proxyProtocol": {"version": 2}}},
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"turn_domain": "turn.example.invalid", "traefik_host": None}, "turn_domain needs traefik_host"),
+        ({"turn_domain": HOST}, "turn_domain must differ"),
+        ({"turn_domain": HOST.upper()}, "turn_domain must differ"),
+        ({"turn_domain": "turn"}, "dotted DNS name"),
+        ({"turn_domain": "192.0.2.1"}, "dotted DNS name"),
+        ({"turn_domain": "192.0.2.01"}, "dotted DNS name"),
+        ({"turn_domain": "192.0.513"}, "dotted DNS name"),
+        ({"turn_domain": "turn.example.invalid", "turn_tls_port": 7880}, "turn_tls_port collides"),
+        ({"turn_domain": "turn.example.invalid", "turn_tls_port": 7881}, "turn_tls_port collides"),
+        ({"turn_domain": "bad host"}, "turn_domain"),
+    ],
+)
+def test_unsafe_turn_inputs_are_refused(change: dict[str, Any], message: str) -> None:
+    with pytest.raises(ConfigValidationError, match=message):
+        livekit_config(**change)
