@@ -66,9 +66,7 @@ from `ops_deploy.helpers`:
   stale record would name code that is no longer deployed.
 
 `sync_tree` never transfers or deletes `.ops-deploy-*`, so the file survives
-every sync. An Ansible deploy (rsync from a checkout) does not know about it
-and leaves it in place: after one, the record names the last git-source deploy,
-not necessarily the running code.
+the source sync. The deploy updates or removes the record separately.
 
 Because `sync_tree` compares content, not times, the fetched tree (all files
 new) changes nothing on a host that already runs the same code, whichever way
@@ -80,8 +78,8 @@ Services with a git source: [django_site](../services/django_site.md)
 
 ## Why not clone on the host
 
-The Ansible roles' `git` deploy method (`nyxmon_deploy`, `fastdeploy_deploy`
-and others) clones on the host, which needs read access to the repository
+The former roles' `git` deploy method (`nyxmon_deploy`, `fastdeploy_deploy`
+and others) cloned on the host, which required read access to the repository
 from every host: a deploy key per repository (GitHub allows a key on one
 repository only) installed on the host and kept out of backups, or a
 credential with access to several repositories, plus a known_hosts entry for

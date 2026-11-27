@@ -34,7 +34,7 @@ the config from an `AppSpec` (`pyinfra_support/compose_apps.py`, see its
 | `env_files` | `<site_path>/<name>`, one `KEY='value'` line per entry, read by the services that list it |
 | `config_files` | YAML or JSON from data with `Secret` leaves (YAML also `{"env_var": "NAME"}` leaves, written as `!env_var NAME` for apps that read a value from their environment, such as Recyclarr), and `SecretKeyed` mappings `{"secret_key": {"secret": ...}, "value": ...}`, one entry whose key is a secret (LiveKit's `keys: {<api key>: <secret>}`); only a mapping of exactly `secret` (and `form`) is a reference, so a file's own `secret` key next to others (`s3: {access_key: ..., secret: ...}`) stays data; `restarts` names the services that read it, never a namespace provider (restarting it would replace the namespace under running dependents) |
 | `services` | `ComposeService`: the keys the apps on the fleet use, nothing passed through (below) |
-| `docker` | Docker Engine and Compose, as the `docker_install` role installs them (run inside the deploy) |
+| `docker` | Docker Engine and Compose, using `deploy_docker_install` inside the deploy |
 | `route` | `/etc/traefik/dynamic/<name>.yml`: `internal`, `internal_or_basic_auth` or `public` |
 | `steps` | typed API steps: `qbittorrent_preferences`, `json_key_copy` |
 | `checks` | the wait for running and healthy services, `http` checks |
@@ -312,7 +312,7 @@ Directories, data, host secrets, images and external networks stay.
 
 ## torrent: the switch from the playbook
 
-ops-control's `playbooks/torrent/deploy.yml` wrote these files; compose_app
+The former `playbooks/torrent/deploy.yml` (removed 2026-11-16) wrote these files; compose_app
 writes each once in its canonical form (Q1). The containers are recreated
 once each, in the namespace-provider order; behaviour is proven equal, not
 the bytes: the same project, container names and unit; the same environment
@@ -350,7 +350,12 @@ RADARR = {
     "groups": ("media",),
     "users": ({"name": "radarr", "groups": ("media",), "home": "/home/radarr"},),
     "mounts_required": ("/mnt/cryptdata",),
-    "paths_required": ({"path": "/mnt/cryptdata/media", "hint": "run just deploy-one media_storage first"},),
+    "paths_required": (
+        {
+            "path": "/mnt/cryptdata/media",
+            "hint": "deploy media_storage from ops-control first",
+        },
+    ),
     "directories": (
         {"path": "/mnt/cryptdata/media-apps/radarr", "owner": "radarr", "group": "media", "mode": "2775"},
         {"path": "/mnt/cryptdata/media-apps/radarr/secrets", "mode": "0700"},

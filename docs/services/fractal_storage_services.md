@@ -29,9 +29,8 @@ owned block change. An unchanged block issues no physical setting command and
 never queries or attests hardware state. The original command order remains all
 APM, then all acoustic settings, then all spindown settings. A write followed by
 failed or interrupted physical application is nontransactional: a later
-unchanged deploy cannot establish that the drive accepted the policy. Retain the
-explicit legacy Ansible play for deliberate physical reassertion/recovery. Such
-a reassertion can wake drives and is separate from a no-change deployment.
+unchanged deploy cannot establish that the drive accepted the policy.
+Reapplying the settings directly to the drives can wake them.
 
 ### Boot apply unit
 
@@ -291,7 +290,7 @@ rollout restart) rather than deleting it.
 A current config/account/service deployment issues no managed command.
 
 **Global section repair (include placement, guest settings):** the original
-cf3 role inserts includes immediately after `[global]`, and its base template
+former cf3 role inserted includes immediately after `[global]`, and its base template
 also places one before later globals. Samba then parses every later global
 line into the last included share section: global-only settings are ignored
 (with a "Global parameter ... found in service section" warning) and share

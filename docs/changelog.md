@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- docs: describe the current pyinfra deployment and lifecycle commands, remove
+  retired Ansible rollback and coexistence instructions, and mark migration
+  plans and role comparisons as historical.
+
 - livekit: `turn_domain` switches on LiveKit's embedded TURN server over
   TLS on 443: `livekit.yaml` gains `turn` (`external_tls`, no UDP TURN,
   relays allowed to `node_ip` only, every other peer denied, PROXY protocol

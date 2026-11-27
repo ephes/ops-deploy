@@ -78,7 +78,7 @@ service is `<fqdn>-django`, the frontend's `<fqdn>-next`. `route.backend`
 ### Why this set
 
 The three Ansible origins (`marina_deploy`/`heis_deploy`, `wagtail_deploy`,
-the split site's own playbook) write different files. The owner decided for one
+the split site's own playbook) wrote different files. The owner decided for one
 set instead of one profile per origin: each site gets one planned rewrite and
 one restart when it moves to django_site, and Ansible no longer deploys it.
 The set is the classic one (marina/heis) with these choices:
@@ -232,13 +232,11 @@ Behaviour that differs from the old module, apart from the files:
 - The old module's one-time move of `media/<name>` into private storage
   (`private_media_moves`) is not ported: the split site's move is done.
 
-### Ansible after the switch
+### Deploying a site
 
-An Ansible deploy of a switched site (`playbooks/deploy-<site>.yml` with the
-frozen role) writes its own files back and restarts the site, and the next
-django_site deploy switches it again (one more restart). Deploy switched sites
-only with `just deploy-one <site>`; ops-control documents the other entry
-points per site. Ansible stays the last-resort rollback.
+In ops-control, review `just pyinfra-check <site>` before each
+`just deploy-one <site>`. See the site's ops-control documentation for its
+lifecycle commands.
 
 ## Secrets
 
@@ -404,8 +402,7 @@ right after the migrations (heis's content reconcilers), the default
     the next run repeats the source steps and the restart it owes.
 
 The markers live in the site's state directory `/var/lib/ops-deploy/<service_name>/`
-(`root:root 0700`, created by the first marker a run writes): no sync of
-either tool touches it, also not one with `--delete`, and the service user
+(`root:root 0700`, created by the first marker a run writes): the directory is outside the source sync, and the service user
 cannot plant a symlink there that a root `touch` or write would follow. A
 converged deploy reads it and changes nothing.
 
@@ -454,9 +451,6 @@ converged deploy reads it and changes nothing.
   once and runs the reconcilers before `collectstatic`; `.env` values,
   database, media, cache, admin and the primary group kept, no marker left,
   no secret on disk outside its files.
-- ops-control: `just smoke-marina-coexistence` and
-  `just smoke-heis-coexistence SHAPE=production|staging` switch from the
-  Ansible roles.
 
 
 ## PostgreSQL and Wagtail sites
@@ -508,10 +502,9 @@ There is one environment/launcher/unit format for all sites.
 | bootstrap every deployment | First-success group plus pending/completion markers | Idempotent initialization with explicit resume |
 | PostgreSQL role dependency installs server | Read-only availability preflight, then role/database only | Server lifecycle belongs to host infrastructure |
 
-The first switch intentionally rewrites the canonical unit/env/launcher and
-restarts the app once; its second run must be a no-op. Ansible fallback would
-rewrite the old files and restart again. Do not alternate tools after a live
-switch; the private control plane owns admission/entry-point guards.
+The first pyinfra deploy over files from the former playbooks rewrote the
+unit, environment and launcher in the shared format and restarted the app
+once. A converged repeat makes no changes.
 
 Coverage: `test_django_site_postgres.py`, `test_django_site_wagtail_route.py`
 (HSTS without preload) and `tests/smoke/test_django_site_postgres_smoke.py`

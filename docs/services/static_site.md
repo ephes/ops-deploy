@@ -59,7 +59,7 @@ Defaults follow the role's `defaults/main.yml`; `user`, `site_path` and
    no sockets/FIFOs/devices; with `restrict_to_required_files` exactly the
    required files at the top level.
 2. System group and user
-   (`/usr/sbin/nologin`, home `/home/<user>` not created, as the role does;
+   (`/usr/sbin/nologin`, home `/home/<user>` not created, as the former role did;
    an existing user is left alone with a warning). Like the role, the deploy
    needs `rsync` on the host already and fails at the content sync without it.
 3. Parent directories (`0755 root:root`) and the document root
@@ -83,17 +83,15 @@ Defaults follow the role's `defaults/main.yml`; `user`, `site_path` and
 
 ## Differences from the role
 
-- Not ported, the playbook never sets them: `static_site_systemd_unit_name`,
+- Not ported, the former playbook never set them: `static_site_systemd_unit_name`,
   `static_site_systemd_unit_path` and `static_site_traefik_config_path`
   (unit and route are named after `service_name`), and a dotted
   `traefik_cert_resolver`.
 - rsync never transfers (or deletes) `.git`, `.venv`, `__pycache__` and
-  `.ops-deploy-*`/`.pyinfra-*`; the role would publish them.
-- Files are compared by checksum, not by size and time, and times are not
-  copied. After an ops-deploy run, Ansible's next sync sees different times
-  and rewrites every file (same bytes, so nothing changes for readers); the
-  other direction is a no-op.
-- The service restarts before the health checks (the role's handlers run
+  `.ops-deploy-*`/`.pyinfra-*`; the former role published them.
+- Pyinfra compares file contents by checksum and skips a sync when only
+  timestamps differ. The former role compared size and time.
+- The service restarts before the health checks (the former role's handlers ran
   before them too), but is started once, not started and restarted, on a
   first install; `daemon-reload` only runs when the unit changed.
 - The role's validation messages are reproduced as errors; ports and path

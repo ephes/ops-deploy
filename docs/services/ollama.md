@@ -37,9 +37,9 @@ authentication settings. The host needs `/usr/bin/python3` (3.9+), `dscl`,
 | `binary_path` | Optional override; otherwise `<brew --prefix>/bin/ollama` |
 | `launchd_label`, `launchd_plist_path` | `com.ollama.ollama`, `/Library/LaunchDaemons/<label>.plist` |
 | `launchd_command`, `launchd_command_args` | `serve`, empty tuple |
-| `manage_user`, `user`, `group`, `uid`, `gid` | `True`, `ollama`, `ollama`, optional numeric overrides. Create/update native records and hide the system user as the role does. Existing IDs are retained unless explicitly selected. |
+| `manage_user`, `user`, `group`, `uid`, `gid` | `True`, `ollama`, `ollama`, optional numeric overrides. Create/update native records and hide the system user as the former role did. Existing IDs are retained unless explicitly selected. |
 | `site_path`, `models_dir`, `log_dir` | Fixed defaults `/usr/local/var/ollama`, `/usr/local/var/ollama/models`, `/usr/local/var/ollama/logs`; mode `0750`. Override all desired paths explicitly. Manage ownership only when `manage_user=True`. Changes are nonrecursive. |
-| `env` | `OLLAMA_HOST=127.0.0.1:11434`, `OLLAMA_MODELS=<models_dir>`; an explicit dictionary replaces the default dictionary, matching Ansible |
+| `env` | `OLLAMA_HOST=127.0.0.1:11434`, `OLLAMA_MODELS=<models_dir>`; an explicit dictionary replaces the default dictionary, matching the former role |
 | `health_url` | Optional HTTP 200 readiness endpoint; otherwise verify launchd running state. No inference request is sent. |
 
 The plist has root/wheel ownership and mode `0644`, `RunAtLoad`, `KeepAlive`,
@@ -49,7 +49,7 @@ arguments and environment values remain valid XML.
 
 Native `IsHidden=1` is authoritative for existing system accounts. Their legacy
 global loginwindow hidden-user list is preserved; a new account is added to
-that list as the role does. This avoids routine rewrites of unrelated existing
+that list as the former role did. This avoids routine rewrites of unrelated existing
 loginwindow preferences.
 
 A changed plist (including its metadata) reloads and restarts **this system
@@ -108,7 +108,7 @@ binary hash and operation outcomes; source code alone is not execution evidence.
 ## Removal
 
 `remove_ollama(OllamaRemoveConfig(confirm=True, ...))` ports the macOS
-`ollama_remove` role at ops-library `44a532ba`. The role has no confirmation flag; this port
+`ollama_remove` role at ops-library `44a532ba`. The former role had no confirmation flag; this port
 requires `confirm` before any host probe. The defaults are the role's:
 `com.ollama.ollama` and its plist under `/Library/LaunchDaemons`, user and
 group `ollama`, `/usr/local/var/ollama/{models,logs}`, Homebrew package

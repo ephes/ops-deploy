@@ -35,7 +35,7 @@ required while `traefik_enabled` and `basic_auth_enabled` are on (the role's
 assertion) and refused otherwise; a `CHANGEME` password is refused. The
 password never reaches the host: the bcrypt hash is computed on the
 controller, and the hash already in the deployed route is kept while it
-still matches the password (as the role does since ops-library 2.49.1), so a
+still matches the password (as the former role did from ops-library 2.49.1 onward), so a
 converged host keeps its route file byte for byte. Errors never quote the
 password.
 
@@ -55,7 +55,7 @@ Defaults follow the retired roles' `jellyfin_shared/defaults/main.yml` and
 | `user`, `group` | `jellyfin` | owner of the data, config and log directories (`0750`) |
 | `data_dir`, `config_dir`, `log_dir` | `/var/lib/jellyfin`, `/etc/jellyfin`, `/var/log/jellyfin` | |
 | `media_directories` | the role's three `/mnt/cryptdata/media/video/...` roots | at least one; created when `create_media_dirs` |
-| `media_dir_owner`, `media_dir_group`, `media_dir_mode` | `root`, `root`, `0755` | set exactly, special bits included (`02775` keeps setgid; `0755` clears it), as Ansible's `file` does |
+| `media_dir_owner`, `media_dir_group`, `media_dir_mode` | `root`, `root`, `0755` | set exactly, special bits included (`02775` keeps setgid; `0755` clears it), as the former Ansible role did |
 | `mounts_required` | `()` | not in the role: mount points checked (read-only) before any change and required by the unit (`RequiresMountsFor=` drop-in, below) |
 | `http_port` | `8096` | the route's backend and the health checks |
 | `service_enabled` | `true` | the unit is always started (the role's `jellyfin_service_state` default) |
@@ -78,7 +78,7 @@ Ansible's `distribution`, falling back to `debian`), release (the release
 codename) and architecture (`uname -m` mapped to `amd64`/`arm64`, falling
 back to `amd64`) from facts on every run. Here they are configuration, and
 the deploy reads `/etc/os-release` and `uname -m` while planning, maps them
-exactly as the role does and refuses the host (before any operation) when
+exactly as the former role did and refuses the host (before any operation) when
 the result differs from the config. A distribution upgrade therefore stops
 the deploy until the config follows it, instead of silently switching the
 repository.
@@ -108,7 +108,7 @@ repository.
    takes the role's pick, the first candidate whose `apt-cache policy` names
    a candidate version (`Candidate:\s+(?!\(none\))`), and installs it the
    same way; with none available a warning is logged and the deploy
-   continues, as the role does. With the repository and the base packages
+   continues, as the former role did. With the repository and the base packages
    in place while planning, that is decided while planning; otherwise one
    shell step makes the same decision after the base install.
 5. **Directories**: data, config and log directory `jellyfin:jellyfin 0750`;
@@ -138,7 +138,7 @@ repository.
    drop-in comes before the start below, so a stopped service starts with
    it.
 8. **Service**: `jellyfin.service` enabled (or disabled) and started (only
-   when it is not running). It is never restarted: the role has a restart
+   when it is not running). It is never restarted: the former role had a restart
    handler, but no task notifies it.
 9. **Health** (read-only): the port accepts connections (one try per second
    for `healthcheck_timeout` seconds), then the URL answers one of the
@@ -157,30 +157,28 @@ they are on hosts, against goldens in `tests/golden/jellyfin`.
 
 Differences:
 
-- The role downloads the key on every run (`get_url force: true`) and
-  dearmors it when the download changed; here the key is fetched only while
-  the keyring is missing or armored, so a converged plan makes no network
-  request. A key rotated upstream is not picked up by this deploy; the
-  role's run (both write the same dearmored keyring) or removing the keyring
-  does.
-- The role refreshes the apt cache on every run (`update_cache: true`); here
+- The former role downloaded the key on every run (`get_url force: true`) and
+  dearmored it when the download changed. Pyinfra fetches the key only when
+  the keyring is missing or armored. Removing the current keyring makes the
+  next deploy fetch a key after an upstream rotation.
+- The former role refreshed the apt cache on every run (`update_cache: true`); here
   only before an install or after a repository change.
-- The role downloads the key with `get_url` (Python on the host) and needs
+- The former role downloaded the key with `get_url` (Python on the host) and needs
   `gpg`; here `curl` and `gpg` must be installed when the key is
   (re)installed. They are checked, not installed: installing them would need
   an apt refresh, which fails while the Jellyfin source has no valid key.
-- The role's `apt_repository` leaves an existing list file alone when the
+- The former role's `apt_repository` left an existing list file alone when the
   line is already present (in that file or any other source); here the list
   file must hold exactly the one line and is rewritten otherwise.
 - Repository settings are fixed and checked, not derived from facts (above).
-- The role runs `systemctl daemon-reload` on every run and reloads Traefik
+- The former role ran `systemctl daemon-reload` on every run and reloaded Traefik
   after a route change (restarting it when the reload fails); here neither.
 - The ffmpeg pick. Current `jellyfin` packages depend on `jellyfin-ffmpeg7`
   (10.10, 10.11) or `jellyfin-ffmpeg8` (12.x), which conflict with the
   role's candidates (`jellyfin-ffmpeg6`, `-5`, plain `jellyfin-ffmpeg`):
   installing one of those would remove `jellyfin` and its ffmpeg. Here an
   installed `jellyfin-ffmpeg*` satisfies the pick and no install may remove
-  a package (`--no-remove`). The role itself installs no candidate under
+  a package (`--no-remove`). The former role installed no candidate under
   ansible-core 2.19 and later: its pick regex sits in a folded YAML scalar,
   where the new templating keeps `\\s` as two characters, so it never
   matches and the role always reports "No jellyfin-ffmpeg package

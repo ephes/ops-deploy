@@ -185,9 +185,8 @@ time, the role's `iso8601_basic_short`) with `database/<db>/` (the
 (`sha256sum` format over every file), packed as `<dir>.tar.gz` with the
 directory as its only top-level entry. The root and the backup's directories
 are `root 0700`, the files it writes and the archive `0600`; `data/` keeps
-its modes (`rsync -a`). Either tool restores the other's archives and
-snapshot directories (`tests/test_unifi_lifecycle.py` checks both
-directions). With `fetch_local` the archive is copied to
+its modes (`rsync -a`). Pyinfra can restore archives and snapshot directories from the former roles.
+`tests/test_unifi_lifecycle.py` covers the archive format. With `fetch_local` the archive is copied to
 `~/backups/unifi` on the controller (`0700` directory, `0600` file).
 
 **Backup order.** The roles' checks (data and `db` directories present, the
@@ -255,10 +254,10 @@ by `********`.
   tools' command lines (hidden from Ansible's log only); the port uses the
   config file and stdin above.
 - A failing `mongodump`, or MongoDB unreachable while UniFi runs, fails the
-  backup before UniFi is stopped; the roles warn and write a file-only
+  backup before UniFi is stopped; the former roles warned and wrote a file-only
   backup. A stopped controller is backed up without a dump in both, with a
   warning.
-- The roles install their packages (MongoDB tools, rsync, tar); the port
+- The former roles installed their packages (MongoDB tools, rsync, tar); the port
   installs nothing and refuses, before any change, when `systemctl`,
   `rsync`, `tar`, `mongodump`, `mongorestore`, `mongosh` or `curl` is
   missing where the run needs it (also in a dry run).
@@ -268,13 +267,13 @@ by `********`.
   `db/` directories (`--exclude=db/*`, the backup's own exclude); the role's
   `rsync --delete` would delete those files, which a backup never contains.
 - A failed backup removes its half-written snapshot directory (it can hold
-  the dump and the JVM argument file); the role leaves it behind.
+  the dump and the JVM argument file); the former role left it behind.
 - The pre-restore safety backup works on a fresh installation (above); the
   role's backup fails there on the missing data or `db` directory. The port
   names its safety backup directly instead of finding the newest
   `pre-restore-*`.
 - The restore needs `confirm`; its dry run needs no password and changes
-  nothing (the role's dry run still installs packages and resets its
+  nothing (the former role's dry run installed packages and reset its
   staging directory). Artifacts must lie below the root; archive members are
   checked before extraction; each run unpacks into its own scratch directory
   below `work_dir` instead of resetting `/tmp/unifi-restore`.
@@ -284,7 +283,8 @@ by `********`.
   hardcodes the unit and route paths), written aside and renamed; the route
   waits for the Traefik transaction guard. An archived unit that still
   carries an inline MongoDB URI (the layout before the argument file) is not
-  restored: `just deploy-one unifi` manages the unit.
+  restored. In ops-control, review `just pyinfra-check unifi`, then run
+  `just deploy-one unifi` to manage the unit.
 - Preconditions (unit installed, `data/` in the backup, MongoDB reachable)
   are checked before the safety backup instead of failing midway.
 - The health check uses `https://127.0.0.1:8443/` (the role's `localhost`)

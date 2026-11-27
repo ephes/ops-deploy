@@ -88,6 +88,5 @@ Role templates are vendored byte-for-byte from ops-library commit `cf3a0c74b10ed
 (version 2.75.2); `traefik-snappymail.yml.j2` (the `ipAllowList`) and
 `nginx-snappymail.conf.j2` (the `/snappymail/` restriction and
 `fastcgi_param HTTPS on`) are the `snappymail_deploy` templates of ops-library
-da310974, whose `snappymail_shared` also pins 3.0.0 with the same archive
-SHA-256, so an Ansible rollback no longer brings back 2.38.2 or a public
-route. Public defaults remain false for explicit HSTS preload.
+da310974. That revision also pinned 3.0.0 with the same archive SHA-256.
+Public defaults remain false for explicit HSTS preload.

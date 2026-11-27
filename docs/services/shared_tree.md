@@ -4,7 +4,7 @@ A directory tree that every member of one group may write: root owns it, the
 group can write, and setgid directories keep new entries in the group.
 Daemons that write there run with the group as their (P)GID and `UMASK=002`,
 so imports can hardlink or move within one filesystem (the Servarr/TRaSH
-layout). Port of ops-control's `playbooks/media/storage.yml` (the shared media
+layout). Port of the former `playbooks/media/storage.yml` (removed 2026-11-16; the shared media
 tree on macmini, `media_storage`).
 
 ```python

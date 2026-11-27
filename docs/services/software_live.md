@@ -51,9 +51,8 @@ anonymous/authenticated HTTP checks without requesting another collection. When 
 is needed, it waits for an existing collector to finish, starts the real collector and
 requires the state mtime to advance. A failed inspection does not guess that state is missing.
 
-The Ansible role still requests a collection on every invocation, although it reports that
-operation as unchanged. Alternating tools therefore rewrites observation state on the
-Ansible turn. That is an explicit behavioral difference, not a physical no-op claim.
+The former Ansible role requested a collection on every invocation and reported it
+as unchanged even when it rewrote observation state.
 The existing timers retain their original schedules. Timer activity can naturally update
 observations independently of deployment; qualify strict repeats in an idle observation
 window and distinguish naturally changing state from deployment actions.

@@ -97,8 +97,8 @@ A pending loader/world transition is recorded before changing properties,
 retaining the previous pair across partial failure. A retry must resume that
 candidate; unrelated pending-state drift is refused. After verification the
 legacy `.loader_mode` and completed `.loader_state.json` are persisted. A
-completed sidecar never overrides a later Ansible deployment's current marker
-and properties. Converged runs write neither a pending nor a completed marker.
+completed sidecar does not override the current marker and properties when
+they disagree with it. Converged runs write neither a pending nor a completed marker.
 
 ### Recovering a pending loader transition
 
@@ -183,9 +183,7 @@ The role's order, with its ignored failures (marked *ignored*):
 `ops_deploy.services.minecraft_java` ports the `minecraft_java_backup` and
 `minecraft_java_restore` roles at ops-library `55a23d33`
 (`ops_deploy/services/minecraft_java/lifecycle.py`, host program
-`files/lifecycle_host.py`). Archives written by either tool restore with the
-other: the role restores the configured world of an archive written here, and
-the port restores the role's archives.
+`files/lifecycle_host.py`). Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|

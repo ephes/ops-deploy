@@ -152,9 +152,8 @@ drive it through that transport; nothing runs the reference engine any more.
 (`state.json`, one directory per transaction and, after a `rebaseline`,
 `route-inventory.json`), lock
 `/run/lock/traefik-transaction.lock` (exclusive, non-blocking `flock`), record
-schema 1 with the phases `clear`, `pending`, `recovery` and `degraded`. Records
-written by either engine load unchanged in the other, a controller journal
-pairs with either, and the two engines exclude each other on the lock. The
+schema 1 with the phases `clear`, `pending`, `recovery` and `degraded`. The current engine reads records and journals from the former engine. Both
+used the same host lock. The
 full-deploy guard above checks the same directory. The request format is the
 one in ops-library's `TRANSACTIONS.md` (`action`, `policy`, `controller_state`,
 `evidence`, `baseline_probe`, `acceptance_probe`, `cleanup_probe`,
@@ -262,11 +261,13 @@ the `prechange.tar.gz` of the transaction the previous record names
 `unavailable`. Refusals write nothing and leave Traefik alone; a rebaseline
 never restarts Traefik or touches the binary. Exit codes as above (0 or 2).
 
-The reference engine refuses `rebaseline` as `unknown action`, and the Ansible
-controller (`traefik_control.py`) does not offer it; the reference engine loads
-the rebaselined record unchanged and runs `binary` on it.
-`tests/test_traefik_tx_rebaseline.py` covers each refusal, the bases and the
-hand-over to both engines.
+During migration, the cross-engine test verified that the reference engine
+could load the rebaselined record unchanged and run `binary` on it. The
+reference engine itself refused `rebaseline` as `unknown action`, and the
+Ansible controller (`traefik_control.py`) did not offer it.
+`tests/test_traefik_tx_rebaseline.py` covers the refusals and the inventory
+and archive bases, and verifies that the pyinfra engine can run `binary`
+from a rebaselined record.
 
 Differences from the reference engine, on purpose: the `rebaseline` and
 `routine` actions; a `rollback_archive` policy also applies to the static
@@ -504,8 +505,8 @@ stays at zero changes. Traefik's own deploy, restore and removal refuse
 transaction-managed hosts altogether (above).
 
 It is a check, not a lock: a transaction that starts right after the check
-still races the write, and writers outside ops-deploy (the frozen Ansible
-roles, FastDeploy's own runs, certbot hooks) do not check at all. A raced
+still races the write. External writers such as certbot hooks can write
+without checking the lock. A raced
 transaction rolls back, which is safe but noisy; the deploy lock and the
 update windows keep that rare.
 
@@ -779,7 +780,7 @@ all routes down at the next restart. So:
   with the new files). The run ends with read-only checks: port `http_port`
   open, unit active.
 
-## Coexistence with the roles
+## Files carried over from the former roles
 
 `traefik.toml`, `traefik.service`, `dynamic/certificates.yml` and
 `/etc/logrotate.d/traefik` are byte-identical to the role's
@@ -793,11 +794,10 @@ Traefik is sent `SIGUSR1` in `postrotate` (only if `traefik.service` is
 active) so it reopens the file. The unit has no `ExecReload`, so the former
 `systemctl reload traefik || true` never worked: Traefik kept writing to the
 renamed `access.log.1` and the fresh `access.log` stayed empty. The binary is only replaced when its version differs, as in the role,
-and UFW rules are the ones `community.general.ufw` adds. A host set up by one
-tool shows no change and no restart when the other runs; ops-control's
-`just smoke-traefik-coexistence` checks this both ways, and that each tool
-restores the other's ACME backup payload and finishes the other's removal.
-That historical smoke does not establish dynamic-route recovery.
+and UFW rules match those the former role added with `community.general.ufw`.
+During migration, a smoke test checked that the switch preserved those files
+and could restore the former role's ACME backup payload. Dynamic-route
+recovery is covered under [The rollback set](#the-rollback-set).
 
 ## deploy_traefik
 
@@ -805,7 +805,7 @@ That historical smoke does not establish dynamic-route recovery.
 
 | Field | Default | |
 |---|---|---|
-| `version` | `"3.8.0"` | the repository's default release (ops-library is archived) |
+| `version` | `"3.8.0"` | the deploy's default release |
 | `checksum` | required | `sha256:<hex>` of the release archive; the role allows none |
 | `arch` | `None` | `None`: from `uname -m` (`x86_64`, `aarch64`, `armv7l`, `armv6l`) |
 | `letsencrypt_email` | required | the role refuses its `CHANGEME@` placeholder; here a plain address is required |
@@ -841,7 +841,7 @@ Differences from the role, on purpose:
 - Only the `traefik` binary is installed, renamed over the old one; the role
   unpacks the whole archive (including `LICENSE.md` and `CHANGELOG.md`) into
   the binary's directory.
-- A replaced binary restarts Traefik; the role keeps the old process running
+- A replaced binary restarts Traefik; the former role kept the old process running
   until something else restarts it.
 - Armv7/armv6 hosts get the `armv7`/`armv6` release (the role's `arm` has no
   release archive). Only Linux is supported.
@@ -1122,7 +1122,7 @@ Differences, on purpose:
   checks.json` on the host for the details. This also applies to the deploy's
   closing check.
 - The baseline is written through `secret_file` (stdin, never a command line
-  or a diff), as the role's `no_log` copy keeps it out of the output.
+  or a diff), as the former role's `no_log` copy did.
 - Verify refuses unless `health.py` is exactly the vendored program, root-owned,
   executable and not writable by group or others below root-owned directories
   nobody else can write (what the transaction engine requires of a probe), and

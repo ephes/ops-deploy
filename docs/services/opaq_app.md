@@ -1,7 +1,6 @@
 # opaq_app
 
-Port of the `opaq_app_deploy` Ansible role plus the steps ops-control's
-`deploy-opaq-app.yml` runs around it. The app is daybook's `services/opaq_app`
+Port of the `opaq_app_deploy` Ansible role plus the steps from ops-control's former deployment playbook. The app is daybook's `services/opaq_app`
 (Django, SQLite, gunicorn on loopback): the company cash page behind a Traefik
 tailnet allowlist **and** the app's own password login.
 
@@ -90,10 +89,9 @@ retired role's output; `tests/test_opaq_app_golden.py` keeps them so
 (goldens in `tests/golden/opaq_app`).
 
 Known role quirk: `DJANGO_ALLOWED_HOSTS` is built with the `union` filter, a
-set whose order depends on the controller's hash seed, so the role itself may
-rewrite the file (and restart the app) on a converged host. This deploy always
-writes the host name first, one of the two orders the role writes; the first
-Ansible run after a pyinfra run may therefore rewrite it once.
+set whose order depended on the controller's hash seed, so the former role
+could rewrite the file and restart the app on a converged host. Pyinfra
+always writes the host name first, one of the two orders the role used.
 
 Differences kept on purpose:
 
@@ -101,8 +99,8 @@ Differences kept on purpose:
   schedule; a schedule changed by hand in Echoport is reset. A target already
   as wanted is not written.
 - Not ported: the `uv_install` role (uv must already be at
-  `/usr/local/bin/uv`), and the playbook's second play that writes the upload
-  token on the Atlas workstation (macOS; it stays on Ansible).
+  `/usr/local/bin/uv`), and the former playbook's second play that wrote the upload
+  token on the Atlas workstation (macOS).
 
 ## Tests
 
@@ -119,8 +117,6 @@ Differences kept on purpose:
   checkout plus a fresh-clone run; second run converged, unit hardened,
   tree/database/environment private, migrations applied, allowlist and login
   behaviour, no secret outside its file.
-- Ansible coexistence (the role and the playbook's upserts taking turns with
-  this deploy, data kept) runs from ops-control: `just smoke-opaq-app-coexistence`.
 
 The port preflight, `/healthz` check and route checks live in
 `ops_deploy.services._login_app`, shared with [haushalt](haushalt.md).

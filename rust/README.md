@@ -3,8 +3,8 @@
 A Cargo workspace for small Rust binaries that replace long-running Python
 processes deployed by ops-deploy. It moved here from the archived ops-library
 on 2026-11-18 with its history and its eight releases ([`HISTORY.md`](HISTORY.md)). [`PLAN-foundation.md`](PLAN-foundation.md)
-is the contract for the workspace, toolchain, dependency policy, CI, release
-pipeline and the shared install helpers; each crate has its own plan:
+records the original workspace design. The crate plans record the design
+and migration of each binary:
 
 | Crate (= binary = release tag prefix) | Plan | Status |
 | --- | --- | --- |
@@ -176,7 +176,7 @@ The guard's `gen_fixtures.py record` step imported ops-library's
 `tests/test_echoport_remote_command_guard.py`, which did not move: the
 recorded corpus is frozen with the oracle and `record` says so.
 
-`just rust-check-apt [ubuntu24.04] [debian13]` runs ops-library's
+`just rust-check-apt [ubuntu24.04] [debian13]` runs the checks from the former
 `software-live-apt` job: per variant a throwaway container of the image with
 a copy of `rust/` (`software-live-apt/container/docker-check.sh`: clippy,
 tests, release build with its GLIBC ceiling and `NEEDED` allowlist, the

@@ -12,13 +12,11 @@ Kinds:
   from CPython or a rendered endpoint script (PLAN.md 8.2) and replayed by
   `tests/fixtures.rs` (the `apt_state` family by `tests/apt_state.rs`, the
   `logyard_health` family by `tests/logyard_health.rs`);
-  `tests/test_metrics_httpd_fixtures.py` (`just
-  test-metrics-httpd-fixtures`, part of `just test`) fails on drift.
+  `just rust-check` runs the fixture drift checks.
 - **unit**: `#[cfg(test)]` tests in `src/**`.
 - **process**: `tests/binary.rs` against the built binary.
 - **harness**: the parity harness of PLAN.md 8.3 (S3,
-  `parity/run_parity.py`, `just rust-parity-metrics-httpd`, a step of the
-  `rust` CI job): the rendered Python scripts and the binary as processes
+  `parity/run_parity.py`, `just rust-parity-metrics-httpd`): the rendered Python scripts and the binary as processes
   side by side; check names are `<family>/<variant>/<case>`.
 
 ## Fixture families (S1)
@@ -118,12 +116,11 @@ and byte differences named by key without values, D-2, D-3, D-4, D-11,
 fields, summary, preflight, configuration errors, report mode 0600, memory
 sampling.
 
-## Role switch (PLAN.md 7.2, 7.3)
+## Former Ansible role switch (PLAN.md 7.2, 7.3)
 
-Python-side tests of the Ansible switch; no Rust counterpart (they test the
-roles, not the binary). `tests/test_metrics_httpd_switch.py` and
-`tests/test_metrics_httpd_switch_logyard_static.py` (`just
-test-metrics-httpd-switch`, part of `just test`).
+The table records tests from ops-library for the former role switch.
+Current pyinfra switch coverage lives in ops-deploy's
+`tests/test_metrics_httpd_switch.py`.
 
 | Behaviour | Test | Status |
 | --- | --- | --- |

@@ -4,11 +4,10 @@ Port of the `gotosocial_deploy` Ansible role (deploy only), checked against
 ops-library main `540ede2b` (2.56.0): [GoToSocial](https://docs.gotosocial.org/)
 from a pinned upstream release, SQLite and local media storage under
 `/var/lib/gotosocial`, the role's hardened systemd unit, a loopback listener,
-the `gotosocial-admin` wrapper and a public Traefik route. Backup, restore and
-removal stay with the Ansible roles.
+the `gotosocial-admin` wrapper and a public Traefik route.
 
-The Echoport backup (`services._echoport_runner`, runner `gotosocial-backup`,
-template `gotosocial_backup.py.j2`) archives the SQLite snapshot, config and
+In ops-control, `just backup-gotosocial` runs the Echoport backup (runner
+`gotosocial-backup`, template `gotosocial_backup.py.j2`). It archives the SQLite snapshot, config and
 the media of the local accounts only (`storage/<account id>/` of every account
 without a domain; the instance account's directory holds the custom emoji).
 The rest of `storage/` is the remote media cache, which GoToSocial prunes after
@@ -31,7 +30,7 @@ deploy_gotosocial(cfg)  # or deploy_gotosocial(cfg, SecretStr(smtp_password))
 
 The config is a `RoleConfig` (no secrets file of its own). The optional SMTP
 password is the deploy's second argument; ops-control reads it from an
-optional SOPS file, as its playbook does (see its `docs/PYINFRA.md`).
+optional SOPS file (see its `docs/PYINFRA.md`).
 
 ## Configuration (`GotosocialConfig`)
 
@@ -129,7 +128,7 @@ record written after the health check. Two cases refuse here where the role
 would not:
 
 - a marker that exists but is not a regular file (a directory, any symlink):
-  the role's `slurp` fails, so its guard passes and the role fails later
+  the former role's `slurp` failed, so its guard passed and the role failed later
   when it records the layout; here the deploy stops before anything changes,
   also with `allow_domain_layout_change`;
 - a failing probe (the host cannot answer) stops the deploy instead of
@@ -151,17 +150,17 @@ rewrites nothing on hosts the role set up. `config.yaml` is
 Differences from the role, all on the side of changing less:
 
 - Packages are only installed (and the apt cache only refreshed) when one is
-  missing; the role refreshes an hour-old cache on every run.
+  missing; the former role refreshed an hour-old cache on every run.
 - The release is unpacked in a staging directory and renamed into place; an
   interrupted run leaves no release directory that looks installed. An
   existing release directory without the binary is refused, not unpacked
   over (review it, then remove it). The role downloads to a fixed name in
   `/tmp`.
 - Traefik is never reloaded: its file provider watches the directory. The
-  role's `reload traefik` handler ignores its own failure.
+  former role's `reload traefik` handler ignored its own failure.
 - GoToSocial is also restarted when `config.yaml`, the unit or the `current`
   link is newer than the running process: an earlier run that wrote one of
-  them and failed before its restart. The role loses that restart with its
+  them and failed before its restart. The former role lost that restart with its
   handlers. The read-only probe (`files/restart_host.py`) compares the files'
   nanosecond mtimes with the unit's `ActiveEnterTimestamp` in microseconds
   (`systemctl show --timestamp=us+utc`, systemd 248 or newer), so a write in

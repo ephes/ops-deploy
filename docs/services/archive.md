@@ -1,7 +1,7 @@
 # archive
 
 Port of the `archive_deploy` Ansible role (rsync method) and of the steps
-ops-control's `playbooks/deploy-archive.yml` runs around it: the Django app
+from the former `playbooks/deploy-archive.yml` (removed 2026-11-16): the Django app
 `archive` (gunicorn) and the enrichment worker `archive-metadata-worker` on
 one SQLite database, behind Traefik, with media in an S3 bucket (RustFS) or on
 the local filesystem.
@@ -39,7 +39,7 @@ deploy. (The playbook's MinIO bucket and service-account step, `MinioBootstrap`,
 is removed with MinIO.)
 
 These keys of the secrets file override the config when present, as the
-playbook's `archive_secrets.<key> | default(...)` does: `summary_api_base`,
+former playbook's `archive_secrets.<key> | default(...)` did: `summary_api_base`,
 `summary_model`, `transcription_api_base`, `transcription_model` and the
 `media_storage_*` settings (backend, location, bucket, endpoint, region,
 access key id, addressing style). They are validated like config fields.
@@ -121,7 +121,7 @@ even the Traefik file stayed untouched on the switch.
 Differences, all on the "change only what differs" side:
 
 - migrate, collectstatic, the admin account, the media migration and the
-  Echoport upsert run only when needed (the role and playbook run them on
+  Echoport upsert run only when needed (the former role and playbook ran them on
   every deploy);
 - the role's recursive `chown` of the site is replaced by `--chown` on synced
   files;
@@ -136,7 +136,7 @@ Not ported: the git deploy method, `archive_traefik_enabled: false`, and the
 ## Backup (`ArchiveBackupConfig`)
 
 `deploy_archive_backup(ArchiveBackupConfig(prefix=...))` is the port of
-`playbooks/archive/backup.yml` (the play has no role). It refuses with the
+the former `playbooks/archive/backup.yml` (removed 2026-11-16). It refuses with the
 play's message ("echoport-backup must be registered before Archive backups
 can run.") unless `/usr/local/libexec/fastdeploy/echoport-backup/backup.py`
 exists, then runs the play's shell task unchanged: a private `mktemp
@@ -161,5 +161,3 @@ backups: `ops_deploy.services._lifecycle.echoport_runner`
   `HEAD`; converged reruns, units active, env files private, migrations
   applied, the admin can authenticate, Traefik serves the app, no secret
   outside its files. Filesystem storage only.
-- Echoport and Ansible coexistence run from ops-control:
-  `just smoke-archive-coexistence`.

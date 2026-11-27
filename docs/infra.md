@@ -72,7 +72,7 @@ changes a database's owner or a role's password in place, and has no drop path.
 The Redis data directory is only created and its owner and mode set.
 
 Directories get the role's owner and mode, and setuid, setgid and sticky bits
-are cleared as Ansible's `file` module does (the Ubuntu Redis package creates
+are cleared as the former roles' Ansible tasks did (the Ubuntu Redis package creates
 `/etc/redis` and `/var/log/redis` setgid; `chmod 755` alone keeps that bit on
 a directory).
 
@@ -122,9 +122,9 @@ Differences from the role, on purpose:
   password.
 - `service_state` is not ported: the service is always running.
 - On a config change only `service_name` is restarted; its clusters restart
-  with it (`PartOf=`). The role restarts both units, so the cluster twice.
+  with it (`PartOf=`). The former role restarted both units, so the cluster restarted twice.
 - `python3-debian` is not installed: only Ansible's `deb822_repository`
-  module needs it, and the role installs it itself when it runs.
+  module needed it. The former role installed it.
 - No `daemon_reload` on every run (nothing here writes unit files).
 
 ## redis_install
@@ -193,7 +193,7 @@ Differences from the role, on purpose:
   configuration.
 - The apt cache is refreshed when older than an hour, not on every run.
 - With `add_official_repo` the armored key is stored dearmored at the `.gpg`
-  path (the role stores it armored, which apt does not read there). Whether
+  path (the former role stored it armored, which apt does not read there). Whether
   the keyring there is already binary is decided on the host, and only one
   word comes back (`missing`, `armored`, `binary` or `other`; the first byte
   must be an OpenPGP public-key packet tag). The key is downloaded and
@@ -214,8 +214,8 @@ follow the role (`repo_url`, `repo_suite` (`None`: the release codename),
 `enable_service`/`start_service`/`manage_service`, `users`, `configure_daemon`
 with `daemon_config_path`/`daemon_config`, `verify`, `verify_docker_info`).
 
-Steps: prerequisites (including `python3-debian`, which only Ansible needs, so an
-Ansible run afterwards finds them), conflicting distribution packages purged,
+Steps: prerequisites (including `python3-debian`, carried over from the
+former role), conflicting distribution packages purged,
 the key (downloaded once) and `docker.sources` (with `Architectures:`, byte for
 byte what `deb822_repository` writes), `apt update` when the file changed,
 packages, `daemon.json` as `to_nice_json` (restarting Docker when it changed),
@@ -282,7 +282,7 @@ deploy_certbot_dns(
 | `consumer_units` | `()` | read-only check: each unit is loaded and active |
 
 `single_lineage` and `consumer_units` are not role variables: they port the
-post-task assertions a consumer's playbook runs after the role (a host-wide
+post-task assertions from the former consumer playbook (a host-wide
 deploy hook is only safe for one lineage; the certificate's readers must be
 running).
 
@@ -303,7 +303,7 @@ running).
    domain as one `-d <name>` word), **only when certbot would act** (below).
 5. `certbot reconfigure` when the probe saw another authenticator; the step
    reads the authenticator again when it runs and does nothing if `certonly`
-   already switched it, as the role's later task does.
+   already switched it, as the former role's later task did.
 6. Cleanup (`remove_unused_credentials`): the other providers'
    `dns_<provider>_*` lines leave the managed lineage once its authenticator
    is the configured one (written through a symlink, owner and mode kept,
@@ -323,7 +323,7 @@ running).
 
 ### When certonly runs
 
-The role runs `certonly --keep-until-expiring --expand` on every run and lets
+The former role ran `certonly --keep-until-expiring --expand` on every run and let
 certbot decide; certbot fetches the ACME directory each time, even when
 nothing is due. Here the probe makes certbot 2.9's decision while planning,
 and `certonly` runs only for:
@@ -456,7 +456,7 @@ no password.
 passphrase becomes the keyfile `cryptsetup open` and `/etc/crypttab` use, the
 mapper is opened when it is closed, and the filesystem inside is mounted
 through its `/etc/fstab` entry. Deploys whose data lives on the volume call it
-first, as the Ansible plays import the role's playbook first.
+first, as the former Ansible plays did.
 
 ```python
 from pydantic import SecretStr

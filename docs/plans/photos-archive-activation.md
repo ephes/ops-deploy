@@ -1,5 +1,9 @@
 # Original Photos and archive enable workflows
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 ## Scope and source boundary
 
 Qualify the already implemented explicit activation branches of the Photos and
@@ -109,8 +113,8 @@ must not mutate global inventory, registrations or normal defaults.
 
 Read original activation role variables as the oracle, validate the fixed Studio
 or Atlas-only group/writer constraints and phrases before source/SSH, and use
-fully validated models for production overrides. Respect METADATA_FILE and the
-original explicit Ansible fallback. Document explicitly that real Archive enable starts synchronization immediately,
+fully validated models for production overrides. Respect METADATA_FILE.
+Document explicitly that real Archive enable starts synchronization immediately,
 while Photos waits for its original calendar; retain original attended-plan/
 execute guidance. Do not change production source, epochs, TCC or auth merely to
 exercise activation. Atlas remains unavailable historically; no new retry or

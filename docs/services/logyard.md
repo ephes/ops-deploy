@@ -1,8 +1,8 @@
 # logyard
 
 Ports of the `logyard_deploy`, `logyard_ingress_deploy` and
-`logyard_vector_deploy` Ansible roles together with the steps ops-control's
-playbooks run around them. Logyard is Loki in Docker Compose (data under
+`logyard_vector_deploy` Ansible roles together with the steps from ops-control's
+former playbooks. Logyard is Loki in Docker Compose (data under
 `/var/lib/logyard/loki`), wired into the shared Graphyard Grafana, with a
 private Traefik route for producers and a Vector journald producer per host.
 
@@ -30,7 +30,7 @@ cfg = LogyardStackConfig(
 deploy_logyard(cfg, secrets)  # core, ingress, Vector: deploy-logyard.yml's order
 ```
 
-Four entry points, as there are four playbooks: `deploy_logyard` (stack),
+Four entry points, corresponding to the four former playbooks: `deploy_logyard` (stack),
 `deploy_logyard_core(cfg, secrets)`, `deploy_logyard_ingress(cfg)` and
 `deploy_logyard_vector(cfg)`. The roles' dependencies are ported as
 [`deploy_docker_install` and `deploy_vector_apt_install`](../infra.md).
@@ -99,15 +99,15 @@ digests, never the stored password.
    happens only when they differ, so a hand-edited check is repaired and a
    converged run writes nothing.
 
-The playbook's Nyxmon checks read `$.units.vector.*`, so `health.units` should
+The former playbook's Nyxmon checks read `$.units.vector.*`, so `health.units` should
 name the `vector` unit on a host that runs the producer (the ops-control
 registration does for macmini); the defaults, like the role's, report none.
 
 Differences from the role: the apt `rsync` package is installed (the role
 assumes it); `/var/lib/logyard` is created `root:root` by `mkdir -p` where
-Ansible's `file` gives intermediate directories the leaf's owner; services
+Ansible's `file` gave intermediate directories the leaf's owner; services
 restart in the order of their steps instead of all at the end; the shared
-Grafana directories keep Graphyard's owner (the role sets them to
+Grafana directories keep Graphyard's owner (the former role set them to
 `root:root`).
 
 ## Ingress (`LogyardIngressConfig`)
@@ -325,8 +325,7 @@ guess before it reaches the running service, and the next run corrects it.
 `tests/test_logyard_vector_acl.py`,
 `tests/test_logyard_ingress_vector.py` and `tests/test_infra_docker_vector.py`
 (fake connector: first runs, converged no-ops, each kind of change and what it
-restarts, secret handling, config validation). The Ansible/pyinfra coexistence
-smoke lives in ops-control (`just smoke-logyard-coexistence`).
+restarts, secret handling, config validation).
 
 ## Per-container replacement CA store
 

@@ -109,7 +109,7 @@ port's files as they are on the host, against `tests/golden/livekit`):
 
 Not ported: the role's TCP wait before the HTTP check (compose_app waits for
 both containers to run, then polls `GET http://127.0.0.1:<http_port>/` for
-200 up to `healthcheck_timeout` seconds). There is no remove (the role has
+200 up to `healthcheck_timeout` seconds). There is no remove (the former role had
 none).
 
 ## Per-container replacement CA store

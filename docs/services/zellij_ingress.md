@@ -64,7 +64,7 @@ value.
 
 ## Differences from the role
 
-- The role's handler reloads Traefik after a change (and restarts it when
+- The former role's handler reloaded Traefik after a change (and restarted it when
   the reload fails). This deploy never touches Traefik: like the other
   ports' routes (`traefik_route(..., restart="none")`), it relies on the file
   provider watching `/etc/traefik/dynamic`, which the role's README assumes

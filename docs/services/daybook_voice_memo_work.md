@@ -49,7 +49,7 @@ role; nothing is proven unloaded and the plist stays. The output is one token,
 booted_out=<0|1> plist_removed=<0|1>`; launchd's own output is never printed.
 
 Every run, including an already retired repeat, executes the sequence (the
-role disables on every run), so a repeat is a managed operation, not a
+former role disabled on every run), so a repeat is a managed operation, not a
 read-only check. `tests/test_daybook_voice_memo_work.py` runs the shell against
 shadowed `id`/`launchctl` for every branch and failure, checks the SDK
 connection.

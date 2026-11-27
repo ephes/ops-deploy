@@ -11,9 +11,8 @@ libapt-pkg nor this crate; it runs the helper as a child process
 
 The release `software-live-v<version>` (S7) packs it, built inside each
 variant's image, into that variant's `software-live` archive
-(`../software-live/README.md` "Release"); the role switch (S6) installs it
-next to `software-live`. No inventory pins a release yet, so nothing runs
-it on a host.
+(`../software-live/README.md` "Release"); the variant archive installs it
+next to `software-live`. Ops-control pins the variant archives.
 
 ## Contract
 
@@ -46,19 +45,19 @@ timeout (60 s) or more than 4 MiB of output is `unknown` there.
 
 ## Build and checks
 
-The crate is left out of the default CI job and `just rust-check`
+The crate is excluded from `just rust-check`
 (`[workspace.metadata.ci] exclude` in `../Cargo.toml`): it builds only where
 `libapt-pkg-dev` and a C++ compiler are installed, and each variant links
 its own libapt-pkg (`ubuntu24.04`: `libapt-pkg.so.6.0`, `debian13`:
-`libapt-pkg.so.7.0`). The CI job `software-live-apt` and
+`libapt-pkg.so.7.0`). Run the checks in Docker:
 
 ```bash
-just rs-software-live-apt               # both variants, in Docker
-just rs-software-live-apt debian13      # one variant
+just rust-check-apt           # both variants
+just rust-check-apt debian13  # one variant
 ```
 
-run, inside a throwaway `ubuntu:24.04` or `debian:13` container,
-`container/deps.sh` (packages, pinned rustup) and `container/run.sh`:
+The recipe runs `container/deps.sh` (packages, pinned rustup) and
+`container/run.sh` inside a throwaway container for each selected variant:
 
 1. `cargo clippy -D warnings` and `cargo test` of this crate (the unit tests
    include version comparison against python-apt over the image's cache);
@@ -71,16 +70,15 @@ run, inside a throwaway `ubuntu:24.04` or `debian:13` container,
    same `.deb` in trusted and untrusted repositories; `docker-clean`
    removed as on the hosts);
 4. `container/compare.py`: the helper against `observe_apt` of
-   `roles/software_live/files/software_live.py` (python-apt) for fresh,
+   the frozen `software_live.py` under `rust/oracle/` (python-apt) for fresh,
    stale and future index ages, identical JSON required; the expected
    result of every fake package; no file written under `/var/cache/apt` as
    root, and an unprivileged run (as in the unit) reading the warm cache
    without writing; a broken security index gives the same `unknown` result.
 
-The CI job then runs, in the same container and on the same APT world, the
-software-live parity harness (`../software-live/parity/container-run.sh`,
-software-live PLAN.md 6.2; locally `just rs-software-live-parity`), which
-is why `container/deps.sh` also installs `apache2-utils` and `openssl`.
+The recipe then runs the software-live parity harness in a throwaway
+container for each selected variant. The harness uses the same APT fixture
+setup and needs `apache2-utils` and `openssl`.
 
 The scripts refuse to run outside a container (`/.dockerenv` or
 `SOFTWARE_LIVE_APT_CONTAINER=yes`): `setup-world.sh` rewrites the APT
@@ -90,5 +88,5 @@ configuration.
 
 GPL-3.0-or-later, see [`LICENSE.GPL-3.0`](LICENSE.GPL-3.0). `rust/deny.toml`
 allows this license for `rust-apt` and this crate only, and
-`scripts/release_checks.py apt-isolation` (in CI and in the release job)
+`scripts/release_checks.py apt-isolation` (in `just rust-check` and the release build)
 fails when any other workspace member can reach `rust-apt`.

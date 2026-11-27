@@ -1,5 +1,9 @@
 # Rust in ops-library: shared foundation — plan
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 Status: F1 implemented (workspace, toolchain, cargo-deny policy, LICENSE,
 `metrics-httpd` skeleton, `rust.yml` CI, `build_ignore` test, `just
 rust-check`/`rust-test`; see `rust/README.md`); F2 implemented

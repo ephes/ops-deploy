@@ -94,7 +94,7 @@ role:
 
 `id` must match `[A-Za-z0-9_]+`. The exporter embeds each list as JSON in
 the order of the fields above, leaving out fields that are not set, so a
-list written in that order renders byte for byte as the role renders it
+list written in that order renders byte for byte as the former role rendered it
 (the private side's tests compare its inventory against the role
 template).
 
@@ -226,9 +226,9 @@ the hosts have. Intended differences (for the HTTP server switch see
   host never sees it on a command line, and an unchanged password never
   rewrites the file or restarts the endpoint; a file whose entry is not
   bcrypt is replaced (`htpasswd -v` would accept other formats). The owner
-  and mode of a verifying file are enforced too (the role leaves them).
+  and mode of a verifying file are enforced too (the former role left them).
 - The collector runs once only while the metrics file is missing or the
-  exporter or collector unit changed; the role starts it on every run. The
+  exporter or collector unit changed; the former role started it on every run. The
   timer refreshes the file every `timer_interval` seconds anyway.
 - `daemon-reload` runs only when a unit changed (the role's final
   `daemon_reload: true` tasks reload every run), and the timer and endpoint

@@ -3,7 +3,8 @@
 `rust/` is the Cargo workspace of the four Rust ports that replace Python
 programs ops-deploy installs: `echoport-command-guard`, `metrics-httpd`,
 `software-live` and its APT helper `software-live-apt`. It moved here from the
-archived ops-library on 2026-11-18, with its history and its eight releases
+former ops-library repository on 2026-11-18, with its history and its eight
+releases. Ops-library was archived that day
 ([`rust/HISTORY.md`](https://github.com/ephes/ops-deploy/blob/main/rust/HISTORY.md)).
 The workspace's own documentation is
 [`rust/README.md`](https://github.com/ephes/ops-deploy/blob/main/rust/README.md);

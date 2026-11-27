@@ -1,10 +1,10 @@
 # software-live (Rust port)
 
 The Rust port of the `software_live` role's Python program
-(`roles/software_live/files/software_live.py`): read-only Linux software
+(`roles/software_live/files/software_live.py` in the archived collection): read-only Linux software
 observations (Traefik, OS lifecycle, PostgreSQL, APT security updates), the
 authenticated JSON endpoint that serves them, and their inventory projection.
-[`PLAN.md`](PLAN.md) is the contract; [`TESTMAP.md`](TESTMAP.md) maps every
+[`PLAN.md`](PLAN.md) records the original design; [`TESTMAP.md`](TESTMAP.md) maps every
 Python test to its Rust counterpart.
 
 The Rust release runs in production on all four hosts since 2026-10-23
@@ -13,9 +13,8 @@ macmini, staging and production: `software-live-v0.1.1` (S9b, see
 "Release") until 2026-11-10, then `software-live-v0.1.2`, the same code
 rebuilt with tokio 1.54.1 (RUSTSEC-2026-0384), and since 2026-11-18
 `software-live-v0.1.3` (the Traefik patch window). Since the Python retirement (S12, after the
-7-day soak that ended 2026-10-30) the role's base units run the release
-directly; the drop-ins of S6, the deployed Python program and `python3-apt`
-in the role's packages are gone. The Python program stays in this
+7-day soak that ended 2026-10-30) the base units run the release directly.
+The current pyinfra deploy converges those units. The Python program stays in this
 repository as the oracle of the fixtures and the parity harness; going back
 to it means reverting the S12 change (PLAN.md 7.6).
 The ops-control manual CLI `just software-live --host H` runs the installed
@@ -114,8 +113,7 @@ Slice S5 (parity harness, PLAN.md 6.2):
   the other's caches and state files and the software_estate reader on the
   Rust projections. `parity/compare.py` holds the P1/P2 rules.
 - It runs as root in throwaway `ubuntu:24.04` and `debian:13` containers
-  only: in CI as the last step of the `software-live-apt` job, locally
-  with `just rs-software-live-parity` (Docker).
+  as part of `just rust-check-apt` (Docker).
 - Found and fixed: the endpoint takes at most 99 header lines (as Python's
   `http.client`) and refuses every request head over 64 KiB with 431
   however the bytes arrive (hyper alone let heads of up to about 128 KiB
@@ -240,7 +238,7 @@ tested inside `ubuntu:24.04` (glibc ≤ 2.39, `libapt-pkg.so.6.0`) or
 must name the tag's version and commit; the helper also runs `observe` in
 its image. Releases up to 0.1.2 were built by ops-library's
 `rust-release.yml` and published here again byte for byte (`rust/HISTORY.md`).
-The role pins a version and the sha256 of each variant's archive
+The pyinfra deploy uses the version and variant archive checksums pinned in ops-control
 (`software_live_rust_version`, `software_live_rust_sha256`, PLAN.md 7.3);
 no release installs itself.
 
@@ -318,7 +316,7 @@ Slice S9 (shadow comparison, PLAN.md 6.3, 8.1):
   `--save-bundle F` keeps what was fetched, `--bundle F` compares a saved
   one, `--json` prints the report as JSON; exit 2 when nothing could be read.
 - Its tests (`test_shadow_compare.py`, synthetic data) run with the other
-  comparator tests in the `rust` CI job under Python 3.12 (the projection
+  comparator tests in the `just rust-check` recipe under Python 3.12 (the projection
   check imports the Python program, which needs 3.11 or later).
 
 Slice S9b (collector CPU at most Python's, PLAN.md section 10):
@@ -336,39 +334,33 @@ From the repository root of a worktree (never in a shared checkout; they
 write `rust/target/`):
 
 ```bash
-just rs-software-live                    # cargo fmt --check, clippy -D warnings, tests of this crate
-just rust-check                          # the whole workspace as the CI job runs it
-just rs-software-live-fixtures           # regenerate the fixtures (Python 3.12), check them under 3.13
-just test-software-live-rust-fixtures    # drift check: fixtures and TESTMAP vs the Python program
-just rs-software-live-apt                # the APT helper in its ubuntu:24.04 and debian:13 containers (Docker)
-just rs-software-live-parity             # the parity harness in both containers (Docker); `-- -v` lists every check
+just rust-check      # workspace checks and fixture drift
+just rust-check-apt  # APT helper and parity harness in both Docker variants
+uv run --python 3.14 --no-project python -I rust/software-live/fixtures/generate.py  # regenerate fixtures
 uv run --python 3.12 --no-project python -I -m unittest discover -s rust/software-live/parity -p 'test_*.py'
                                          # the comparators (compare.py, shadow_compare.py)
 python3 rust/software-live/parity/shadow_compare.py --ssh root@<host>   # one live shadow sample (read-only)
 ```
 
-`just rs-software-live-parity ubuntu24.04 -- --section endpoint -v` runs one
+`rust/software-live/parity/docker-parity.sh ubuntu24.04 -- --section endpoint -v` runs one
 variant and one section (`validate`, `config`, `endpoint`, `export`,
 `collect`). The harness refuses to run outside a container: it changes
 `/etc/hosts`, the trust store, `/usr` and the APT configuration.
 
-After a change of `software_live.py`, regenerate the fixtures and update the
-Rust code in the same change; `just test` fails until then.
+If the frozen Python oracle changes, update the fixtures and the affected
+Rust expectations. `just rust-check` checks for fixture drift.
 
 `fixtures/rust-caches.json` is written by the Rust code, not by the
 generator: after a change of the cache format,
 `SOFTWARE_LIVE_BLESS=1 cargo test -p software-live rust_written` rewrites it,
-then `just test-software-live-rust-fixtures` checks that the Python program
-still reads it.
+The committed fixture records values read by the Python program.
 
 `fixtures/rust-export.json` is written by the Rust code, not by the
 generator: `export::tests::rust_written_exports_are_committed` runs the real
 export for every source the Python projection accepts and fails when the
 committed file differs (`SOFTWARE_LIVE_BLESS=1 cargo test -p software-live
-rust_written` rewrites it). `tests/test_software_live_rust_fixtures.py`
-(`PythonReaderAcceptsRustExport`) then runs the `software_estate` reader on
-each file and requires the value Python's own projection of the same source
-gives.
+rust_written` rewrites it). The former `PythonReaderAcceptsRustExport` test in ops-library checked that
+the `software_estate` reader agreed with the Python projection.
 
 `fixtures/htpasswd.json` is not written by `generate.py` either: bcrypt
 salts are random and the verdicts come from the real `htpasswd -vi` of the

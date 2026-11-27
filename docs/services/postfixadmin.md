@@ -96,7 +96,7 @@ the schema dump differs only in `config.version`; a second run is a no-op).
 
 `ops_deploy.services.postfixadmin` also ports `postfixadmin_backup` and
 `postfixadmin_restore` (with the restore playbook's pre tasks: `latest` and
-the dry run). Backups written by either tool restore with the other.
+the dry run). Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -136,7 +136,7 @@ Deliberate differences: the JSON files are PostgreSQL's own row encoding
 (valid YAML); the admin tables are restored in one transaction, the row data
 in the SQL on psql's stdin (never its command line); PHP-FPM restarts only for
 a content change of config.local.php; a non-numeric schema version is refused
-(the role reads it as 0); the
+(the former role read it as 0); the
 controller reads the manifest before the run and the host refuses it when a
 newer backup landed in between; `required_mount` guards the backup root.
 

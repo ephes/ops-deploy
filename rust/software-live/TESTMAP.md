@@ -6,12 +6,9 @@ it covers, so reviewers see the coverage per slice. Status: `done`
 (counterpart exists and passes), `pending S<n>` (planned in that slice),
 `n/a` (with the reason).
 
-Fixtures live in `fixtures/` and are written by `fixtures/generate.py` from
-the Python program (`just rs-software-live-fixtures`).
-`tests/test_software_live_rust_fixtures.py` (`just
-test-software-live-rust-fixtures`, part of `just test`) fails when a committed
-fixture no longer matches the Python program, and when a Python test below is
-missing from this file.
+`fixtures/generate.py` builds the fixtures from the frozen Python program.
+`just rust-check` checks the committed fixtures for drift. The Python test
+names below refer to the original tests in ops-library.
 
 ## Python tests (`tests/test_software_live.py`, `tests/test_software_health_bridge.py`)
 
@@ -221,8 +218,7 @@ state). In `fixtures/htpasswd.json`: `non-bcrypt` and `2a-non-ascii`
 
 `parity/run_parity.py` runs `software_live.py` (the image's `python3` with
 python-apt) and the Rust release binaries side by side, as root in the
-`ubuntu:24.04` and `debian:13` containers (CI job `software-live-apt`, last
-step; `just rs-software-live-parity` in Docker). Every row compares the two
+`ubuntu:24.04` and `debian:13` containers via `just rust-check-apt`. Every row compares the two
 live programs; P3 cases must show exactly the divergence PLAN.md 4.2 lists.
 
 | Behaviour | Parity section and cases | Status |
@@ -234,13 +230,12 @@ live programs; P3 cases must show exactly the divergence PLAN.md 4.2 lists.
 | `collect` end to end on a real host: Traefik process and binaries, OS release, PostgreSQL processes and `pg_lsclusters`, upstream HTTPS through the system trust store, APT on real lists and the fake repositories; state file mode, owner and group; the manual stdout mode | `collect` (18 scenarios, and the 48 valid policies of `fixtures/policy.json` with their `policy_sha256`; the Python report is also checked against what the world must produce) | done |
 | Caches across implementations: fresh (no request), stale with the upstream down (`last_success`), invalid (refetched and rewritten alike) | `collect` "fresh/stale/invalid caches written by python/rust" | done |
 | State across implementations: each `serve` on the other's state file; each `export-inventory` on both states; the software_estate reader on the Rust projections | `collect` "cross-read serve", "export of the … state, read by software_estate" | done |
-| The comparison rules (P1 types and keys, P2 time fields, error texts) | `parity/test_compare.py` (CI workspace job) | done |
+| The comparison rules (P1 types and keys, P2 time fields, error texts) | `parity/test_compare.py` (run by `just rust-check`) | done |
 
-## Role switch (S6, PLAN.md 7.3 and 8.1)
+## Former role switch (S6, PLAN.md 7.3 and 8.1)
 
-The role side has no Python test to map; its tests are in
-`tests/test_software_live_impl.py` (`just test-software-live-impl`, part of
-`just test`):
+The archived role used separate deployment tests in
+`tests/test_software_live_impl.py` in ops-library:
 
 | PLAN.md 7.3 requirement | Test | Status |
 | --- | --- | --- |

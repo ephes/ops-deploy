@@ -3,7 +3,7 @@
 Port of the `vaultwarden_deploy` Ansible role: [Vaultwarden](https://github.com/dani-garcia/vaultwarden),
 the Bitwarden-compatible password manager, installed from the vendor's `.deb`
 packages ([vaultwarden-deb](https://vaultwarden-deb.pages.dev/)) as a systemd
-service behind Traefik, plus the port preflight of the playbook that runs the
+service behind Traefik, plus the port preflight of the former playbook that ran the
 role. Backup and restore are ported too ([below](#backup-and-restore)),
 and so is the `vaultwarden_remove` role (see [Removal](#removal)).
 
@@ -27,7 +27,7 @@ ops-control registers it (see its `docs/PYINFRA.md`).
 | Key | Required | Used for |
 |---|---|---|
 | `admin_token` | while the admin panel is enabled | `ADMIN_TOKEN` in `/etc/vaultwarden.env` |
-| `admin_enabled` | no (`true`) | the playbook reads the admin panel switch from the secrets file; `true` or `false` |
+| `admin_enabled` | no (`true`) | the former playbook read the admin panel switch from the secrets file; `true` or `false` |
 | `smtp_username`, `smtp_password` | no (empty) | `SMTP_USERNAME`/`SMTP_PASSWORD`; without a user name neither line is written (the role's template) |
 
 An empty or `CHANGEME` admin token is refused while the panel is enabled, as
@@ -59,7 +59,7 @@ Defaults follow `vaultwarden_deploy/defaults/main.yml` (ops-library
 `service_name`, `user` and `site_path` are fixed by the packages
 (`vaultwarden`, `/var/lib/vaultwarden`). `.env` values must be single lines.
 
-Not ported, as the playbook uses none of them: package version pins
+Not ported, as the former playbook used none of them: package version pins
 (`vaultwarden_package_version`, `vaultwarden_web_vault_package_version`) and
 the apt hold (`vaultwarden_packages_hold`): the deploy installs whatever the
 repository offers when a package is missing, never upgrades, and never
@@ -138,24 +138,23 @@ deploy does.
 
 Differences:
 
-- Traefik is never restarted (the role's handler restarts it after a route
+- Traefik is never restarted (the former role's handler restarted it after a route
   change; its file provider watches the directory). systemd is reloaded only
   for a changed drop-in, and Vaultwarden is restarted after the files are
-  written, before the health check (the role's handlers run after it).
+  written, before the health check (the former role's handlers ran after it).
 - config.json is compared by meaning: a file whose settings already match
   but whose layout is not `to_nice_json`'s (the admin panel writes its own)
-  is left alone, where the role rewrites it and restarts Vaultwarden.
+  is left alone, where the former role rewrote it and restarted Vaultwarden.
 - The apt cache is refreshed when older than an hour, not on every run.
 - `vaultwarden.list` is kept `root:root 0644`; `apt_repository` sets the mode
   only when it creates the file.
 - No pins and no hold (above). A missing `python3` on the host fails the
-  config.json step (the role's Ansible needs it anyway).
+  config.json step.
 
 ## Backup and restore
 
 `ops_deploy.services.vaultwarden` also ports `vaultwarden_backup` and
-`vaultwarden_restore` (with `vaultwarden_shared`'s paths). Archives written by
-either tool restore with the other.
+`vaultwarden_restore` (with `vaultwarden_shared`'s paths). Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -228,8 +227,8 @@ throwaway age key; both scripts end to end with stubbed `systemctl`).
 ## Removal
 
 `remove_vaultwarden(VaultwardenRemoveConfig(confirm=True))` ports the
-`vaultwarden_remove` role as `playbooks/remove-vaultwarden.yml` runs it
-(ops-library `44a532b`).
+`vaultwarden_remove` role (ops-library `44a532b`) as called by the former
+`playbooks/remove-vaultwarden.yml` (removed 2026-11-16).
 Without `confirm` it fails before any host probe. In the role's order: stop
 and disable `vaultwarden` (failures ignored) when one of its unit files
 exists; purge both packages (any dpkg state but not-installed;
@@ -246,6 +245,6 @@ failed refresh fails the removal with the line gone; a rerun goes on); remove th
 and `/etc/vaultwarden.env`.
 
 The data (`/var/lib/vaultwarden`) and `/var/log/vaultwarden` always stay:
-the playbook removes them only with `-e remove_data=true` (or
+the former playbook removed them only with `-e remove_data=true` (or
 `-e vaultwarden_remove_data=true`), which the removal recipe never passes; that path and its archive under `/root` are not ported.
 Unlike the role, Traefik is not restarted after the route went.

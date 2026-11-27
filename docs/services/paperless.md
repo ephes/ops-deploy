@@ -68,6 +68,15 @@ The official `paperless-ngx-v3.5.1.tar.xz` SHA-256 is
   it. That deploy finds no pending migration, reindexes on the matching
   schema and starts the units.
 
+For an upgrade in ops-control, take and verify a backup before reviewing the
+deployment plan and applying it:
+
+```bash
+just backup paperless
+just pyinfra-check paperless macmini
+just deploy-one paperless macmini
+```
+
 ## Paperless-ngx 3.4.2 upgrade (from 3.2.1, historical)
 
 Source review: official releases [3.3.0](https://github.com/paperless-ngx/paperless-ngx/releases/tag/v3.3.0),
@@ -97,12 +106,12 @@ GitHub's release asset `digest` (release API `/repos/paperless-ngx/paperless-ngx
   index after migration with all four Paperless units stopped. The typed deploy
   counts only `deleted_at IS NULL AND root_document_id IS NULL`, validates the
   new schema fingerprint, and retries indexes carrying `.rebuilding`. The
-  Ansible rollback role already rebuilds unconditionally with those units paused.
+  former Ansible role rebuilt unconditionally with those units paused.
   The new fingerprint was generated from unmodified released `_fields.py` and
   `_schema.py` with whoosh-compat 0.3.0 and Tantivy 0.26.0, without starting Django.
 - **Runtime:** upstream still requires Python >=3.11; deployed Python 3.14 and
-  uv 0.13.5 remain suitable. The release ships compiled UI assets, so neither
-  deploy path requires Node/pnpm or a frontend build. No new Node floor is
+  uv 0.13.5 remain suitable. The release ships compiled UI assets, so the
+  pyinfra deploy needs no Node/pnpm or frontend build. No new Node floor is
   declared by these release notes. Python dependencies change through the
   release's editable `[postgres]` install, including Django 5.2.18+, allauth
   65.20, guardian 3.5.2+, turbohtml replacing bleach, and psycopg-pool 3.3.3
@@ -110,8 +119,8 @@ GitHub's release asset `digest` (release API `/repos/paperless-ngx/paperless-ngx
   3.3.4 includes dependency security fixes for certifi, Pillow and aiohttp;
   3.4.0 and 3.4.2 include further dependency security fixes.
 - **System dependencies:** 3.4 switches PDF thumbnails to Poppler and drops
-  ImageMagick. Both deploy paths retain `poppler-utils` and stop requesting
-  `imagemagick`; existing host packages are not uninstalled. Ghostscript is
+  ImageMagick. The pyinfra deploy retains `poppler-utils` and stops requesting
+  `imagemagick`. Existing host packages stay installed. Ghostscript is
   still required for OCRmyPDF; keep it and the existing OCR dependencies.
 - **Environment:** removed (without replacement aliases)
   `PAPERLESS_CONVERT_BINARY`, `PAPERLESS_CONVERT_MEMORY_LIMIT`,
@@ -123,25 +132,12 @@ GitHub's release asset `digest` (release API `/repos/paperless-ngx/paperless-ngx
   review the trusted-AMR setting before enabling OIDC. JSON settings now validate
   expected types and invalid `PAPERLESS_URL` hostnames fail configuration.
 - **Rollback:** take and verify a full database/media/config backup before the
-  upgrade. Returning to the Ansible engine uses the same 3.4.2 release by default;
-  it is not a database downgrade. To return to 3.2.1, restore its pre-upgrade
+  upgrade. To return to 3.2.1, restore its pre-upgrade
   database/media/config backup and matching code/dependencies, then rebuild the
   old search index. Do not merely point the symlink at old code after migration.
 
-From ops-control, after the dependent pins are reviewed and merged, the owner
-runs these commands in order (not executed during this change):
-
-```bash
-just backup-now paperless macmini
-just deploy-one paperless macmini
-```
-
-`backup-now` is the synchronous, verified Echoport backup recipe. Confirm its
-success before starting the deployment; allow time for migration and reindexing.
-
-The `PaperlessConfig`, `PaperlessCredentials` and `deploy_paperless`
-API composes the checksum-bound 3.4.2 release and current `paperless_deploy`
-role behavior, with the obsolete ImageMagick environment settings removed.
+The pyinfra API for this upgrade selected the checksum-bound 3.4.2 release
+and removed the obsolete ImageMagick environment settings.
 Historical native qualification below applies to 3.2.1 and the 3.0.4-to-3.2.1
 upgrade only. Neither it nor the original inventory adoption qualifies 3.4.2.
 
@@ -225,7 +221,7 @@ and a 30-second statement timeout. It returns only the aggregate and refuses que
 unexpected output. Historical 3.2.1 owned application schema/manager parity and soft-delete
 convergence passed in both matrices. The changed 3.4.2 count is not host-qualified.
 
-This preparation does not change the original Ansible role, which still rebuilds
+The former Ansible role rebuilt
 on every deployment. Historical 3.2.1 application, OCR/SFTP and recovery qualification
 passed; inventory adoption remains pending. No production document or index
 contents were inspected.
@@ -341,7 +337,7 @@ replay is claimed.
 
 The concrete native fixture (removed on 2026-11-16, last at
 [`f7e62e5`](https://github.com/ephes/ops-deploy/tree/f7e62e5b5c2e6b043a0a14825c5dbe83588d643d/tests/integration/paperless):
-it installed the original role as its baseline, which needs Ansible) used disposable public GitHub Ubuntu24 x86 VMs with systemd Docker userspaces
+it ran Ansible to install the original role as its baseline) used disposable public GitHub Ubuntu24 x86 VMs with systemd Docker userspaces
 sharing each VM's kernel. It is not KVM, a physical scanner/encrypted-device proof,
 or production qualification. Original bootstrap needed explicitly recorded
 package-cache/index-directory and lost-SSH-handler fixture recovery; there is no
@@ -372,7 +368,7 @@ removal, which are ported below ([Backup and restore](#backup-and-restore),
 ## Backup and restore
 
 `ops_deploy.services.paperless` also ports `paperless_backup` and
-`paperless_restore`. Archives written by either tool restore with the other.
+`paperless_restore`. Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -488,6 +484,4 @@ differs in any field (`nofail`, another source or target, other dump/pass
 numbers) and commented-out lines stay, and every other line is kept byte for
 byte. `/etc/fstab` is rewritten atomically with its owner and mode; a symlinked,
 oversized or undecodable fstab fails the plan before any change. Without
-`remove_sftp_chroot` neither the mount nor the line is touched. The
-`paperless_remove` role itself leaves the line; ops-control's rollback play
-documents how that path handles it.
+`remove_sftp_chroot` neither the mount nor the line is touched. The former `paperless_remove` role left the line in place.

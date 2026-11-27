@@ -1,5 +1,8 @@
 # Root writes in service homes
 
+> **Planning record.** This design was written after Ansible was removed
+> from ops-control on 2026-11-16 and ops-library was archived on 2026-11-18.
+
 Status: design, 2026-11-24. Nothing here is rolled out. Step 0 and the code of
 step 1 (chesslab) are merged; the evidence listed under "Evidence the pilot
 change must bring" is recorded in `docs/services/chesslab.md` and the tests it

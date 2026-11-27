@@ -160,7 +160,7 @@ covers (`SystemMaxUse`) is refused, as in the role.
 Owns the **whole** `~/.ssh/authorized_keys` file: keys not in `entries` are
 removed. An empty key list (or a blank key) is refused when the config is
 built, so the deploy can never write a file without keys. The content is byte-identical to the role's template (including its
-`# Managed by Ansible` header), so switching tools rewrites nothing. The file
+`# Managed by Ansible` header), so matching files from the former role are kept. The file
 is installed with [`secret_file`](concepts/operations.md) (stdin, temp file,
 rename) although keys are public: the rename means an interrupted run never
 leaves a truncated file that locks the operator out. The role's
@@ -226,7 +226,7 @@ slice 4).
 | `rust_keep_versions` | `3` | newest versions the confirm step's prune keeps |
 | `policy` | `{}` | what the Echoport remote runners may do (role README) |
 
-The forced-command guard of the deploy@macmini backup key, as the role installs
+The forced-command guard of the deploy@macmini backup key, as the former role installed
 it. `deploy_echoport_command_guard` is the role's main tasks, in their order:
 
 1. The Python guard (a verbatim copy of the role's
@@ -370,9 +370,9 @@ download, staging directory, chmod or home-directory change. It replaces legacy
 binary symlinks when installation is selected; it does not convert Homebrew's
 separate prefix. The role's deprecated `uv_create_symlinks`/`uv_symlink_dir`
 are not ported.
-Planning (`pyinfra-check`) only reads, which matches the role's `--check`
-since ops-library 2.48.2: a host with the pinned version plans no step, a
-pending install or update shows as the one install step. The port follows the
+Planning (`pyinfra-check`) only reads, as the former role's `--check` did
+from ops-library 2.48.2 onward. A host with the pinned version plans no
+change. A pending install or update shows as one install step. The port follows the
 `uv_install` role as of ops-library main `540ede2b` (2.56.0).
 [homelab](services/homelab.md) and [graphyard](services/graphyard.md) run it
 only when their `uv` field is set.
@@ -419,13 +419,13 @@ last owns the file.
   `127.0.0.1`) are affected exactly as with the role.
 - **fish**: `~/.config/fish/config.fish` keeps everything outside the block
   between `# BEGIN ANSIBLE SHELL BASICS` and `# END ANSIBLE SHELL BASICS`
-  (the role's markers, so both tools edit one block); trailing blank lines are
+  (the former role's markers, so existing blocks are updated in place); trailing blank lines are
   not preserved.
 - **bat/fd**: `~/.local/bin/bat` and `fd` link to Debian's `batcat`/`fdfind`
   when those packages are in the list (or the binaries exist).
 - **chezmoi**: same download-verify-rename step as uv (installs `curl` if missing).
 - **parents**: a missing `~/.local` or `~/.config` is created owned by the
-  user, as the role's `file` module does for the parents it creates.
+  user, as the former role's `file` task did for the parents it created.
 - **editor**: `update-alternatives --set editor <path>`; the path must be a
   registered alternative (vim registers `vim.basic`).
 - **nested in a deploy that creates the user**: `deploy_shell_basics(cfg,
@@ -662,9 +662,9 @@ form is not derived here (free text `sshd -t` still accepts) are checked by
 Differences from the role, on purpose:
 
 - The CVE-2026-109786 filter override, the extra jail keys and directives,
-  the gates, the `sshd -T` check and the package and install order above. The role (ops-library `ssh_guard_deploy`, frozen) installs
-  fail2ban, lets the postinst start it with the packaged vulnerable filter,
-  and writes the jail afterwards.
+  the gates, the `sshd -T` check and the package and install order above. The former ops-library role (`ssh_guard_deploy`) installed
+  fail2ban, let the postinst start it with the packaged filter, and wrote
+  the jail afterwards.
 - The fail2ban restart is not deferred to the end. The role's handlers do not
   run once the drop-in check fails, which leaves a written jail that fail2ban
   never loads (later runs see it unchanged). Here the jail is applied before
@@ -1183,7 +1183,7 @@ prompt show on the console.
 | `grub_terminal`, `grub_gfxpayload` | `console`, `text` | empty leaves the line out |
 | `grub_backup` | `true` | copy a GRUB file that changes to `/etc/default/grub.<date>~` first |
 
-`/etc/default/grub` (0644) is the role's `grub.j2` as Ansible renders it,
+`/etc/default/grub` (0644) is the role's `grub.j2` as Ansible rendered it,
 header included, so a host the role set up shows no change. `grub_default_entry`
 replaces the separate `lineinfile` an Ansible caller needed for a pinned
 kernel, and `grub_extra_params` takes `remote_luks_unlock.ip_param(cfg)`; then

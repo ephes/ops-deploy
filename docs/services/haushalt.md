@@ -116,10 +116,11 @@ The database is under `data/`, outside the synced tree, so no sync can remove
 it; the migration/collectstatic step never runs on a converged host.
 
 After restoring an older database, apply its migrations by hand, once the
-restore is complete and with the database handed back to the service user
-(for a database restored as root, run `just deploy-one haushalt macmini`
-first: its step 7 hands it back through descriptors, without following
-links; do not `chown` it by hand).
+restore is complete and the database is back under the service user's ownership.
+For a database restored as root, review `just pyinfra-check haushalt macmini`
+in ops-control, then run `just deploy-one haushalt macmini`. Step 7 hands the
+database back through descriptors without following symlinks. Avoid manual
+`chown`, which bypasses those checks.
 The command stops unless the environment loads, the directory exists and
 the database is a regular file when it starts. Nothing may move the
 database while it runs (SQLite opens the path itself and would create a

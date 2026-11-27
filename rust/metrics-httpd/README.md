@@ -83,8 +83,8 @@ fake Loki in the test and the test-only `fixtures/fake-bin/systemctl`, which
 the generator puts first on `PATH`). From the repository root:
 
 ```bash
-just metrics-httpd-fixtures       # regenerate (venv; then 3.12 and 3.13 must agree)
-just test-metrics-httpd-fixtures  # drift test, part of `just test`
+uv run --python 3.14 --no-project --with jinja2 --with pyyaml python -I rust/metrics-httpd/fixtures/generate.py write
+just rust-check
 ```
 
 A change to an installed endpoint that alters what the fixtures record
@@ -153,7 +153,7 @@ ops-library's `rust-release.yml` and published here again byte for byte
 `metrics-httpd` and `LICENSE`, built in `ubuntu:22.04` (glibc floor
 2.35), plus its `.sha256`, attached to
 `https://github.com/ephes/ops-deploy/releases/tag/metrics-httpd-v<version>`.
-The roles pin a version and that sha256 (`metrics_httpd_rust_version`,
+The pyinfra deploys use the version and sha256 pinned in ops-control (`metrics_httpd_rust_version`,
 `metrics_httpd_rust_sha256`, PLAN.md 7.1); no release installs itself.
 
 | Version | Tag (commit) | Archive sha256 | Stripped binary |
@@ -197,8 +197,7 @@ or by hand (the repo venv renders the templates; `htpasswd` must be on
     [--family gate|json_file|script|apt_state|logyard_health|static|process|shadow ...] [-v]
 ```
 
-The `rust` CI job runs the same step (with `apache2-utils`). All eight
-json-file variants run; none needs another repository (as root the
+All eight json-file variants run from this checkout (as root the
 unreadable-file cases are still skipped). A
 static `Content-Type` that differs is printed as a D-11 note, not a
 failure: the Python side reads the host's `mime.types`.

@@ -17,9 +17,8 @@ this port and has not been invoked on an inventory host.
 
 `install_daybook_inbox(config, secrets, source_tree, bundle, ...)` is the explicit
 disabled-first installer substage. It never activates or baselines an Inbox.
-The existing activation, first-scan proof and credential-rotation workflows are
-separate lifecycle work still requiring typed conversion; no permanent Ansible
-fallback is introduced here. Normal runtime updates retain their original
+Activation, first-scan proof and credential rotation are separate from this
+installer. Normal runtime updates retain their original
 stop/window → Inbox-only install → replacement → cutover → verify sequence.
 Sessions and Photos source convergence do not become new update dependencies.
 

@@ -120,7 +120,7 @@ instead of uv, a templated `pyproject.toml`, switching off Traefik, basic
 auth or the monitor, `nyxmon_service_restart_on_change: false`, and the
 `uv_install` role (uv must already be at `/usr/local/bin/uv`). A Python
 version change is left to `uv sync --python` on the next dependency change;
-the role removes a mismatched venv on every run.
+the former role removed a mismatched venv on every run.
 
 ### Monitoring agent (Rust)
 
@@ -181,8 +181,7 @@ monitor).
 ## Backup, restore and removal
 
 `ops_deploy.services.nyxmon` also ports `nyxmon_backup`, `nyxmon_restore` and
-`nyxmon_remove`. None of them needs secrets. Backups written by either tool
-restore with the other.
+`nyxmon_remove`. None of them needs secrets. Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -244,8 +243,8 @@ and the run fails (the role's `rescue`). The staging directory and the
 safety copy are always removed.
 
 Like the role, the restore does not put the Traefik route back. The role's
-condition (`is exists`) is evaluated on the Ansible controller, where the
-staging path never exists, so the route is never restored there either. The
+condition (`is exists`) was evaluated on the Ansible controller, where the
+staging path did not exist, so the former role never restored the route. The
 route on the host is not changed by a restore.
 
 **Removal.** It needs `confirm`. It stops and disables both units, then
@@ -294,7 +293,3 @@ second run changes nothing.
   and media file, a dry-run restore (nothing restored), the restore (both
   back, no staging or safety copy left), removal twice (the second without
   change), then a fresh deploy.
-- Ansible coexistence runs from ops-control: `just smoke-nyxmon-coexistence`.
-  Deploys take turns with this deploy, and backup, restore and removal run
-  across the tools (Ansible backup with pyinfra restore, pyinfra backup with
-  Ansible restore, pyinfra removal with Ansible removal).

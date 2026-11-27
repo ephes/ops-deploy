@@ -1,7 +1,7 @@
 # homelab
 
 Port of the `homelab_deploy` Ansible role (with the `homelab_shared` defaults
-it reads) as a playbook runs it with the rsync method: the home dashboard, a
+it read) as the former playbook ran it with the rsync method: the home dashboard, a
 Django app on one SQLite database served by gunicorn (`uv run --no-sync
 gunicorn`: the unit starts the venv the deploy's frozen sync built and
 checked, without resolving again),
@@ -33,8 +33,8 @@ ops-control registers it with secrets from two SOPS files (see its
 | `basic_auth_user` | no | Traefik user; falls back to `basic_auth_user` in the config |
 
 Empty values and `CHANGEME` are refused, as the role asserts; values must be
-single lines. The role writes `.env` unquoted, systemd reads it and the
-role's `manage.py` steps source it with bash, so `django_secret_key` must also
+single lines. The former role wrote `.env` unquoted and sourced it with bash for its
+`manage.py` steps. The current file is also read by systemd and bash, so `django_secret_key` must also
 be printable ASCII without whitespace, quotes, backslashes or
 `` $ ` ; & | < > ( ) ~ `` (a value both read the same way). Errors name keys,
 never values. `.env` reaches the host only on stdin.
@@ -57,7 +57,7 @@ Defaults follow the retired role's `homelab_shared/defaults/main.yml`.
 | `traefik_host`, `traefik_cert_resolver`, `basic_auth_user` | role defaults | |
 | `internal_ip_ranges` | the role's list | clients that skip basic auth |
 
-Not ported, as the playbook uses none of them: `homelab_use_uv: false` (the
+Not ported, as the former playbook used none of them: `homelab_use_uv: false` (the
 role refuses it too), `homelab_service_restart_on_change`,
 `homelab_traefik_enabled` and `homelab_basic_auth_enabled` (always on), and
 another `homelab_traefik_config_path` (always
@@ -108,8 +108,8 @@ another `homelab_traefik_config_path` (always
     dependency, `.env`, unit or migration change.
 14. Traefik route with the role's own template (dual router, the HTTP router
     on `web`). The deployed bcrypt hash is kept while it matches the password,
-    as the role does since ops-library 2.49.1; Traefik is not restarted (its file provider watches the directory, and the
-    role has no handler either).
+    as the former role did from ops-library 2.49.1 onward; Traefik is not restarted (its file provider watches the directory, and the
+    role had no handler either).
 
 A probe that fails (rather than answering) does not stop planning: its step
 runs, and the probe then runs again as a read-only operation that fails the
@@ -123,7 +123,7 @@ and does not restart (as chesslab); restart `homelab` by hand then.
 
 ## Ownership and the service user's group
 
-The role creates the user with `group` as primary group, but an existing user
+The former role created the user with `group` as primary group, but an existing user
 only gets `group` appended. A user from before (on one host the primary group
 is `users`) writes every new file with its primary group: the venv and
 packages from `uv venv`/`uv sync`, bytecode caches (`__pycache__/*.pyc` in
@@ -142,7 +142,7 @@ Order of the steps that run: as in the role, the owner fix comes before
 `uv venv`, `uv sync`, `migrate`, `collectstatic`, `add_default_services` and
 the restart. When a run executes one of them (a code, dependency, `.env` or
 venv change), files they create may carry the user's primary group until the
-next run fixes them, which is then that run's only change (the role leaves
+next run fixes them, which is then that run's only change (the former role left
 the same files and fixes them on its next run too). A run that only fixes
 ownership, the database mode or the route executes no Python as the service
 user, so the run after it plans no mutating operation. Making the primary
@@ -158,18 +158,17 @@ role's output (its templates, last checked against ops-library main
 
 Differences:
 
-- The role runs `uv sync`, migrations, `collectstatic`,
+- The former role ran `uv sync`, migrations, `collectstatic`,
   `add_default_services` and the recursive `chown` on every deploy; here they
   run only when needed, so a converged deploy changes nothing.
 - A migration run also restarts homelab (a retry after a failed run must not
-  leave old code on a new schema); the role restarts only on code, file,
+  leave old code on a new schema); the former role restarted only on code, file,
   venv, dependency, `.env` and unit changes.
 - `add_default_services` is judged by its effect (any write attempt) rather
   than by its output; the role reports a change only for "Created service" or
   "Updated service", not for a logo it filled in.
-- Ansible's `synchronize` compares file times, ops-deploy file contents (no
-  times are synced). The first Ansible run after an ops-deploy run may
-  rewrite source files once and restart homelab; later runs are quiet.
+- The former role's `synchronize` compared file times. Pyinfra compares file
+  contents and skips a sync when only timestamps differ.
 - The bcrypt hash is computed on the controller; the role's
   `apache2-utils` package (`htpasswd`) is not installed.
 - `uv_install` runs only when `uv` is set. The role pins uv (0.13.9 today)
@@ -178,7 +177,7 @@ Differences:
   there is none (as the graphyard port).
 - A new user is a system user (`useradd -r`); an existing one is untouched.
 - The read-only probes run Python with `PYTHONDONTWRITEBYTECODE=1`. The
-  role has no such probes: it runs `migrate`, `collectstatic` and
+  former role had no such probes and ran `migrate`, `collectstatic` and
   `add_default_services` on every deploy, after its owner fix, so its runs
   leave new bytecode caches with the user's primary group behind.
 
@@ -203,7 +202,7 @@ In the role's order:
    pause: this port asks on the controller's terminal (type `yes`) before the
    first change and refuses without a terminal unless `auto_confirm=True`
    (the role's `homelab_remove_auto_confirm`). This is stricter than the
-   role: Ansible's `pause` goes on without waiting when stdin is not a
+   role: Ansible's `pause` went on without waiting when stdin was not a
    terminal;
 2. only when the unit file exists (a dangling link counts, as for `stat`):
    stop, then disable the unit (failures ignored, as `failed_when: false`),
@@ -221,7 +220,7 @@ archives stay.
 
 `ops_deploy.services.homelab` also ports `homelab_backup` and
 `homelab_restore` (with the `homelab_shared` defaults). Neither needs
-secrets. Archives written by either tool restore with the other.
+secrets. Pyinfra can restore archives written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -236,11 +235,13 @@ and `group` are the archive's, `homelab_backup_owner`/`_group`;
 `include_*`, `force_stop`, `archive`, `dry_run`, `create_safe_snapshot`,
 `safe_snapshot_delete`, `healthcheck_url`, ...). `host_name` is the
 inventory name written into `metadata.yml`; `ops_library_version` is the
-controller's ops-library version, written by the backup and compared by the
-restore (a mismatch stops it unless `allow_version_mismatch`), as the roles
-read it from `galaxy.yml`. Pass the same value as the roles' `galaxy.yml`
-for archives of the other tool to restore without
-`allow_version_mismatch`. `required_mount` and `retain_count`/`retain_days`
+archive metadata field kept from the former roles. Ops-control sets it to
+`unknown` for backup and restore. Restore compares the value in
+`metadata.yml` with the configured value and stops on a mismatch unless
+`allow_version_mismatch` is set. To restore a versioned legacy archive with
+validation enabled, set `HomelabRestoreConfig.ops_library_version` to the
+`ops_library_version` recorded in the selected archive's `metadata.yml`.
+`required_mount` and `retain_count`/`retain_days`
 work as for the other ports ([Local backups](../concepts/local-backups.md)).
 
 **Backup.** It refuses to start without the site directory. It records the

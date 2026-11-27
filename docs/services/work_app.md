@@ -1,7 +1,7 @@
 # work_app
 
 Port of the `work_app_deploy` Ansible role (rsync method) and of the
-operations wiring in ops-control's `deploy-work-app.yml`: the work ledger, a
+operations wiring in ops-control's former deployment playbook: the work ledger, a
 Django app on one SQLite database served by gunicorn, behind Traefik with
 basic auth, plus its Echoport backup target and Nyxmon health check.
 
@@ -90,7 +90,7 @@ only use `A-Za-z0-9._:/@%+~*-`.
     deleting files is not seen this way (directories are not compared, since
     the app touches them); restart `work-app` by hand or change a file.
 12. Traefik route with the role's own template (dual router, HTTP router with
-    its redirect middleware). The role has no Traefik restart handler (Traefik
+    its redirect middleware). The former role had no Traefik restart handler (Traefik
     watches the directory), so none is issued here.
 13. Read-only check of `healthcheck_path`: status 200.
 14. Wiring, when configured: each upsert first runs read-only in a "check"
@@ -100,7 +100,7 @@ only use `A-Za-z0-9._:/@%+~*-`.
     - Nyxmon (`/home/nyxmon/site`, `.env` sourced): service "Work app", check
       "Work app health" on `http://<app_host>:<app_port>/healthz`; a check
       still called "Work app login page" is reused and renamed.
-    - Fails when the app is not installed on the host, as the playbook does.
+    - Fails when the app is not installed on the host, as the former playbook did.
 
 ## Parity with the role and playbook
 
@@ -114,13 +114,12 @@ rewriting these files or restarting work-app or Traefik;
 Differences:
 
 - The role's migrations, `collectstatic`, recursive `chown` of the site and
-  the playbook's upserts run on every deploy; the upserts always report a
+  the former playbook's upserts ran on every deploy and always reported a
   change. Here they run only when needed, so a converged deploy changes
   nothing.
-- Ansible's `synchronize` compares file times, ops-deploy file contents (no
-  times are synced). The first Ansible run after an ops-deploy run therefore
-  rewrites the source files once and restarts work-app; later runs are quiet.
-- `uv sync` is given `--python 3.14` and runs only on a change; the role runs
+- The former role's `synchronize` compared file times. Pyinfra compares file
+  contents and skips a sync when only timestamps differ.
+- `uv sync` is given `--python 3.14` and runs only on a change; the former role ran
   it every time.
 - `apache2-utils` is not installed (the bcrypt hash is computed on the
   controller); the playbook's `uv_install` role is not run (uv must be at
@@ -137,12 +136,12 @@ Differences:
 `WorkAppRemoveConfig`). They take no secrets; all three share the paths of the
 deploy (`user`, `group`, `home`, `site_path`, `database_path`, `service_name`,
 `traefik_config_path`) with the same defaults, so pass the values the deploy
-used. Either tool restores the other's archives and removes the other's
-deploy.
+used. Pyinfra can restore archives and remove deployments created by the former
+roles.
 
 ```python
-run(deploy_work_app_backup, WorkAppBackupConfig(ops_library_version="2.31.40"))
-run(deploy_work_app_restore, WorkAppRestoreConfig(ops_library_version="2.31.40"))
+run(deploy_work_app_backup, WorkAppBackupConfig())
+run(deploy_work_app_restore, WorkAppRestoreConfig())
 run(deploy_work_app_remove, WorkAppRemoveConfig(confirm=True))
 ```
 
@@ -175,9 +174,8 @@ chmod.
   `manifest`, `create_archive`, `fetch_local` switch the parts as the role's
   variables do. A part whose source is missing is skipped.
 - `ops_library_version` is written to `metadata.yml` and compared by restore.
-  Ansible writes the `version` of the installed collection's `galaxy.yml`, or
-  `unknown` when the collection copy has none; pass the same value so the two
-  tools accept each other's archives. `inventory_name` (default `macmini`) is
+  Ops-control uses `unknown`. The former role read the collection version
+  from `galaxy.yml` and used `unknown` when there was no version. `inventory_name` (default `macmini`) is
   the `host` field.
 - Differences: the archive is packed with `umask 077` (it holds `.env`); only
   `tar.gz`.
@@ -193,8 +191,13 @@ name below `root` or an absolute path. While planning, from the archive's
 listing and `metadata.yml` (nothing is unpacked yet), it refuses before any
 change: a missing archive, no payload directory, unreadable metadata, another
 slug, a missing `slug`/`timestamp`/`host`, and an `ops_library_version`
-different from the config's (unless `allow_version_mismatch`). Then, as the
-role does: check `required_mount` (when set), reset and fill `staging_dir`
+different from the config's (unless `allow_version_mismatch`). To restore a
+versioned legacy archive with validation enabled, set
+`WorkAppRestoreConfig.ops_library_version` to the `ops_library_version`
+recorded in the selected archive's `metadata.yml`.
+
+The remaining steps follow the former role's order. Check `required_mount`
+(when set), reset and fill `staging_dir`
 (default `/tmp/work-app-restore`, `0700`), check
 `manifest.sha256`, stop work-app (a failing stop aborts), copy the site to
 `<site>.pre-restore-<timestamp>`, restore static files (`rsync --delete`),
@@ -205,8 +208,8 @@ work`) and `.env`, restore the unit and the Traefik config when they differ
 `PRAGMA integrity_check`, restart work-app and check its login page. The
 staging directory is removed right after the Traefik config, the last step
 that reads it. The pre-restore copy (database
-and `.env` included) is kept and its path reported, as the role does since
-ops-library a811bc16; nothing prunes these copies, so delete old ones by hand.
+and `.env` included) is kept and its path reported, as the former role did from
+ops-library a811bc16 onward; nothing prunes these copies, so delete old ones by hand.
 `safe_snapshot_delete=True` deletes it after a success instead. `dry_run`
 stops after the checks. `restore_env`, `rebuild_static`, `verify_http` and the
 other role switches are config fields too.
@@ -251,5 +254,3 @@ before the first change; without a terminal it refuses unless
   restores it (data back, snapshot and staging removed, a deploy over it has
   nothing to do) and removes the app twice (the second run changes nothing).
   The VM needs the `sqlite3` CLI (installed by the test; macmini has it).
-- Ansible coexistence (deploys, backups, restores and removals taken across
-  the tools, data kept) runs from ops-control: `just smoke-work-app-coexistence`.

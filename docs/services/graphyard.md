@@ -2,7 +2,7 @@
 
 Ports of the `graphyard_deploy`, `graphyard_vector_deploy`,
 `graphyard_ingress_deploy` and `graphyard_auth_bootstrap_deploy` Ansible roles
-together with the steps ops-control's playbooks run around them. Graphyard is a
+together with the steps from ops-control's former playbooks. Graphyard is a
 Django app (granian web unit and an agent unit) with InfluxDB 2 and Grafana in
 Docker Compose under one systemd unit, a Traefik route for the app and
 Grafana, a Vector host-metrics producer per host, and a reconcile of the login
@@ -29,7 +29,7 @@ cfg = GraphyardStackConfig(
 deploy_graphyard(cfg, secrets)  # core, Vector, ingress, auth: deploy-graphyard.yml's order
 ```
 
-Six entry points, as there are six playbooks: `deploy_graphyard` (stack),
+Six entry points, corresponding to the six former playbooks: `deploy_graphyard` (stack),
 `deploy_graphyard_core(cfg, secrets)`, `deploy_graphyard_vector(cfg, secrets)`,
 `deploy_graphyard_ingress(cfg, secrets)`, `deploy_graphyard_auth(cfg, secrets)`
 and `deploy_graphyard_conditions(cfg)` (separate from the stack).
@@ -84,7 +84,7 @@ source sync still excludes `src/django/.env`, so a local one is never shipped.
 | `source_commit` | `None` | the git source's commit, recorded in `<site>/.ops-deploy-source` |
 | `user`, `group`, `home`, `site_path`, `env_dir` | `graphyard`, `/opt/apps/graphyard`, `<home>/site`, `/etc/graphyard` | |
 | `source_excludes` | the role's | plus `.inventory-releases.lock`, as the role adds; `agent-rs/target/` (the Rust agent's Cargo output) is one of the role's |
-| `python_version`, `uv_sync_args`, `uv` | `3.12`, `--no-default-groups --no-dev`, `None` | `uv=UvInstallConfig()` runs `uv_install` as the role does; by default uv must be at `/usr/local/bin/uv` |
+| `python_version`, `uv_sync_args`, `uv` | `3.12`, `--no-default-groups --no-dev`, `None` | `uv=UvInstallConfig()` runs `uv_install` as the former role did; by default uv must be at `/usr/local/bin/uv` |
 | `django` | `Django()` | settings module, allowed hosts, CSRF origins, admin/login URLs, cookie age |
 | `influx` | `Influx()` | image `influxdb:2.7`, container, ports, data and config dirs with their numeric owners, org, bucket, measurement, `retention_apply`/`bucket_retention` |
 | `grafana` | `Grafana()` | image `grafana/grafana-oss:12.4.0@sha256:b0ae311af06228bcfd4a620504b653db80f5b91e94dc3dc2a5b7dab202bcde20`, container, ports, data dir (`472:472`), provisioning and dashboards paths, admin user, InfluxDB login name, `base_url` |
@@ -132,7 +132,7 @@ each deploy.
    (read-only). Creation and check go through InfluxDB's HTTP API on the
    published port (the endpoints `influx v1 auth create` calls) from a small
    Python script on the host, with the admin token and the password on stdin;
-   the role passes the password on the `influx` command line.
+   the former role passed the password on the `influx` command line.
    Grafana's Flux read token: a host-side script checks the token in
    `<env_dir>/grafana-flux.env` (`0600 root`; not configurable, so it can
    never be another Graphyard file)
@@ -325,7 +325,7 @@ deploy_graphyard_vector(cfg, secrets)  # vector_ingest_token, as above
 | `brew_package`, `brew_service_name` | `vector`; ensures the `vectordotdev/brew` tap and installs an absent formula. Installed formulas are not upgraded. |
 | `brew_update` | `false`; explicit `true` requests Homebrew metadata update, not formula upgrade. That requested update is a mutation. |
 | `disable_brew_service` | `true`; stop a registered/running Homebrew Vector service to avoid duplicate producers. |
-| `runtime_user`, `runtime_group`, `validation_group` | Existing `root`, `wheel`, `wheel`; the role does not create runtime accounts. |
+| `runtime_user`, `runtime_group`, `validation_group` | Existing `root`, `wheel`, `wheel`; the former role did not create runtime accounts. |
 | `launchd_label`, `launchd_plist_path` | `de.wersdoerfer.graphyard.vector`, `/Library/LaunchDaemons/<label>.plist`. |
 | `launchd_keepalive`, `launchd_path` | `true`; `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`. Working directory is the main config's `data_dir`. |
 | `log_dir`, `stdout_log_path`, `stderr_log_path` | `/var/log/vector`; derived `graphyard-vector.log` and `graphyard-vector.err.log` within it. |
@@ -384,8 +384,7 @@ restarts then), the admin password reset (`grafana cli ...
 --password-from-stdin` instead of the role's argument; verified afterwards),
 the lockout rows deleted. The InfluxDB ping from Grafana and the datasource
 health through the API are checked on every run (read-only). Only the shared
-network mode is ported (`grafana_shared_network_name` is required); the
-role's container-IP fallback stays on Ansible.
+network mode is ported (`grafana_shared_network_name` is required).
 
 ## Living with Logyard
 
@@ -398,21 +397,19 @@ both ports, decides who owns what below `/opt/apps/graphyard/site/deploy/grafana
 | `dashboards/logyard/` and everything in it | Logyard | `root:root 0755` / `0644` |
 | everything else, the directories `provisioning/datasources/` and `dashboards/` included | Graphyard | `graphyard:graphyard` |
 
-Graphyard's sync excludes Logyard's two paths (the role does too), and its
+Graphyard's sync excludes Logyard's two paths (the role did too), and its
 ownership step skips them (`foreign_paths`, default the two Logyard paths);
 Logyard's deploy creates the two shared directories only when they are
-missing and never changes their owner or mode. The roles still fight over
-these paths (the Graphyard role chowns the whole site, the Logyard role sets
-the shared directories to root), so an Ansible deploy of either brings the
-old ping-pong back for one round; the next pyinfra deploy of Graphyard takes
-the shared directories back once, and Logyard's pyinfra deploy, which only
-reads them, does not react.
+missing and never changes their owner or mode. The former Graphyard role
+changed ownership of the whole site, and the former Logyard role set the
+shared directories to root. The current ownership rules keep the two deploys
+from changing each other's files.
 
 Docker creates `deploy/grafana/provisioning/dashboards-json/` in the site as
 the mount point of the dashboards bind mount whenever Grafana starts. The
-role's sync (`--delete`) removes it, which detaches the dashboards mount in
-the running Grafana container (loaded dashboards stay, file changes are not
-provisioned until Grafana restarts). The port excludes it from the sync, so
+former role's sync (`--delete`) removed it, detaching the dashboards mount in
+the running Grafana container (loaded dashboards stayed, but file changes
+were not provisioned until Grafana restarted). The port excludes it from the sync, so
 it survives; its owner becomes `graphyard` like the rest of the site.
 
 ## Differences from the roles
@@ -422,15 +419,14 @@ it survives; its owner becomes `graphyard` like the rest of the site.
 - `rsync` is installed with apt when missing (the role assumes it).
 - The sync excludes `deploy/grafana/provisioning/dashboards-json/`, and the
   ownership step skips Logyard's files (see above).
-- `uv_install` does not run unless `uv` is set: the role installs its pinned
+- `uv_install` does not run unless `uv` is set: the former role installed its pinned
   uv (0.13.9) on every deploy and so replaces a newer uv on the host.
 - In the stack, the auth step also plans the provisioning file rewrite when
-  the file the source sync installs needs one (the role's sync and rewrite
-  then take turns on every run, as here).
+  the file the source sync installs needs one (the former role also synced and then rewrote the file on each run).
 - On a fresh stack the auth steps cannot read Grafana while planning; they
   check on the host instead, and the datasource URL step restarts Grafana once.
 - Services restart in the order of their steps, not all at the end.
-- The Rust agent archive is downloaded on the host with `curl` (the role uses
+- The Rust agent archive is downloaded on the host with `curl` (the former role used
   `get_url`), and the archive checks, staging and validation run as one host
   script.
 
@@ -447,8 +443,7 @@ reinstall, local archive, pruning) and the `validate` step of
 `files/agent.sh` through bash and fish with a fake binary;
 `tests/smoke/test_graphyard_agent_smoke.py` runs `files/agent.sh` as root on
 the smoke VM (install, refused archives and checksums, rejected candidates,
-pruning against a live process). The Ansible/pyinfra coexistence smoke lives in
-ops-control (`just smoke-graphyard-coexistence`).
+pruning against a live process).
 
 ## Per-container replacement CA store
 
@@ -518,7 +513,7 @@ null omits the allowance flag. New rows keep the upstream defaults. This is a
 deliberate preservation refinement: the upstream command does reset staleness
 on updates when no flags are given, contrary to the initial migration survey.
 The seed script is therefore derived from, rather than byte-identical to, the
-playbook script. Ansible on an already-converged row still changes nothing.
+playbook script. The former Ansible seed also left an already-converged row unchanged.
 
 The owned native fixture in `tests/integration/graphyard_conditions` uses pinned
 real Graphyard, Django, SQLite and its HTTP API with synthetic operational rows.

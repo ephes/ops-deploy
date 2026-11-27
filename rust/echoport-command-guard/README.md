@@ -14,14 +14,14 @@ themselves on file descriptors. Version 0.3.0 (A1) adds the runners'
 with `<role>` its value, byte for byte, as in the Python guard); 0.2.0
 refuses that command, so 0.3.0 is the first release a host may get (S9).
 
-Status: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
+Implementation history: **S1** (crate skeleton, policy, tokeniser), **S2** (the filesystem
 layer), **S3a** (the rules without filesystem), **S3b** (the rules with
 filesystem), **S4** (runtime and exec), **S5** (the parity gate: decision
 property tests, Layer 2 and Layer 3 against the Python guard on both host
 distributions, fuzzing; see "Parity gate" below) and **S6** (the role switch:
-`roles/echoport_remote_command_guard` installs this binary through
-`rust_release_binary` and selects it with `echoport_remote_command_guard_impl`,
-default `python`; see its README) and **S7** (release 0.1.0: the lean
+`roles/echoport_remote_command_guard` installed this binary through
+`rust_release_binary` and selected it with `echoport_remote_command_guard_impl`,
+default `python`; see the historical plan) and **S7** (release 0.1.0: the lean
 measurements, the security review of the whole crate, the tag; see "Lean
 measurements", "Security review (S7)" and "Release" below) and **H1** (the
 TOCTOU hardening of the root-run mutations in both guards, release 0.2.0;
@@ -131,13 +131,13 @@ guard's form, release 0.3.0). Every branch of the Python guard's
   the sshd end-to-end comparison `layer3_sshd.py` with its stub tools
   `stub-tool.sh` (below); `build-local-archive.sh <dest.tar.gz>` builds the
   guard in the same Debian 12 container (target `local-archive`) into a
-  release-layout archive for the role's molecule scenarios.
+  release-layout archive of the kind used by the former role's Molecule scenarios.
 - `fuzz/`: the cargo-fuzz targets and their committed corpus (below).
 
 ## Lean measurements (S7)
 
 ```bash
-just echoport-command-guard-lean   # or rust/echoport-command-guard/parity/e2e/run-lean.sh [ubuntu2404] [debian13]
+rust/echoport-command-guard/parity/e2e/run-lean.sh [ubuntu2404] [debian13]
 ```
 
 Needs Docker; changes nothing outside the containers. `parity/e2e/lean.py`
@@ -183,7 +183,7 @@ ops-library's `rust-release.yml` and published here again byte for byte
 `echoport-command-guard` and `LICENSE`, built in `ubuntu:22.04` (glibc floor
 2.35), plus its `.sha256`, attached to
 `https://github.com/ephes/ops-deploy/releases/tag/echoport-command-guard-v<version>`.
-The role pins a version and that sha256
+The pyinfra configuration accepts a pinned version and its sha256
 (`echoport_remote_command_guard_rust_version`,
 `echoport_remote_command_guard_rust_sha256`); no release installs itself.
 
@@ -269,11 +269,10 @@ change, and at exact points during the walk through a test hook (`dir`
 after a directory on the way was opened, `stat` right before an entry is
 opened, `rename` right before `mv` renames). Each asserts
 the outcome, the reason word for word, and the files inside and outside the
-root afterwards. `just test-echoport-remote-command-guard` runs it against
-the Python guard, `cargo test` against the Rust guard, and `run-layer2.sh`
-both again as root in the Ubuntu 24.04 and Debian 13 containers (a real
-`chown` to `nobody:nogroup`). Layer 3 and the role's molecule verify send
-mutations through sshd with symlinks the guards must refuse.
+root afterwards. `cargo test` runs it against the Rust guard, and `run-layer2.sh` runs it
+against both guards as root in the Ubuntu 24.04 and Debian 13 containers (a real
+`chown` to `nobody:nogroup`). Layer 3 sends mutations through sshd with symlinks the guards must refuse.
+The former role's Molecule verification also covered this path.
 
 ## Build and test
 
@@ -366,21 +365,19 @@ The tests:
   ```
 
 The oracle tests run `$ECHOPORT_ORACLE_PYTHON -I parity/oracle.py`
-(default `python3`; CI uses Python 3.12, production's, from uv:
+(default `python3`; `just rust-check` uses Python 3.12 from uv:
 `ECHOPORT_ORACLE_PYTHON=$(uv python find --no-project 3.12)`). They fail
 rather than skip when it cannot start.
 
-CI (`.github/workflows/rust.yml`) runs these with the workspace and adds the
-fixture drift check: `gen_fixtures.py check` under Python 3.12 and 3.13, then
-`check --record` in the repo venv (`uv sync --locked`). `rust.yml` runs only
-for changes under `rust/`; a change to the Python guard or a runner template
-alone is caught by `just test-echoport-remote-command-guard` (part of `just
-test`).
+`just rust-check` runs these with the workspace and adds the fixture drift
+check, `gen_fixtures.py check` under Python 3.12 and 3.13. The Python
+suite's `tests/test_rust_workspace.py` checks that the frozen guard agrees
+with the shipped Python guard.
 
 ## Layer 2: real trees in the host distributions
 
 ```bash
-just echoport-command-guard-layer2   # or rust/echoport-command-guard/parity/e2e/run-layer2.sh [ubuntu2404] [debian13]
+rust/echoport-command-guard/parity/e2e/run-layer2.sh [ubuntu2404] [debian13]
 ```
 
 Needs Docker; changes nothing outside the containers. It builds the guard
@@ -455,7 +452,7 @@ loops, 4 `EACCES`), no difference.
 ## Layer 3: end to end through sshd
 
 ```bash
-just echoport-command-guard-layer3   # or rust/echoport-command-guard/parity/e2e/run-layer3.sh [ubuntu2404] [debian13]
+rust/echoport-command-guard/parity/e2e/run-layer3.sh [ubuntu2404] [debian13]
 ```
 
 Needs Docker; changes nothing outside the containers. The Layer-2 images
@@ -515,12 +512,12 @@ distribution (148 allowed by Python, 12 refused, 1 interactive), Ubuntu
 ## Fuzzing
 
 ```bash
-just echoport-command-guard-fuzz       # or rust/echoport-command-guard/fuzz/run-fuzz.sh [seconds] [target...]
+rust/echoport-command-guard/fuzz/run-fuzz.sh [seconds] [target...]
 rust/echoport-command-guard/fuzz/run-fuzz.sh cmin   # minimise the corpus before committing it
 ```
 
-`fuzz/` is a cargo-fuzz project outside the workspace (it needs nightly and
-libFuzzer; CI uses the pinned stable toolchain, so fuzzing is not a CI gate).
+`fuzz/` is a cargo-fuzz project outside the workspace. It needs nightly and
+libFuzzer.
 `run-fuzz.sh` builds an image with a pinned nightly (`nightly-2026-10-01`)
 and cargo-fuzz 0.13.2 (`fuzz/Dockerfile`), builds the targets with debug
 assertions and runs each for an hour by default, all four at once, one
@@ -584,20 +581,17 @@ refusals; 207 equal policy verdicts and 37 `p3` refusals.
 
 ## Fixtures
 
-Regenerate after any change to the Python guard or a remote runner template:
+After updating the frozen oracle and reviewing any affected corpus inputs,
+regenerate from the recorded inputs at the repository root:
 
 ```bash
-just echoport-command-guard-fixtures
+uv run --python 3.12 --no-project python -I rust/echoport-command-guard/parity/gen_fixtures.py generate
 ```
 
-It records the inputs in the repo venv (`gen_fixtures.py record`: the test
-policies to `fixtures/policies/`, every runner command and every `check()`
-and `Policy.from_dict()` call of the guard's unit tests to
-`fixtures/corpus/`), generates the cases under Python 3.12 (production's
-Python), and requires byte-identical output under 3.13 (staging's) and the
-venv. `just test-echoport-remote-command-guard` (part of `just test`) fails
-when `fixtures/GUARD_SHA256` does not match the guard or regenerating gives a
-different result.
+The policies and corpus were recorded with tests in the archived collection.
+The local generator replays those inputs. `just rust-check` verifies the
+output on Python 3.12 and 3.13, and `just test` checks the guard digest and the
+frozen source files.
 
 Files (each under the repository's 1000 KB limit; `fixtures/manifest.json`
 lists them with their counts):

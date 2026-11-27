@@ -112,7 +112,7 @@ lose and restore data, and remove it twice (the second run without change)
 before deploying it once more. The FastDeploy test also restores an archive
 with retired services, runners and blanket sudoers rules (they stay out) and
 checks that a restore from a broken archive rolls back to its safety backup. A nyxmon
-backup creates `/opt/backups` as `0700` (as the role does); the FastDeploy
+backup creates `/opt/backups` as `0700` (as the former role did); the FastDeploy
 test sets it to `0755`, as on macmini, because `pg_dump` writes there as
 `postgres`.
 

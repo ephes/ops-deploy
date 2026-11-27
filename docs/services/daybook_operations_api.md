@@ -45,18 +45,16 @@ deploy_daybook_operations_api(cfg=cfg, pins=pins)
 For Git, select `deploy_method="git"`, an exact40-character `git_revision`,
 and optional `git_repo`. Rsync requires a prepared source directory and retains
 the original excludes for Git, virtual environments, environment files, Python
-caches, nested site/cache and experiments. It also excludes `*.egg-info`,
-which the role does not: the frozen `uv sync` installs the project editable and
-writes `src/daybook.egg-info` into the site whenever it rebuilds the project,
-and the role's `--delete` removes it on the next run, which then reports a
-source change and restarts both units.
-Here a converged repeat (also right after an Ansible deploy) leaves it and plans
-no source sync. The private caller resolves current
+caches, nested site/cache and experiments. It also excludes `*.egg-info`.
+The frozen `uv sync` installs the project editable and writes
+`src/daybook.egg-info` whenever it rebuilds. The former role's next sync
+removed it, reported a source change and restarted both units. A converged
+pyinfra run leaves it in place. The private caller resolves current
 Daybook Main and owns the exported tree for the complete operation lifetime.
 An existing exported tree must remain explicitly rsync in desired inventory;
 changing it to Git is not an automatic migration strategy.
 The site directory gets the mode the original role leaves behind: `0700` for
-rsync (the role creates it `0750`, but its archive-mode `synchronize` then copies
+rsync (the former role created it `0750`, but its archive-mode `synchronize` copied
 the mode of the playbook's `0700` export directory onto it on every run) and
 `0750` for Git. `sync_tree` keeps an existing directory's mode, so the port sets
 the final mode itself, and a deploy after the role changes nothing there.
@@ -170,7 +168,7 @@ deploy_daybook_operations_api_remove(OperationsApiRemoveConfig(confirmed=True, c
 | remove: delete both unit files and the Traefik route | same; the route only while no Traefik transaction holds its lock |
 | remove: `daemon-reload` on every run | only after a unit file was removed, so a repeat changes nothing |
 | remove: keep database, account, site, configuration and backups | same |
-| backup `tasks_from: register_echoport` (Echoport target, root bridge, FastDeploy token) | not ported; ops-control keeps `register-daybook-operations-backup.yml` on Ansible |
+| backup `tasks_from: register_echoport` (Echoport target, root bridge, FastDeploy token) | Separate [pyinfra backup bridge](echoport_runner.md#the-daybook-operations-backup-bridge-daybook_operations). In ops-control, review `just pyinfra-check daybook_operations_backup_runner`, then run `just deploy-one daybook_operations_backup_runner`. |
 
 `tests/test_daybook_operations_api_lifecycle.py` checks the commands and the
 guards on the fake connector. `tests/test_daybook_operations_api_lifecycle_docker.py`

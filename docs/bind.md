@@ -5,8 +5,8 @@ only; checked against ops-library main `06394c81`, 2.64.5): an authoritative
 BIND primary or secondary with static zones from the controller, dynamic
 (RFC 2136) zones and TSIG keys. `named.conf`, `named.conf.options`,
 `named.conf.local` and `named.conf.keys` are byte-identical to the role's
-templates, so the role and this deploy take turns on a nameserver without
-rewriting a file or reloading named.
+templates. The deploy preserves matching files on hosts set up by the former
+role without reloading named.
 
 ```python
 from pydantic import SecretStr
@@ -86,7 +86,7 @@ the package.
 
 ## Steps
 
-The steps follow the role's order and do what it does. The files are compared
+The steps follow the former role's order. The files are compared
 and installed by one small bash script, `files/bind_config.sh`, run as root
 with `bash -c` (paths, owners, modes and sizes as arguments, the file
 contents as base64 lines on stdin). It uses standard tools only: `cmp`,
@@ -107,7 +107,7 @@ any of the steps, the paths and zone file names are checked (see
    counts as there. `config_dir`
    `root:bind 0755`, `working_dir` (with transfer-backed zones) and
    `dynamic_zone_dir` (with dynamic zones) `bind:bind 0775`, special bits
-   cleared as Ansible's `file` does.
+   cleared as the former role's Ansible task did.
 3. Only when the probe found a difference: `bind_config.sh apply` (the same
    input again, under an `flock` on `config_dir`) compares once more, then
    checks every candidate before it touches a file:
@@ -140,7 +140,7 @@ There are no backups and no rollback. Everything is checked before the first
 rename, so a configuration named rejects is never installed. If a rename
 itself fails (a full disk, an I/O error) or the run is killed between renames,
 the files installed so far stay (each was checked as part of the whole set),
-named is not reloaded, and the next run installs the rest; the role leaves
+named is not reloaded, and the next run installs the rest; the former role left
 the same state behind. The script removes its staged files when it exits; a
 staged file a killed run left (`SIGKILL`, a lost connection) is reported by
 the probe and removed by the next run, which then installs or does nothing.
@@ -169,9 +169,8 @@ the `db.*` files), and their `bind9` removes the old files on upgrade
 (`dpkg-maintscript-helper rm_conffile`). So the deploy picks:
 
 - `named.conf.root-hints` on Debian 13 and later (the role's rule) and on
-  Ubuntu 26.04 and later (the role predates it and still picks
-  `named.conf.default-zones` there, so the role and this deploy no longer
-  take turns on such a host);
+  Ubuntu 26.04 and later (the former role predated that release and would
+  have picked `named.conf.default-zones` there);
 - `named.conf.default-zones` on every other release;
 - the other one of the two when the release's file is missing from
   `/etc/bind` and the other one exists (a read-only `[ -f ]` while planning),
@@ -233,12 +232,11 @@ a secret).
 ## Differences from the role, on purpose
 
 - Every candidate is checked before any file changes, with `named-checkconf`
-  on the whole configuration. The role writes `named.conf.options` and
-  `named.conf.local` unvalidated and checks them only through `named.conf`'s
-  `validate`, which does not run when `named.conf` itself is unchanged; a
-  broken file then stays on disk and the reload fails.
+  on the whole configuration. The former role wrote `named.conf.options` and
+  `named.conf.local` without validating them unless `named.conf` itself
+  changed. A broken file could stay on disk and cause its reload to fail.
 - Refusals, before any change: a changed static zone whose serial is not
-  greater than the installed file's (the role installs it, and secondaries
+  greater than the installed file's (the former role installed it, and secondaries
   never transfer it); a missing dynamic zone file with a leftover journal
   (the role would seed it, and named would refuse the zone); a static zone
   file that would change while a `.jnl` exists next to it; a managed path

@@ -41,8 +41,8 @@ changed = sync_tree(
   `__pycache__`, a database) would otherwise show up as a change. The checksum
   costs nothing measurable on the nyxmon tree (118 files, three syncs): 0.65 s
   for the dry runs against macmini over LAN versus 0.69 s comparing times, and
-  0.30 s versus 0.32 s on the smoke VM. Ansible's `synchronize` compares times,
-  so the first Ansible run from another clone resyncs (and restarts) once.
+  0.30 s versus 0.32 s on the smoke VM. The former role's `synchronize` compared timestamps, so a fresh clone
+  triggered a sync and restart even when the contents matched.
 - **Excludes.** `MANDATORY_EXCLUDES` (`.git`, `.venv`, `__pycache__`,
   `.ops-deploy-*`, `.pyinfra-*`) always apply, followed by `excludes`.
   Excluded paths on the host are not deleted by `--delete`, which is how state

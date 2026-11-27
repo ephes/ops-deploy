@@ -47,7 +47,7 @@ one is missing and stops it when one is unmounted. The paths must be absolute
 paths of letters, digits and `_ . -`. An empty list renders no line, so
 today's unit stays byte-identical. Adding the list changes the unit, which is
 a rollout like any other unit change: the busy-queue check, a daemon-reload
-and a restart. ops-library's `metube_deploy` renders the same line from
+and a restart. The former `metube_deploy` role rendered the same line from
 `metube_mounts_required`.
 
 The environment/unit/route preserve the deployed role defaults. The public

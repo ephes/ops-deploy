@@ -157,7 +157,7 @@ authenticated endpoint `dns-metrics-endpoint.service` serves it on port
 **9107** at `/.well-known/dns` (`/usr/local/bin/dns_metrics_httpd.py`,
 `/etc/dns-metrics-endpoint/htpasswd`, `IPAddressAllow` localhost and the
 tailnet's IPv4 and IPv6 ranges). The role's five templates are shipped byte
-for byte and rendered as Ansible renders them.
+for byte and rendered as Ansible rendered them.
 
 ```python
 from ops_deploy.services.dns_metrics_endpoint import DnsMetricsEndpointConfig, deploy_dns_metrics_endpoint

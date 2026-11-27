@@ -30,7 +30,7 @@ tagged with `openclaw_container_name`), which Logyard ships as
 The role's interface is kept as it is: about 230 variables (`defaults/main.yml`)
 checked by its `tasks/validate.yml`. Both files ship unchanged
 (`files/deploy_defaults.yml`, `files/validate.yml`) and the port evaluates them
-as Ansible does (`variables.py`, `validate.py`): a default that refers to
+as the former Ansible role did (`variables.py`, `validate.py`): a default that refers to
 another variable (`{{ openclaw_data_dir }}/credentials/...`) follows a
 playbook value, and every `ansible.builtin.assert` of `validate.yml` runs with
 its `when`, `loop` and `vars`, together with the two asserts of
@@ -78,7 +78,7 @@ file is written only while no Traefik transaction holds its lock (like its
 removal).
 
 Every file is the role's bytes, owner and mode (`layout.py`); the templates are
-the role's, rendered as the `template` module renders them. The exception is
+the role's, rendered as the Ansible `template` task rendered them. The exception is
 the weekly restart timer and its service, which are new in this port (not in
 the role); `tests/test_openclaw.py` pins their bytes. The bind-mounted
 data tree belongs to the container's uid/gid 1000, which may have another name

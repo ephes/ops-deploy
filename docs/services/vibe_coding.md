@@ -27,7 +27,7 @@ The role's variables without the `vibe_coding_` prefix, with its defaults.
 
 | Field | Default | Notes |
 |---|---|---|
-| `user`, `group` | `vibe` | the group must be named like the user (shell_basics uses the user's own group, as its role does) |
+| `user`, `group` | `vibe` | the group must be named like the user (shell_basics uses the user's own group, as its former role did) |
 | `site_path` | `/mnt/cryptdata/vibe` | the home (`user_home`); letters, digits and `. _ / + -` only |
 | `shell` | `/usr/bin/fish` | also shell_basics' `shell_path` |
 | `projects_dir` | `<home>/projects` | |
@@ -47,7 +47,7 @@ The role's variables without the `vibe_coding_` prefix, with its defaults.
 The GitHub CLI login is managed when `github_token` is non-empty (the
 playbook's `vibe_coding_github_cli_auth_enabled`); a token without a user
 name fails planning (the role's assert). Without a token, `hosts.yml` is
-removed, as the role does when the login is off. The token reaches the host
+removed, as the former role did when the login was off. The token reaches the host
 only through `secret_file` (stdin), never a command line or log.
 
 ## Parity with the role, task by task
@@ -71,10 +71,10 @@ same resulting bytes, owner and mode.
 | chezmoi: `safe.directory` for root | `git config --global --add` when missing | same |
 | chezmoi: `git` clone/update (via the forwarded agent) | controller fetch + `git bundle`; clone, or fetch, `checkout --force <branch>`, `reset --hard origin/<branch>` | see differences |
 | chezmoi: recursive ownership | `files/own_tree.py` when anything is not the user's, before the update | see differences |
-| chezmoi: rsync legacy flow | not ported | the playbook uses the git flow |
+| chezmoi: rsync legacy flow | not ported | the former playbook used the git flow |
 | chezmoi: `init --force`, `status`, `apply --force` (as the user; status and apply with `--exclude=externals`) | the same three commands in one step | runs when planning finds a change (see differences) |
 | chezmoi: remove legacy `z.fish` | `files.file(present=False)` | same |
-| secrets: `conf.d/secrets.fish` from `fish_env` | not ported | the playbook sets no `fish_env` |
+| secrets: `conf.d/secrets.fish` from `fish_env` | not ported | the former playbook set no `fish_env` |
 | github_cli: `~/.config/gh` 0700, `hosts.yml` 0600 (no_log) / remove | `secret_file` / `files.file(present=False)` | byte-identical; never logged |
 | directories: projects 0755 | `files.directory` | same |
 | nodejs: dependencies, keyring, `nodesource.list`, apt update, `nodejs` | the same files and packages; the key is fetched into a private temp directory and dearmored once | same files (see differences) |
@@ -88,13 +88,13 @@ same resulting bytes, owner and mode.
 | zellij: `zellij --version` equals the pin (otherwise replaced), verified archive, binary checksum, install | same checks, staged and renamed into place | same |
 | sshd: `blockinfile` with `validate: sshd -t -f %s`, handler `reload sshd` | the same block and markers; checked, then installed and reloaded in one step with rollback | byte-identical; see differences |
 
-Commands the role runs as `become_user` run through `sudo -H -n -u <user>`,
+Commands the former role ran as `become_user` run through `sudo -H -n -u <user>`,
 so they get sudo's environment and PAM session exactly as Ansible's become
 does (HOME, `secure_path`, the locale, and pam_umask's `0002` for a user
 with its own group, which decides the modes chezmoi and npm give new files).
 They start in `/`: sudo keeps root's working directory (`/root`, which the
 user cannot read, so chezmoi failed with `stat .: permission denied`), while
-Ansible runs its modules from a temporary directory the user can read.
+Ansible ran its modules from a temporary directory the user could read.
 
 ## Differences from the role
 
@@ -109,7 +109,7 @@ Ansible runs its modules from a temporary directory the user can read.
   module does with the remote; `origin` keeps the repository URL, so the
   user's own `git pull` through an agent works as before. Repositories with
   submodules are refused (the module would fetch them on the host).
-- **git runs as the user.** The role runs every git command as root in the
+- **git runs as the user.** The former role ran every git command as root in the
   user's checkout, whose `.git/config` the user controls (`core.fsmonitor`,
   hooks): root would run the user's commands. Here the probe, the removal of
   a checkout with another origin, the clone and the update run as the user
@@ -119,7 +119,7 @@ Ansible runs its modules from a temporary directory the user can read.
   role's root clone leaves root's) is given to the user, that directory
   only. A checkout the user cannot read while planning (its owner is being
   repaired) is cloned or updated as the state after the repair says.
-- **No accidental re-clone.** The role reads `origin` before it adds the
+- **No accidental re-clone.** The former role read `origin` before it added the
   `safe.directory` entry, so on a host without that entry it removes and
   re-clones the checkout. Here every read passes `-c safe.directory` for
   that one command, and the update re-checks the planned state first: a
@@ -132,23 +132,23 @@ Ansible runs its modules from a temporary directory the user can read.
   owner through directory descriptors, links themselves only. It runs when
   something below the checkout is not the user's, before the update (whose
   git, running as the user, then writes only the user's files).
-- **Shell.** The role's include leaves shell_basics' `shell_path` at its
+- **Shell.** The former role's include left shell_basics' `shell_path` at its
   default (fish) whatever `vibe_coding_shell` is, so another shell would be
   switched back and forth on every run; here shell_basics gets `shell`.
-- **Always-run steps.** The role runs `chezmoi init --force`, `chezmoi
+- **Always-run steps.** The former role ran `chezmoi init --force`, `chezmoi
   apply --force`, `npm config set prefix` and `rustup component add
   rust-analyzer` on every run (reported unchanged or changed by output).
   Here each runs when planning shows it would change something:
   `execute-template --init` of the config template differs from the config
   file (or there is none), `chezmoi status` lists anything (always-run
   `run_` scripts included, so dotfiles with such a script get this step on
-  every run, as the role reports a change on every run), the checkout was
+  every run, as the former role reported a change on every run), the checkout was
   updated or chezmoi is replaced in the same run; the npm prefix differs;
   rust-analyzer is not installed. A failing probe runs the step.
 - **npm on a first run.** npm 10 fails `npm list -g` on an empty per-user
   prefix (no `lib` directory, exit 254), which stops the role on a fresh
   host. Here such a prefix counts as having no packages.
-- **sshd.** The role writes the validated file and reloads at the end of
+- **sshd.** The former role wrote the validated file and reloaded at the end of
   the play. Here one step, last as in the role: the planned file is
   installed only if `/etc/ssh/sshd_config` is still what planning read, the
   candidate passes `sshd -t -f`, and `sshd -T -C user=root,...` prints the
@@ -164,14 +164,14 @@ Ansible runs its modules from a temporary directory the user can read.
 - **Missing home parent.** For a new user whose home's parent is missing
   the module copies `/etc/skel` itself; here the parent is created and
   `useradd -m` does it.
-- **chezmoi externals.** Both tools run `chezmoi status` and `chezmoi apply
-  --force` with `--exclude=externals`, so the probe's `status` leaves them out
+- **chezmoi externals.** Pyinfra keeps the former role's `--exclude=externals` for
+  `chezmoi status` and `chezmoi apply --force`, so the probe's `status` leaves them out
   too: entries from the dotfiles' `.chezmoiexternal.*` (the `projects/agent-stuff`
   git-repo external, cloned over SSH) are not fetched by a deploy. The user has
   no GitHub key and no forwarded agent then; the next interactive `chezmoi
   update` as the user, with the owner's forwarded agent, fetches them.
 - **Not ported.** The rsync flow (`chezmoi_source_dir`) and `fish_env`
-  (`secrets.fish`): the playbook uses neither, and the config has no field
+  (`secrets.fish`): the former playbook used neither, and the config has no field
   for them.
 
 ## Converged runs
@@ -180,7 +180,7 @@ A second run plans no operation: only probes run. On a host the role
 converged, the first run changes nothing either
 (`tests/test_vibe_coding_docker.py`, below), apart from steps the role
 itself repeats: real dotfiles with an always-run script make the chezmoi
-step run every time with both tools.
+step run every time, as it did with the former role.
 
 ## Tests
 

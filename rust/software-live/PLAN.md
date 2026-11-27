@@ -1,5 +1,9 @@
 # Rust port of `software_live` — implementation plan
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 Status: S2 implemented (crate skeleton, command line, `validate`, policy
 hash, report types, `System` trait, fixtures, TESTMAP; see `README.md`);
 S3b implemented (Traefik observation, `src/traefik.rs`); S3a implemented
@@ -165,7 +169,15 @@ section 8.1). On macmini, 9112 is taken by another endpoint.
 
 ---
 
-## 2. Deploy mechanism today
+## 2. Deploy mechanism when this plan was written
+
+For current single-host deployment in ops-control, review
+`just pyinfra-check software_live <host>` before
+`just deploy-one software_live <host>`. Removal uses
+`just remove-one software_live <host>`. See ops-control's `docs/SOFTWARE_LIVE.md`
+for fleet deployment and its checks.
+
+The former Ansible workflow was:
 
 - Engine: **Ansible**. `services-metadata.yml` entry `software_live` has no
   `engine:` line (so `playbooks/common/refuse_if_pyinfra.yml` would route it

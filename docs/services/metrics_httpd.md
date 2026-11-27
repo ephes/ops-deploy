@@ -1,10 +1,9 @@
 # metrics-httpd switch
 
 `ops_deploy.services._metrics_httpd` selects, for one endpoint unit, the
-role's Python HTTP server or the pinned Rust `metrics-httpd` release. It is
-the pyinfra side of ops-library's internal role `metrics_httpd_switch`
-(ops-library `rust/metrics-httpd/PLAN.md` 7.2 and 7.4, slice S5e) and is
-shared by the deploys that render a metrics-httpd endpoint role:
+existing Python HTTP server or the pinned Rust `metrics-httpd` release. It
+ports the former `metrics_httpd_switch` role (see sections 7.2 and 7.4,
+slice S5e, in `rust/metrics-httpd/PLAN.md`) and is shared by these deploys:
 
 | Deploy | Unit | Role | Mode |
 |---|---|---|---|
@@ -27,9 +26,10 @@ ExecStart=
 ExecStart=/opt/metrics-httpd/<version>/metrics-httpd <argv>
 ```
 
-Ansible and pyinfra write the same drop-in, the same install directory
-(`helpers.rust_release`) and the same pin files, so the two engines can take
-turns on a host (the Ansible playbooks stay the rollback engine).
+Pyinfra preserves the drop-in format, install directory
+(`helpers.rust_release`) and pin files used by the former role. To switch
+an endpoint back to Python, select Python in its ops-control configuration,
+review `just pyinfra-check <service>`, then run `just deploy-one <service>`.
 
 ## Configuration
 
@@ -168,7 +168,7 @@ does.
   of the role's list (the live executable after the check and the drop-in's
   previous binary), and an unreadable one blocks the prune.
 - A release pin that is not a version with a sha256 is not installed with
-  `python` (the role tries the install, which then fails softly).
+  `python` (the former role tried the install and handled the failure as a warning).
 - No `local_archive` and no install root other than `/opt/metrics-httpd`.
 
 ## Tests

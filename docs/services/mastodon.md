@@ -1,8 +1,7 @@
 # Mastodon: selected-release deployment of an existing installation
 
 The default nvm Git tag is [v0.41.0](https://github.com/nvm-sh/nvm/releases/tag/v0.41.0).
-The pyinfra release path and Ansible rollback use the same tag. nvm is checked
-out from Git; this release has no uploaded assets or checksum manifest.
+Pyinfra checks out nvm from Git; this release has no uploaded assets or checksum manifest.
 
 `deploy_mastodon(cfg=MastodonReleaseConfig(...), secrets=...)` updates an existing
 Git installation. It resolves a selected release, installs its Ruby/Node and
@@ -178,8 +177,7 @@ roles. A password with a line break is refused before anything runs.
 
 The fields are the roles' variables without `mastodon_`, `mastodon_backup_` or
 `mastodon_restore_` (the backup's owner and group are `backup_owner`/`backup_group`,
-`mastodon_restore_root` is `root`). Archives written by either tool restore
-with the other.
+`mastodon_restore_root` is `root`). Pyinfra can restore archives written by the former backup role.
 
 **Backup.** One host script: it reads `<site>/VERSION` as the Mastodon user
 (empty without the file, as the role's ignored `cat`), creates

@@ -1,7 +1,7 @@
 # recorder
 
 Port of the `recorder_deploy` Ansible role plus the controller-side build and
-smoke steps of ops-control's `playbooks/recorder/deploy.yml`: the podcast
+smoke steps of the former `playbooks/recorder/deploy.yml` (removed 2026-11-16): the podcast
 recording backend, one static Go binary (`recorderd`) with an embedded
 frontend, SQLite for state, MinIO (or the local filesystem) for media, behind
 Traefik.
@@ -71,7 +71,7 @@ Defaults follow the role's `defaults/main.yml` and the playbook, except
 ## What the deploy does
 
 1. Checks secrets and renders the env file (fails before anything else).
-2. Builds on the controller, as the playbook's `pre_tasks` do on every run:
+2. Builds on the controller, as the former playbook's `pre_tasks` did on every run:
    `npm ci --no-audit --no-fund` and `npm run build` in `web/`, then
    `go build -trimpath -ldflags=-s -ldflags=-w -o <artifact_path> ./cmd/recorderd`
    with `GOOS=linux GOARCH=<goarch> CGO_ENABLED=0`. A failing step stops the
@@ -89,7 +89,7 @@ Defaults follow the role's `defaults/main.yml` and the playbook, except
    (`0640 root:recorder`).
 6. Unit file and the Traefik route (`/etc/traefik/dynamic/recorder.yml`, the
    role's own template with security headers, no basic auth). Traefik is not
-   restarted: the role's `reload traefik` handler fails on a unit without
+   restarted: the former role's `reload traefik` handler failed on a unit without
    `ExecReload` and is ignored, and the file provider watches the directory.
 7. `service_rollout`: daemon-reload on unit change; restart when the unit,
    binary or env file changed (not right after this run started it).
@@ -104,12 +104,12 @@ The database (`data_dir/recorder.db`) and the object store
 
 ## Differences from the role
 
-- The service restarts before the health check (the role's handlers run at
+- The service restarts before the health check (the former role's handlers ran at
   the end of the play, after it), and on a first install it is started once,
   not started and then restarted.
 - `systemctl daemon-reload` only runs when the unit changed.
 - The role's `recorder_traefik_enabled` and `recorder_healthcheck_enabled`
-  switches are not ported; the playbook never turns them off.
+  switches are not ported; the former playbook never turned them off.
 
 ## Tests
 

@@ -222,6 +222,6 @@ New Python tests and their Rust counterparts:
 | `GuardRefusals.test_public_schema_owner_only_in_its_exact_shape` | `unit.jsonl` and the `psql-alter` vectors of `mutation/tools.jsonl` (Layer-1 runner); `rules::postgres::tests::public_schema_owner` (each of `unexpected psql arguments`, `psql on '<db>' not allowed` and `psql statement not allowed` in Python's order; the 8-argument `-qAt` form falls into the runner queries) | done (A1) |
 | `RunnerCommandsAreAllowlisted` (the production-DB runners' restore sends the statement after `createdb`) | `runner.jsonl` | done (A1) |
 
-The role's molecule verify sends two refused `ALTER SCHEMA` commands
+The former role's Molecule verification sent two refused `ALTER SCHEMA` commands
 (another role; a database outside `restore_databases`) through sshd for
 every impl.

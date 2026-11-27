@@ -1,7 +1,7 @@
 # weeknotes_home
 
 Port of the `weeknotes_home_deploy` Ansible role (rsync method) and of the
-operations wiring in ops-control's `deploy-weeknotes-home.yml`: the daybook
+operations wiring in ops-control's former deployment playbook: the daybook
 weeknotes.home steering inbox, a Django app served by gunicorn on PostgreSQL,
 behind Traefik with basic auth, plus the playbook's FastDeploy service row,
 Echoport backup target (with its FastDeploy service token) and Nyxmon checks.
@@ -94,10 +94,10 @@ Defaults follow the role's `defaults/main.yml`.
    "pending"; an error is not read as "pending" but runs the step and then
    the probe again ("Probe again: ..."), which fails the deploy if it still
    fails.
-   On a host deployed by Ansible (no loader yet) the first run therefore runs
-   both once and restarts the service once; Ansible leaves the loader alone.
+   On hosts set up by the former role, the first pyinfra deploy added the
+   loader, ran both commands and restarted the service once.
 10. Unit file and `service_rollout`: restart on code, dependency or env
-    change, and when migrations run (a retry after a failed run must not leave old code on the new schema; the role restarts on neither).
+    change, and when migrations run (a retry after a failed run must not leave old code on the new schema; the former role restarted on neither).
 11. Traefik route with the role's own template (dual router, the HTTP router
     with its redirect, `X-Forwarded-Host`), restart Traefik on change.
 12. Read-only `/healthz` check (200).
@@ -138,20 +138,18 @@ over without rewriting files or restarting weeknotes-home or Traefik.
 Differences:
 
 - `src/daybook.egg-info` is excluded from the sync. `uv sync` builds the
-  project and leaves it; the role's `--delete` removes it, so every Ansible
-  run reports a sync change, reruns `uv sync` and restarts the service. Here
-  nothing changes on a converged host. (A matching exclude in the role would
-  stop that; the role is frozen.)
-- The role runs migrations and `collectstatic` on every deploy; here they run
+  project and leaves it. The former role's sync deleted it, so each deploy
+  reported a sync change, reran `uv sync` and restarted the service.
+- The former role ran migrations and `collectstatic` on every deploy; here they run
   when needed (see 9), so a converged deploy changes nothing.
-- The playbook's upserts always report a change; here they run only when
+- The former playbook's upserts always reported a change; here they run only when
   something differs.
-- `uv sync` uses `--frozen` as the role does, but only when needed.
+- `uv sync` uses `--frozen` and runs only when needed. The former role also used `--frozen`.
 - `apache2-utils` is not installed (the bcrypt hash is computed on the
   controller); the role's `uv_install` and `postgres_install` dependencies
   are not run (uv must be at `/usr/local/bin/uv`, see `deploy_uv_install`;
   PostgreSQL must be installed, see `deploy_postgres_install`).
-- Not ported (the playbook uses none of them): the `git` deploy method,
+- Not ported (the former playbook used none of them): the `git` deploy method,
   `traefik_enabled`, `basic_auth_enabled`, a precomputed password hash,
   `service_restart_on_change`. The backup and restore playbooks are ported
   separately ([Backup and restore](#backup-and-restore-wagtail_backup-wagtail_restore)).
@@ -181,19 +179,16 @@ Differences:
   interfaces: `manage.py shell -c`, `commands.py issueservicetoken`, the
   SQLite database, the `service` table): applied once and settled, an
   unusable token is replaced and a legacy target adopted, no secret on disk.
-- Ansible coexistence (deploys taking turns, data kept) runs from
-  ops-control: `just smoke-weeknotes-home-coexistence`.
 
 ## Backup and restore (`wagtail_backup`, `wagtail_restore`)
 
 `ops_deploy.services._lifecycle.wagtail` ports the two generic Wagtail roles;
-ops-control composes them with the values of
-`playbooks/weeknotes_home/{backup,restore}.yml`. For the restore it also
-passes the deployed site (`user` `weeknotes-home`, `site_path`
-`/home/weeknotes-home/site`): the playbook leaves them at the role defaults
-derived from the service name (`/home/weeknotes_home/site`), which does not
-exist, so its restore stops the unit and then fails before the database. Archives written by either
-tool restore with the other.
+ops-control uses the settings from the former
+`playbooks/weeknotes_home/{backup,restore}.yml` (removed 2026-11-16). The
+pyinfra restore uses the deployed site (`user` `weeknotes-home`, `site_path`
+`/home/weeknotes-home/site`). The former restore playbook used the role default
+`/home/weeknotes_home/site`, so it stopped the unit and failed before restoring
+the database. Pyinfra can read archives from the former backup playbook.
 
 | Function | Config | Role |
 |---|---|---|
@@ -251,7 +246,7 @@ failed backup never leaves a partial `latest`; `latest` with no archive fails
 with "No Wagtail backup archives found" (the role's expression falls through
 to "archive not found: <root>/latest"); the password checks run on the
 controller before the first step; a missing `site_path` is refused before
-any unit stops (the role stops them and only then fails "Require existing
+any unit stops (the former role stopped them and only then failed "Require existing
 Wagtail site for safety dump"); more than one payload directory in staging is
 refused; an unknown or unreadable unit with `stop_service` fails as the systemd module
 does.

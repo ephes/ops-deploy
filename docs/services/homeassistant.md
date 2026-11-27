@@ -839,7 +839,7 @@ host plans no change. Execution is unchanged, including the always-run work abov
   only missing packages and the desired-state step only start/enable changes;
   execution still runs `apt-get update` and the desired-state
   `systemctl daemon-reload` first. pyinfra's apt check does not resolve virtual
-  packages (Ansible's apt module does), so the system-package list names real
+  packages (the former role's Ansible apt task did), so the system-package list names real
   packages only: `libfreetype-dev` instead of `libfreetype6-dev`, which on
   Ubuntu 24.04 is only provided by `libfreetype-dev` and would otherwise plan an
   install on every run.
@@ -1091,7 +1091,7 @@ work on the host:
   and then replaces the old component directory as a whole; when that swap
   fails the old directory is put back (should even that fail, it stays as
   `custom_components/.ops-ha-old-*`, which Home Assistant ignores). A matching
-  stamp makes a repeat a no-op. The Ansible role writes the same stamp, so either
+  stamp makes a repeat a no-op. The former Ansible role wrote the same stamp, so either
   tool sees the other's install as current.
 - The cards are `timeline_card.js` and `apexcharts-card.js` (owner `homeassistant`, 0644) in `www/`
   (owner `homeassistant`, 0755). The file name stays the same across upgrades;
@@ -1181,11 +1181,11 @@ installed removes `config/gps_timeline`.
 
 Deliberate differences from the roles:
 
-- `metadata.yml` is valid YAML. The role renders its `extra_paths` list onto the
+- `metadata.yml` is valid YAML. The former role rendered its `extra_paths` list onto the
   key's line (`extra_paths:  - name: "thread"`), which no YAML parser reads, so the
   role's own restore cannot parse its archives. The restore here checks the fields
-  and the host line by line and restores archives of either tool.
-- The role rolls back only after a failed verification and only the site. Here a
+  and the host line by line and can restore archives from the former role.
+- The former role rolled back only after a failed verification and only the site. Here a
   failure while the files are copied rolls back too, the rollback also puts back
   the Thread/Matter directories, unit and route the restore overwrote (removing
   what did not exist before), works without the unit, and starts the Thread and

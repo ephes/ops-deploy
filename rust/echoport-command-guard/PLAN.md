@@ -1,5 +1,9 @@
 # Rust port of the Echoport remote command guard — implementation plan
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 Status: S0, S1, S2, S3a, S3b, S4, S5, S6, S7, H1, S8 and A1 implemented (campaign
 "Rust-Ports Runde 2", stream `rust-echoport-command-guard`; see `README.md`).
 S7 released 0.1.0 (tag `echoport-command-guard-v0.1.0` at `5b734af5`, archive
@@ -109,7 +113,10 @@ Installed on both hosts (2026-10-16):
   and 3.13) and behaves differently in places that matter here (realpath,
   section 3.3.6). The parser also becomes typed and fuzzed.
 
-### 1.3 How it is deployed today
+### 1.3 How it was deployed when this plan was written
+
+For the current pyinfra procedure, see "deploy_backup_key and
+deploy_backup_route" in ops-control's `docs/PYINFRA.md`.
 
 - Engine: **Ansible**. ops-control `docs/PYINFRA.md` ("Not registered"):
   `authorize-root-ssh.yml`, `authorize-opsgate-root-ssh.yml` and
@@ -771,20 +778,11 @@ No async runtime, no TLS, no CLI parser, no logging framework.
 
 ### 6.1 Rules for every production step
 
-- Every production step goes through ops-control's existing entry point,
-  `just pin-deploy-backup-key <host>` (positional: `staging` or
-  `production`), or the playbook it wraps, run directly. The direct form is
-  used for previews and for the rollback with `-e` (6.5). There is no new
-  deploy mechanism. The direct form, from the ops-control checkout, with the
-  same environment as the recipe:
-  ```bash
-  SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt \
-    ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml \
-    --limit <host> [--check --diff] [-e …]
-  ```
-  The recipe cannot pass `--check --diff` or `-e`. In check mode the
-  playbook's `shell` probes are skipped, so a preview never touches the
-  guard.
+- The original rollout used the former `playbooks/authorize-root-ssh.yml`
+  (removed 2026-11-16). The current ops-control procedure uses
+  `just pin-deploy-backup-key <host> 1` to preview the full pyinfra sequence
+  before `just pin-deploy-backup-key <host>`. The preview still runs the
+  pre-probe. See ops-control's `docs/PYINFRA.md` for the stage details.
 - **Deploy lock.** Before every production step:
   ```bash
   mkdir /tmp/ops-control-deploy.lock \
@@ -794,17 +792,9 @@ No async runtime, no TLS, no CLI parser, no logging framework.
   If `mkdir` fails, wait and retry. Never remove a lock you did not create.
   Release with `rm /tmp/ops-control-deploy.lock/owner && rmdir
   /tmp/ops-control-deploy.lock` right after the step.
-- Before each real run, run the direct form above with `--check --diff`
-  under the lock. Expected change: **only** the deploy key line's `command=` and
-  the guard's files. `authorize-root-ssh.yml` also applies the current
-  operator key declarations. If the diff shows anything else, stop and ask
-  the coordinator.
-- Each step needs `just install-local-library` with an ops-library at or
-  after the release containing S6. The playbook's minimum version is raised
-  in S8. Workers never bump `galaxy.yml`: the coordinator makes the
-  collection release commit (`galaxy.yml` bump plus the CHANGELOG heading) on
-  ops-library `main` right before the first production step that needs it
-  (owner decision 2026-10-21, section 9).
+- The planned diff was limited to the deploy key line's `command=` and the
+  guard's files. The original rollout also required a minimum collection
+  version and a coordinated release before the first production step.
 - **Scheduling (Q1).** This stream is scheduled last in the campaign. Its
   production steps (S9, S10a, S10b, S11a, S11b, S12) never run alongside
   another production or staging change: each step starts only when the
@@ -1180,11 +1170,14 @@ GoToSocial restore and snapshot.
 
 ### 6.5 Rollout phases
 
+The numbered phases record the original rollout plan. For the current
+pyinfra preview and deploy commands, see [section 6.1](#61-rules-for-every-production-step).
+
 1. **Install only** (S9). Steps:
    - `impl: python` with the version pinned (S9 first adds the pin to
-     ops-control's group_vars, 6.3 "As built (S8)"): first the direct `--check
-     --diff` preview, then `just pin-deploy-backup-key staging`, then the
-     same two steps for `production`;
+     ops-control's group_vars, 6.3 "As built (S8)"). The plan called for
+     previewing the former playbook with `--check --diff`, then running
+     `just pin-deploy-backup-key staging` and repeating for `production`;
    - check that the `authorized_keys` line is unchanged (the
      `ssh-keygen -lf` listing plus a `grep command=` of the line, compared
      before and after);
@@ -1262,20 +1255,12 @@ GoToSocial restore and snapshot.
 7. **Retirement in the repo** (S13, Q5): 30 days after S11b with no
    incident, or at the first runner change after that.
 
-**Emergency rollback** for both hosts, about 1 minute, while the Python guard
-is still installed (until S12):
-
-```bash
-SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt \
-  ansible-playbook -i inventories/prod/hosts.yml playbooks/authorize-root-ssh.yml \
-  --limit <host> -e echoport_remote_command_guard_impl=python \
-  -e deploy_backup_route_probe_fatal=false
-```
-
-This command depends on neither the Rust binary nor its release. With impl
-`python` the role's Rust steps are non-fatal (6.2), and the pre-probe through
-the current, possibly broken, forced command is non-fatal (6.3). The
-post-probe still verifies the Python guard. The Python guard file is always
+**Emergency switch back to the Python guard.** In ops-control, set
+`echoport_remote_command_guard_impl: python` for the affected host. Review
+`just pin-deploy-backup-key <host> 1 0`, then run
+`just pin-deploy-backup-key <host> 0 0`. The final argument allows the recipe
+to continue past a failed pre-probe. The post-probe still verifies the
+Python guard. The Python guard file is always
 installed before S12.
 
 Afterwards, record `impl: python` in host_vars. If the controller is

@@ -7,6 +7,13 @@ configuration and deploy functions. Inventory and SOPS-encrypted secrets live
 in a separate private repository, which builds a config, decrypts its secrets
 on the controller and calls a deploy function from here.
 
+Deploys run through ops-control with pyinfra. In ops-control, run
+`just pyinfra-check <service>` to review the dry run and diff before every
+`just deploy-one <service>`. For services with lifecycle routes, use
+`just backup <service>`, `just restore <service>` or `just remove-one <service>`.
+References to Ansible roles and ops-library in these docs describe where the
+ports came from. Both are retired from deployment.
+
 Status: foundation. It contains the configuration base class, secret
 references, the `sync_tree` and `secret_file` operations, deploy helpers
 (users, systemd, uv/Django, Traefik, health checks), an in-process test

@@ -1,9 +1,11 @@
 # Role parity reconciliation — 2026-10-30
 
 !!! note "Historical record"
-    The drift manifest, the parity tests and `tests/parity/` named below were
-    retired once every deploy ran on pyinfra (see the changelog); rendered host
-    files are now pinned by [golden tests](testing.md#golden-host-files).
+    Written while ops-library and Ansible were still in use. Ansible was
+    removed from ops-control on 2026-11-16 and ops-library was archived on
+    2026-11-18. The drift manifest, the parity tests and `tests/parity/` named
+    below were retired once every deploy ran on pyinfra. Rendered host files
+    are now pinned by [golden tests](testing.md#golden-host-files).
 
 Reviewed the twelve baseline failures against ops-library
 `2adca51d` (the immutable full revision is recorded per role in

@@ -2,8 +2,8 @@
 
 Port of the `fastdeploy_deploy` Ansible role (rsync method only): the
 FastDeploy API (uvicorn) with its Vue frontend, on PostgreSQL, behind Traefik
-with basic auth. FastDeploy keeps deploying *other* services with Ansible;
-this only replaces the deploy of FastDeploy itself from a local checkout.
+with basic auth. FastDeploy runs registered Echoport backup runners.
+Deployments run through ops-control with pyinfra.
 
 ```python
 from ops_deploy.services.fastdeploy import FastdeployConfig, deploy_fastdeploy
@@ -72,8 +72,8 @@ anything that could contain a quote or that FastDeploy's `RestorePolicy`
 rejects (a non-lowercase bucket, an empty prefix list, a prefix that is
 absolute, has `..` or an empty component, or lacks the trailing `/`). The
 bytes match the role's `fastdeploy_service_token_admin_users` and
-`fastdeploy_restore_policies` (ops-library 2.59.0); the role takes the initial
-user by name, so a playbook lists `{{ secrets.initial_user_name }}` where the
+`fastdeploy_restore_policies` (ops-library 2.59.0); the former role took the initial
+user by name, so the playbook listed `{{ secrets.initial_user_name }}` where the
 config sets `service_token_admin_initial_user`.
 
 ### Host-side state (`persistent_excludes`)
@@ -134,16 +134,15 @@ The role builds the frontend on every deploy. Here the controller hashes the
 build inputs (every file under `frontend/` except `node_modules`, `dist` and
 `.DS_Store`, plus the build environment) and compares the digest with
 `frontend/dist/.ops-deploy-build`, written after each build. A changed source
-file, lockfile or URL triggers a build; nothing else does. The role's build
-empties `dist/`, so the first ops-deploy run after an Ansible deploy builds
-once.
+file, lockfile or URL triggers a build; nothing else does. The former role's build emptied `dist/`. The first pyinfra run over that
+layout builds it once.
 
 ### Users in the database
 
 Which users exist is read as SHA-256 digests of the names (`psql` as
 `postgres`), so the initial user's name never shows in pyinfra's output. Only
-missing users are created; the role runs `createuser` on every deploy and
-relies on the duplicate-key error. Both commands' output is judged on the
+missing users are created; the former role ran `createuser` on every deploy and
+relied on the duplicate-key error. Both commands' output is judged on the
 host and withheld, because `createuser` can print the password hash.
 
 ### Rollout check
@@ -187,8 +186,8 @@ Traefik or basic auth, `fastdeploy_rollout_restart_enabled: false` and
 ## Backup, restore and removal
 
 `ops_deploy.services.fastdeploy` also ports `fastdeploy_backup`,
-`fastdeploy_restore` and `fastdeploy_remove`. Backups and snapshot
-directories written by either tool restore with the other.
+`fastdeploy_restore` and `fastdeploy_remove`. Pyinfra can restore archives and snapshot
+directories written by the former backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -197,7 +196,7 @@ directories written by either tool restore with the other.
 | `deploy_fastdeploy_remove(cfg)` | `FastdeployRemoveConfig(confirm=True)` | `fastdeploy_remove` |
 
 `secrets` may carry `postgres_password`; ops-control passes the service's
-password, as the playbooks do. Backup and restore run one bash script on the
+password, as the former playbooks did. Backup and restore run one bash script on the
 host (`files/lifecycle.sh`), and the password reaches it on stdin only. The
 backup exports it as `PGPASSWORD` for `pg_dump`. The restore writes it to a
 private passfile (`mktemp -d` as `postgres`, removed afterwards). A password
@@ -258,7 +257,7 @@ archive's ownership/group access separately.
   the FastDeploy privilege reduction retired stays out even when the archive
   has it: the top-level entries `retired_entries` (`fastdeploy-self`,
   `fastdeploy-self-playbook.yml`, `apt_upgrade_local`, `apt_upgrade_staging`,
-  and, as the role does since ops-library `89107b6c`, the retired
+  and, as the former role did from ops-library `89107b6c` onward, the retired
   `fastdeploy_register_service` deployment runners `fastdeploy`, `nyxmon`,
   `test_dummy`) are excluded from the services and
   runner syncs, the sudoers files `retired_sudoers` (`fastdeploy`,
@@ -291,7 +290,7 @@ stop the removal, as with the role's `ignore_errors`. Like the role, it
 leaves `/etc/sudoers.d/fastdeploy` (outside `fastdeploy_*`) alone; the deploy
 removes that retired rule. It only acts
 on what exists, so a second run changes nothing. One difference from the
-role: the database is dropped with `dropdb`. The role uses
+role: the database is dropped with `dropdb`. The former role used
 `community.postgresql`, which needs `python3-psycopg2` on the host and fails
 (ignored) without it.
 
@@ -329,6 +328,3 @@ role: the database is dropped with `dropdb`. The role uses
   narrow rule (`visudo -c` passes). A broken archive (no env file) fails the
   restore, which rolls back to its safety backup. Removal twice (the second without change), then a fresh
   deploy.
-- Ansible coexistence runs from ops-control: `just smoke-fastdeploy-coexistence`.
-  Deploys take turns with this deploy, and backup, restore and removal run
-  across the tools.

@@ -5,8 +5,7 @@
 `jellyfin_backup`, `jellyfin_restore`, `navidrome_backup` and
 `navidrome_restore` roles (ops-library `44a532ba`, recorded in the drift
 manifest together with `metube_shared`, `navidrome_shared` and
-`restore_preserve_internal`). None of them needs secrets. Backups written by
-either tool restore with the other.
+`restore_preserve_internal`). None of them needs secrets. Pyinfra can restore archives written by the former backup roles.
 
 ```python
 from ops_deploy.services.metube import MetubeBackupConfig, deploy_metube_backup
@@ -56,7 +55,7 @@ single files `file_mode` `0600`) and the service started again (after
 `daemon-reload`) only when the backup stopped it or failed to stop it. Then
 `manifest.yml` (Jellyfin only with `generate_manifest`) and the archive
 `<root>/<prefix>-<timestamp>.tar.gz` (`0600`, written under a hidden name and
-renamed). The directory stays next to it, as the roles leave it. With
+renamed). The directory stays next to it, as the former roles left it. With
 `fetch_local` the archive is fetched to `local_dir` (default
 `~/backups/<service>`, `dir_mode`) as a `0600` file. Then the roles' pruning:
 archives `<prefix>-*.tar.gz` beyond the newest `retain` (default `7`) by mtime,
@@ -88,7 +87,7 @@ directories are ensured, the data, config, unit, route and logs present in the
 archive are restored (files `root:root 0644`), systemd reloads when the unit
 changed, Traefik reloads when the route changed (MeTube and Jellyfin; started
 instead when it is not running, as the `service` module does; a failure is
-tolerated and Traefik is never restarted: the role's restart task cannot fire,
+tolerated and Traefik is never restarted: the former role's restart task could not fire,
 because a failed `service` task registers no `rc`), Jellyfin and Navidrome directories
 are chowned recursively to the service account (`chown -R`, which changes
 links themselves and never follows them out of the directory), the service is enabled and
@@ -102,16 +101,16 @@ Traefik's dynamic directory is restored only while no Traefik transaction
 holds its lock: the route guard runs before the program starts and again
 right before the route is written.
 
-The roles have no dry run; neither do these restores.
+These restores have no dry run, as was the case with the original roles.
 
 ### Navidrome recovery
 
-`deploy_navidrome_restore` is the port of ops-control's
-`playbooks/navidrome/restore.yml` on a Native (pyinfra) Navidrome: the role
-behind `navidrome_restore_quarantine.yml`.
+`deploy_navidrome_restore` ports the recovery procedure from the former
+`playbooks/navidrome/restore.yml` (removed 2026-11-16). After reviewing `runbooks/navidrome.md` in ops-control, use
+`NAVIDROME_RESTORE_CONFIRMED=true just restore navidrome <archive>`.
 
-- `confirm=True` is required before any host query (the playbook's
-  `navidrome_ansible_rollback=true`): this is destructive live data recovery.
+- `confirm=True` is required before any host query. This is destructive live
+  data recovery.
 - The paths are the canonical ones; any other value is refused, and there is
   no full rescan.
 - Before the role steps the program refuses, without writing anything:
@@ -128,8 +127,9 @@ behind `navidrome_restore_quarantine.yml`.
 - The archived config, unit and route go to `archived/` there, never to their
   live locations. The data is restored with the role's pre-restore copy, and
   the canonical unit starts.
-- Nothing is pruned. Afterwards: verify health and library state, then
-  `just deploy-one navidrome macmini`.
+- Nothing is pruned. Afterwards, verify health and library state, review
+  `just pyinfra-check navidrome macmini`, then run
+  `just deploy-one navidrome macmini` in ops-control.
 
 ## Tests
 

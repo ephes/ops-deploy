@@ -142,9 +142,9 @@ drops the route), no secret is read, and a second run finds nothing to do.
 Without `confirm` it refuses before any host query; an app with runtime parts
 (unit, release, account) is refused before any change, since removing those
 is a per-app port (navidrome's is `services.navidrome`). For ops-control's
-`ollama_proxy` it is the `ollama_proxy_remove` role, which deletes only the
-route file, plus the pyinfra state; that role's handler reloads Traefik and
-restarts it when the reload fails, which this removal does not do.
+`ollama_proxy`, this replaces the former `ollama_proxy_remove` role. The
+former role removed the route and reloaded Traefik, with a restart if
+the reload failed.
 
 Backup/restore and the removal of apps with runtime parts are deliberately
 separate lifecycle ports. Apt/deb,

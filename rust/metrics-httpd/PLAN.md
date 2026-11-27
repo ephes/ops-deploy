@@ -1,7 +1,9 @@
 # metrics-httpd: Rust port of the small Python HTTP endpoint daemons — plan
 
 > **Amendment 2026-11-24.** This plan records how the port was built against
-> the ops-library scripts. Three things it says are history now; the places
+> the ops-library scripts. Ansible was removed from ops-control on 2026-11-16
+> and ops-library was archived on 2026-11-18. Three changes to the test and
+> runtime contracts are recorded here; the places
 > are marked "(2026-11-24: ...)" below, and the crate `README.md` and
 > `TESTMAP.md` describe the current state.
 >
@@ -168,7 +170,7 @@ header, the reason phrase or the byte layout of the JSON.
 
 ---
 
-## 2. Deploy mechanism today (per unit)
+## 2. Deploy mechanism when this plan was written (per unit)
 
 All production deploys run from the controller under the shared deploy lock
 (section 10.1). Engine per `ops-control/services-metadata.yml` at
@@ -1021,6 +1023,9 @@ the health endpoint back through pyinfra only.
 
 ### 7.5 Rollback
 
+The steps below record the original rollout procedure. For current rollback
+via pyinfra, see the [metrics-httpd switch instructions](../../docs/services/metrics_httpd.md).
+
 - Normal: set `<role>_impl: python` (or `metrics_httpd_impl: python`) and
   deploy the unit through its engine (section 2). The drop-in disappears,
   systemd restarts the Python script that every deploy keeps installed.
@@ -1251,12 +1256,10 @@ wait and retry; never remove a lock you did not create), then write
 <ISO time>`); release with `rm owner && rmdir` after the step's verification.
 One lock per step, not per slice.
 
-Before each deploy: the engine's preview (pyinfra: `just pyinfra-check
-<service> <host>`; Ansible: the playbook in `--check --diff`), proceeding
-only if the diff touches the metrics-httpd install, the drop-in and the
-restart of the switched units. For `deploy-openclaw.yml` and `deploy-dns.yml`
-(large playbooks) this preview is mandatory; anything else in the diff stops
-the step and goes to the coordinator.
+The rollout required a preview before each deploy. The expected diff was
+limited to the metrics-httpd install, the drop-in and the restart of the
+switched units. Today, review `just pyinfra-check <service> <host>` before
+`just deploy-one <service> <host>` in ops-control.
 
 ### 10.2 Install without switching (S6)
 
@@ -1329,9 +1332,8 @@ of section 9 recorded per host. Report in ops-control
 `just deploy-one tailscale staging` and `just deploy-one os_apt_maintenance`
 (the other hosts get no change). Verify: role verify tasks; the staging
 Nyxmon checks for both endpoints stay OK for ≥ 3 check intervals; access log
-lines in the journal; memory per section 9. Rollback drill (Ansible): flip
-tailscale staging back to `python`, deploy, verify the Python process and
-the check, flip forward again. Emergency drill on `os-apt-maintenance-endpoint`
+lines in the journal; memory per section 9. The planned rollback drill was to switch tailscale staging back to `python`,
+verify the Python process and the check, then switch forward again. Emergency drill on `os-apt-maintenance-endpoint`
 (staging): the manual drop-in removal of 7.5, verify Python, then redeploy to
 restore Rust. 24 h soak before S9.
 

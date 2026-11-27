@@ -1,5 +1,9 @@
 # Remaining Weeknotes operator composition
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 Preserve the remaining four original workflows: install-epoch, rollback,
 rotate-auth and guarded reconcile-enable. The five explicit identity actions
 stay unchanged. No actual app, posts, auth rotation or schedule is executed for

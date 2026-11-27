@@ -110,8 +110,8 @@ Returns a `Rollout` with the operation metas:
    `always_restart`, there is no restart directly after step 3 started the
    service in the same run.
 
-The roles enable, start and then restart via handlers, so a first Ansible run
-starts the service and then restarts it. Here it is started once.
+On a first run the former Ansible roles enabled and started the service,
+then restarted it through a handler. Pyinfra starts it once.
 
 ## `uv_sync(project_dir, *, user, home, venv=None, python=None, args=..., uv=/usr/local/bin/uv, when_changed=None)`
 
@@ -175,8 +175,8 @@ synced source checkout, `verify_trust` right after their `uv_sync` on every
 run, so a run after a failed check checks again). mailgun_relay does the same
 for its rsync Python source and runs `verify_trust` for both methods;
 paperless uses `verify_trust`, and homeassistant has its own checks. toyweb renders its own
-`pyproject.toml` without a lock and is not covered. The same floors are
-enforced by ops-library's `python_security_floor` role for the Ansible deploys.
+`pyproject.toml` without a lock and is not covered. The former `python_security_floor` role enforced the same floors for
+Ansible deploys.
 
 ## `django_manage(project_dir, *command, user, home, venv, env_file=None, when_changed=None, name=None)`
 
@@ -228,7 +228,7 @@ ops-deploy sets `stsPreload` (`tests/test_traefik_hsts.py`).
   `htpasswd` on the target.
 - The hash already in the deployed file is **reused** if it still verifies
   against the password. bcrypt salts are random, so re-hashing on every run
-  (as the roles do) would rewrite the file and restart Traefik on every
+  (as the former roles did) would rewrite the file and restart Traefik on every
   deploy. A rotated password produces a new hash and one restart.
 - Hashes written by `htpasswd` (as the retired Ansible roles did) are reused
   as well, which is why services moved from the roles kept their files.
@@ -295,12 +295,9 @@ nothing" is checked as `run.mutating_changed_ops == []`. Use
 
 ## Pinned Rust release binaries: `ops_deploy.helpers.rust_release`
 
-The pyinfra side of ops-library's internal role `rust_release_binary`
-(ops-library `rust/PLAN-foundation.md` 6.1 and 6.3, slice F4). It installs,
-pins and prunes release binaries of the Rust crates in ops-library's `rust/`
-(`metrics-httpd`, `echoport-command-guard`, `software-live`). It uses the
-same on-host layout and writes the same files with the same bytes as the role,
-so Ansible and pyinfra can take turns on a host:
+This port of the former `rust_release_binary` role installs, pins and prunes
+release binaries of the Rust crates in ops-deploy's `rust/` directory. It
+keeps the on-host layout and pin file format used by the former role:
 
 ```
 <root>/<version>/<name>              root:root 0755, never modified in place
@@ -339,7 +336,7 @@ prune_releases("metrics-httpd", protect=live_executables, after=[installed])
   Unknown/failed probes conservatively classify the step as managed. Validation
   still checks the archive marker and executable version every run; a different archive for it is
   refused (an installed version is never replaced in place). A new version is
-  downloaded from `release_url` (default: the ops-library GitHub release
+  downloaded from `release_url` (default: the ops-deploy GitHub release
   `<name>-v<version>`) or uploaded from `local_archive` (checked against
   `sha256` when both are given). The archive's sha256 must match, and it must
   hold exactly `members` (default `[name, "LICENSE"]`) as regular files at
@@ -455,22 +452,22 @@ roles. The Traefik YAML is pinned by `tests/test_traefik_route_golden.py`.
    fastdeploy templates line for line except for comments. The first
    ops-deploy run over an Ansible-deployed route therefore rewrites it once
    and restarts Traefik once. Use `renderer=` for a byte-identical file.
-2. **Stable basic-auth hash.** The roles re-hash the password on every run, so
-   their route file (and Traefik) changes on every deploy. Here a still-valid
-   deployed hash is reused.
+2. **Stable basic-auth hash.** The former roles rehashed the password on every run,
+   rewriting the route file and restarting Traefik. Pyinfra reuses a
+   still-valid deployed hash.
 3. **uv/Django change reporting.** When `uv_sync` or `django_manage` run,
    pyinfra counts them as changed. The roles parse uv/`manage.py` output
    instead. The `when_changed` gates keep a no-op deploy free of them.
 4. **Traefik restart only if running.** The route's restart only restarts a
    running Traefik. The roles' handler would also start a stopped one.
 5. **One start on the first deploy.** `service_rollout` starts a new service
-   once. The roles start it and then restart it from a handler.
+   once. The former roles started it, then restarted it from a handler.
    `always_restart=True` restarts even then.
 6. **PostgreSQL install separate.** `postgres_database` manages the role,
-   database and schema owner only; the roles also install and configure the
+   database and schema owner only; the former roles also installed and configured the
    server through their `postgres_install` dependency, which is
    [`deploy_postgres_install`](../infra.md) here. A changed password is
-   set as a SCRAM verifier computed on the controller (the role sends the
+   set as a SCRAM verifier computed on the controller (the former role sent the
    password).
 
 ## Service homes: `ops_deploy.services._service_home`

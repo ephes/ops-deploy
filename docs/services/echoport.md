@@ -1,7 +1,7 @@
 # echoport
 
 Port of the `echoport_deploy` Ansible role (rsync method, uv) and of the steps
-ops-control's `playbooks/deploy-echoport.yml` runs around it: the loopback
+from the former `playbooks/deploy-echoport.yml` (removed 2026-11-16): the loopback
 listener check and the Nyxmon health check. Echoport is the backup
 orchestrator: a Django app (granian) on one SQLite database, behind Traefik,
 with three cron jobs of the service user (scheduled backups, retention cleanup,
@@ -162,8 +162,8 @@ for another single-file release.
     or absent as configured, with their log files (`0640`) and, for the staging
     refresh, `staging-db-refresh.sh` (`0750`). A script reads the crontab,
     changes only the job's two lines (a header-less identical job line is
-    adopted, as Ansible does) and writes it back only if something differs, so
-    other entries survive and neither tool adds a second copy.
+    adopted, as the former role did) and writes it back only if something
+    differs, so other entries survive and no duplicate is added.
     `/etc/logrotate.d/echoport` (`root:root 0644`) rotates the enabled jobs'
     logs weekly or from `logrotate_max_size`, as the service user (`su`: the
     log directory is not root's), keeping `logrotate_keep` compressed copies;
@@ -175,7 +175,7 @@ for another single-file release.
     `minio_account`: its user and `minio_secret_key`). A read-only probe
     prints a digest of the stored URL and credentials; if it differs from the
     configured ones, `mc alias import` is run with the credentials on stdin
-    (the role's `mc alias set` puts them in the host's process list). Then a
+    (the former role's `mc alias set` put them in the host's process list). Then a
     read-only `mc ls <alias>/<bucket>` proves the bucket is reachable. The
     same for each of `store_aliases`, after `minio_alias`.
 13. Read-only checks: Echoport listens on the app port and only on
@@ -253,19 +253,17 @@ the account may and may not do, the refusals, and no credential in any output.
 Differences, all on the "change only what differs" side:
 
 - migrate, collectstatic, the admin account, the account's policy and user
-  (the role creates the policy and upserts the user on every run), the `mc`
-  alias, the crontab and the Nyxmon check run only when needed (the role and playbook run migrate,
-  collectstatic and `ensure_superuser` on every deploy and rewrite the route
-  with a fresh bcrypt hash, so Traefik restarts on every Ansible run);
+  (the former role created the policy and upserted the user on every run), the `mc`
+  alias, the crontab and the Nyxmon check run only when needed (the former role and playbook ran migrate,
+  collectstatic and `ensure_superuser` on every deploy and rewrote the route
+  with a fresh bcrypt hash, so Traefik restarted every time);
 - the recursive `chown` of the site runs only when a file is not owned by the
-  service user (the role also resets the group on every run, which Ansible
-  reports as a change every time);
+  service user (the former role also reset the group on every run and reported it as a change);
 - the venv is removed and recreated only when it is broken or on the wrong
   Python, as in the role;
 - `db.sqlite3-*` (journal, WAL, SHM) is excluded from the sync as the role's
   `db.sqlite3-*` exclude does, and the role's file-time comparison is a
-  checksum comparison here: after pyinfra installed a tree (or synced changed
-  files), the next Ansible run resyncs the same content once and restarts.
+  checksum comparison here, so differing timestamps alone do not trigger a sync.
 
 ## Tests
 
@@ -290,5 +288,3 @@ Differences, all on the "change only what differs" side:
   a fresh clone, a code change); no secret outside its files, the database
   kept across the code change, units, loopback listener, the route's basic
   auth, the crontab. No MinIO and no Nyxmon.
-- MinIO, Nyxmon and Ansible coexistence run from ops-control:
-  `just smoke-echoport-coexistence`.

@@ -97,8 +97,8 @@ TLS. Inventory deployment qualification is separate. The original failed run
 ## Backup and restore
 
 `ops_deploy.services.snappymail` also ports `snappymail_backup` and
-`snappymail_restore`. Neither needs secrets; archives written by either tool
-restore with the other.
+`snappymail_restore`. Neither needs secrets. Pyinfra can restore archives written by the former
+backup role.
 
 | Function | Config | Role |
 |---|---|---|
@@ -165,7 +165,7 @@ regular file named `snappymail.conf` below `/etc/php` (the role's `find`), the
 `/mnt/cryptdata/snappymail`, the `snappymail` user (`userdel -r`) and group;
 failures from the socket step on are ignored, as in the role.
 
-Unlike the role, nginx, Traefik and PHP-FPM are never stopped. The role stops
+Unlike the role, nginx, Traefik and PHP-FPM are never stopped. The former role stopped
 all three and relies on its `reloaded` handlers to start them again, which run
 only when their files were removed; on a host without the SnappyMail route
 Traefik (and every route on the host) stays down. Here nginx and the PHP-FPM

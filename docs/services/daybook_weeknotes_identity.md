@@ -3,7 +3,7 @@
 `WeeknotesIdentityConfig` and `run_weeknotes_identity` expose the original
 separate `prepare`, `dry-run`, `apply`, `verify` and `status` operator actions.
 They do not install/update Sessions, rotate auth, reconcile a week or activate
-a timer. Normal role deployment does not select this rail. Apply requires the
+a timer. Normal pyinfra deployment does not select this rail. Apply requires the
 original phrase `APPLY monday-after-v1 draft identity migration`.
 
 The config requires the original non-root owner, exact forty-hex resolved Main

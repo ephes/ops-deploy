@@ -1,10 +1,11 @@
 # How rust/ came to ops-deploy
 
 The Rust workspace was written in ops-library (`github.com/ephes/ops-library`)
-from 2026-10-21 on. ops-library was archived on 2026-11-17 with its final
-commit `46a674c2`; it held the only source of the four crates and the only
-release pipeline (`.github/workflows/rust-release.yml`). On 2026-11-18 the
-workspace moved here (owner decision, design
+from 2026-10-21 on, while ops-control still used Ansible. Ansible was removed
+from ops-control on 2026-11-16. Ops-library was archived on 2026-11-18 with
+final commit `46a674c2`. It had held the only source of the four crates and
+the only release pipeline (`.github/workflows/rust-release.yml`). The
+workspace moved here on 2026-11-18 (owner decision, design
 `rust-tools-home-20261117`, option a): the Rust ports now sit next to the
 Python originals and the install helper they replace.
 

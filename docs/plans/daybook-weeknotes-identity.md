@@ -1,5 +1,9 @@
 # Weeknotes identity operator conversion plan
 
+> **Historical.** Written while ops-library and Ansible were still in use.
+> Ansible was removed from ops-control on 2026-11-16. Ops-library was
+> archived on 2026-11-18.
+
 ## Scope
 
 Port the existing explicit prepare, dry-run, apply, verify and status rail.

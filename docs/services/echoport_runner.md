@@ -3,8 +3,8 @@
 `ops_deploy.services._echoport_runner` holds what the Echoport backup runners
 that FastDeploy starts have in common: the port of ops-library's
 `fastdeploy_runner` role, the runner templates of its `echoport_backup` role,
-and the pieces the ops-control register playbooks share
-(`playbooks/common/*.yml`). Each runner is ported in a slice of its own,
+and the pieces shared by the former ops-control register playbooks
+(`playbooks/common/*.yml`, removed 2026-11-16). Each runner is ported in a slice of its own,
 which adds its config in ops-control and its own entry point (design note
 `ECHOPORT-FASTDEPLOY-REGISTRATIONS-20261105` on ops-meta's `pyinfra-port`
 branch, §3 and §3.8). The same-host root runners (class A1) use
@@ -15,7 +15,7 @@ which serves many Echoport targets, uses `generic.register_generic_runner`.
 
 ## Runner installation (`RunnerConfig`, `deploy_runner`)
 
-`RunnerConfig` carries the `fastdeploy_runner_*` variables a playbook passes;
+`RunnerConfig` carries the `fastdeploy_runner_*` variables the former playbooks passed;
 `None` means the role's default, derived from the other values as the role
 derives it. Validation is the role's first task: a service name of
 `[a-z0-9][a-z0-9_-]*`, steps, exactly one of `template` (a vendored runner
@@ -61,21 +61,20 @@ moved on here after their registration moved to pyinfra (2026-11-09,
 restores onto a fresh install, below), and
 `villakunterbunt_staging_backup.py.j2` (2026-11-10: the restart of the
 staging services is armed before the first stop and tries every service,
-so a failed Django stop or start no longer leaves Next.js down). ops-deploy is their source;
-ops-library's copies stay as they were and serve only the Ansible rollback
-of the register playbooks.
+so a failed Django stop or start no longer leaves Next.js down). The copies
+in ops-deploy are the ones used for deployment.
 `render.render_runner(template, variables)` renders one as Ansible's
-`template` module does (`trim_blocks`, the final newline restored,
-`StrictUndefined`) with ansible-core's `to_json`, `bool` and
-`regex_replace`. `variables` are the playbook's values, already resolved; a
+`template` module did (`trim_blocks`, the final newline restored,
+`StrictUndefined`), reproducing its `to_json`, `bool` and
+`regex_replace` filters. `variables` are the resolved inputs; a
 name the template reads with `default(...)` may be left out.
 `render.render_text` renders a playbook's inline text (a task's `content:`)
-the same way, with ansible-core's `quote` (`shlex.quote`) as well.
+the same way, including the old `quote` filter's behavior (`shlex.quote`).
 
 ## Object-store access (`access.minio_access`)
 
 The port of `common/backup_minio_account.yml`. ops-control resolves the
-target from `playbooks/vars/backup_minio_accounts.yml` into a `MinioAccess`
+target from `vars/backup_minio_accounts.yml` into a `MinioAccess`
 (target, OS user, alias, store URL, retired aliases) and passes the access key
 and secret. Every target is on RustFS with its own scoped account
 (`store: rustfs`, `scoped` and `rustfs_account` true, the defaults; anything
@@ -122,7 +121,7 @@ for the name, either the inventory host's pin (used only when that host's
 planning. The line is written as `known_hosts` `state: present` writes it (an
 entry of the same type replaced in place, anything else appended); the file
 keeps its owner and mode. `known_hosts_entries` takes several names for one
-file (the production-db playbooks include the task twice): every key is
+file (the former production-db playbooks included the task twice): every key is
 resolved first, then the names are applied in order, each to the file the
 previous one left (the host's `ssh-keygen -F` answers are read once and moved
 past a replaced line), and the result is written in one upload. With
@@ -132,14 +131,14 @@ describe the file); an unchanged one is left alone.
 
 Unlike the include, the result keeps one copy of each name's key line and
 drops those names' `# <name>:22 SSH-...` banner comments. Until 2026-10-22
-every register run appended the controller's `ssh-keyscan` output again
+the former register playbooks appended the controller's `ssh-keyscan` output again
 (on 2026-11-10 deploy's known_hosts on macmini held 51 copies of staging's
 line, 21 of production's and 70 banners), so the next `just register-one` of
 a runner with these names removes the leftovers in the same upload. Only exact
 (whitespace-normalized) copies of the wanted line go: hashed and multi-host
 entries, other hosts and a different key of the same type stay; a file
-without duplicates is unchanged. The Ansible playbook (the rollback) still
-leaves duplicates alone.
+without duplicates is unchanged. The former playbooks left existing duplicates
+in place.
 
 ## Same-host root runners (`registration`)
 
@@ -250,15 +249,15 @@ graphyard-backup, vaultwarden-backup) are the same registration with the playboo
 (all optional fields):
 
 - `template_markers`: texts the vendored template must contain (the
-  playbooks' "Require the ... runner in the ops-library checkout");
-- `credential_files` (`CredentialFile`): a file the playbook writes with
+  markers checked by the former playbooks);
+- `credential_files` (`CredentialFile`): a file the former playbook wrote with
   `copy: content:` from a secret. `template` is the task's content text
   unchanged, `variables` the names it reads that hold no secret, `secrets`
   the names whose values `install_registration(..., credentials=...)`
   passes. The directory is made with the configured owner and mode (root
   `0700`), the file is written with `ops.secret_file` (root `0600`), after
-  the object-store access as the playbook writes it. `render.render_text`
-  renders it as Ansible renders a module argument (the final newline kept,
+  the object-store access as the former playbook wrote it. `render.render_text`
+  renders it as Ansible rendered a module argument (the final newline kept,
   `to_json` with ASCII escapes);
 - `target` (`RunnerTarget`, see below): after the runner, through
   `upsert_runner_target`, or `token_and_target` with
@@ -302,14 +301,14 @@ and `files/runner_nyxmon.py` runs them with `python3 -I`:
 
 - while planning, the playbook's `stat` of the database: without it nothing
   is planned and the deploy logs that it skips the step, as graphyard's
-  playbook does; with `require_database` (vaultwarden's playbook asserts the
+  former playbook did; with `require_database` (Vaultwarden's former playbook asserted the
   database) the deploy stops before any write;
 - **check**: the script runs with `sqlite3.connect` opening the database read
   only; `unchanged` when it ends with `changed=false`, `pending` when it
   would write, `refused: <reason>` when it fails otherwise (the deploy then
   stops before any write);
 - **apply**: only when the check did not say `unchanged`; the script runs as
-  the playbook runs it, then the check must say `unchanged`.
+  the former playbook ran it, then the check must say `unchanged`.
 
 The script and its values (the check data, which may carry a monitor login
 under a harmless name) travel on stdin, never in argv; only the playbook's
@@ -344,7 +343,7 @@ the deploy user: its sudoers file has the `fastdeploy -> deploy` line only.
 
 `register_deploy_runner(cfg, secret_key=..., ssh_key=..., source=...)` takes
 the target's account secret, the deploy key pair (`DeployKey`) exactly when
-the playbook installs it, and a media runner's source (`MediaSource`: the
+the former playbook installed it, and a media runner's source (`MediaSource`: the
 bucket, which becomes the template's `<prefix>_source_bucket`, and the S3
 credentials); a missing or extra one refuses. The config refuses what the
 playbooks refuse or never do: a template that is no vendored runner or lacks
@@ -366,19 +365,19 @@ written: the rows stay managed by hand.
 
 Class B part 2 (django-chat-staging-db, ggs-lennestrasse-staging-db,
 mastodon-production-db, marina-production, gotosocial) are deploy-user
-runners whose playbook writes its Echoport target. Their registration has
+runners whose former playbooks wrote their Echoport targets. Their registration has
 these fields as well:
 
 - `target` (task `target`, after `runner` in each playbook's order): the
   playbook's own target script as for the same-host class B runners, with
   `register_deploy_runner(..., token_user=...)` for the token step;
 - `ssh_key_public` false (django-chat, ggs-lennestrasse and mastodon; the
-  other two install no key): those playbooks install the private key only
+  other two install no key): those playbooks installed the private key only
   (`DeployKey(private=...)`, no `id_ed25519.pub`);
 - `template_markers`: as for `RunnerRegistration`;
 - `min_pg_restore_major` (task `pg_restore`, mastodon): the playbook's
   "Require a pg_restore that reads production's dumps", a read-only step
-  after the packages (as the playbook reads the version after installing
+  after the packages (as the former playbook read the version after installing
   `postgresql-client`), failing when `pg_restore --version`'s PostgreSQL
   major is lower; a pg_restore that is already installed and too old
   refuses while planning when the packages are already installed (the
@@ -386,13 +385,13 @@ these fields as well:
 
 These two steps are the exceptions to "every refusal comes while planning"
 and "no Echoport row is written" above: the pg_restore check runs after the
-packages, and the target step writes the row as the playbook does (only
+packages, and the target step writes the row as the former playbook did (only
 when its check is not `unchanged`). gotosocial's, django-chat's and
-ggs-lennestrasse's scripts save on every run in the playbook; the port saves
+ggs-lennestrasse's scripts saved on every run in the former playbook; the port saves
 only when a field differs.
 
 A target with a token but no `token_user`, or a public key given where the
-playbook installs none, refuses while planning; so does a target whose bucket
+former playbook installed none, refuses while planning; so does a target whose bucket
 is not the access's. The config refuses a `pg_restore` task before
 `packages` and a `target` task before `runner` (the playbooks' order).
 
@@ -422,7 +421,7 @@ heis-production also has
   written with `ops.secret_file` because it names the FastDeploy token
   user, the deploy's `token_user`), the oneshot service and the monthly
   timer (`root:root 0644`). systemd is reloaded only when a unit changed
-  (the playbook reloads on every run); the timer is enabled and started.
+  (the former playbook reloaded on every run); the timer is enabled and started.
 
 ## Restore into a scratch destination (`_restore_scratch.py.j2`)
 
@@ -449,12 +448,12 @@ The registrations need no new variables: the defaults name the scratch files.
 `tests/test_echoport_runner_restore_scratch.py` drives the villakunterbunt
 fork through the vendored guard's `--restore-scratch` mode on a temporary root
 (live files byte for byte unchanged, every command inside the scratch dir, the
-scratch dir gone); ops-library's `tests/test_echoport_restore_scratch.py` does
+scratch dir gone); the archived ops-library test `tests/test_echoport_restore_scratch.py` covered
 the same for the marina template.
 
 ## Playbook target scripts (`target`)
 
-Several register playbooks upsert their Echoport target with a script of
+Several former register playbooks upserted their Echoport targets with a script of
 their own, which differs from the shared upsert (`services._echoport`) in
 scope, owned fields, save behaviour and refusals. A port keeps that script
 (its values from `VALUES`, a newly issued token from `SERVICE_TOKEN`) in a
@@ -470,7 +469,7 @@ scope, owned fields, save behaviour and refusals. A port keeps that script
   "Refusing implicit reactivation") or exits with a status other than 0;
 - **apply**: when a token is due and none arrives on stdin it answers
   `need-token` and runs nothing; otherwise it runs the script as the
-  playbook does.
+  former playbook did.
 
 `upsert_runner_target` (no token) and `token_and_target` (with a
 `ServiceToken`, the inputs of `common/fastdeploy_service_token.yml`) run the
@@ -488,11 +487,11 @@ set (the decision of the shared upsert and of ops-control's
 A check that fails instead of answering (Echoport broken, a migration
 missing) follows the probe convention: the apply runs and refuses the way the
 script does; a due token is then issued before the script runs, as the
-playbook issues it before its upsert. Only
+former playbook issued it before its upsert. Only
 ORM writes are watched; a script that writes through `connection.cursor()`
 is not supported.
 
-Where a playbook's script saves on every run, the port saves only when a
+Where a former playbook's script saved on every run, the port saves only when a
 field differs: a converged row keeps its `updated_at` and skips Echoport's
 `full_clean` on that run. The script and its values reach the host in
 `manage.py shell -c`'s argument, so `RunnerTarget` refuses value names that
@@ -501,9 +500,9 @@ look like a secret.
 ## The Daybook operations backup bridge (`daybook_operations`)
 
 ops-library's `daybook_operations_api_backup` role (`tasks_from:
-register_echoport`) registers a fixed-source bridge, not a
+register_echoport`) registered a fixed-source bridge, not a
 `fastdeploy_runner` script. `DaybookOperationsBackup` holds the role
-variables ops-control's playbook passes (with the target's `MinioAccess`)
+variables ops-control's former playbook passed (with the target's `MinioAccess`)
 and copies the role's asserts (fixed runner and policy paths, the access
 must be the target's, renewal window below the token lifetime).
 `install_daybook_operations_backup` (`register_daybook_operations_backup`
@@ -522,13 +521,13 @@ as a deploy) runs, in the role's order after the playbook's
 - the sudoers rule (`fastdeploy` to `deploy` and `deploy` to `root`, only
   `--config *`), validated with `visudo` first;
 - FastDeploy's `service` row, with the role's query, only when the stored
-  data differs (read while planning). Like the role it does not run
+  data differs (read while planning). It follows the former role's behavior and does not run
   `syncservices`;
 - the token and the Echoport target with the role's script
   (`files/targets/daybook_operations.py`, `token_and_target`). A new target
   gets `schedule` and status `active`; an existing one keeps its schedule
   and status unless `update_schedule` is set. The token user reaches
-  `issueservicetoken` on stdin (the role passes it in argv).
+  `issueservicetoken` on stdin (the role passed it in argv).
 
 `registered_schedule` reads, while planning, the schedule the target will
 have after the run (the role's `daybook_operations_api_backup_registered_schedule`);
@@ -539,9 +538,10 @@ that host, and runs the target script against the stand-in model.
 
 ## The generic runner (`generic`)
 
-ops-control's `register-echoport-backup.yml` runs ops-library's
-`echoport_backup` role and then `common/backup_minio_account.yml` once for
-every target the generic runner `echoport-backup` serves. The runner picks
+The former register playbook ran the `echoport_backup` role and then its
+account include once per target. To update the generic runner in ops-control,
+review `just pyinfra-check echoport_backup_runner`, then run
+`just deploy-one echoport_backup_runner`. The runner picks
 the `mc` alias by the first segment of the object key
 (`MINIO_PREFIX_ALIASES`), so each target has its own scoped account on
 RustFS and root alias. `GenericRunnerRegistration` holds the role's
@@ -565,7 +565,7 @@ Two differences from the playbook: a host without `mc` reads every alias as
 missing while planning (the pinned client is installed before the aliases);
 and the retired shared alias is looked up and removed once, with the first
 target, not once per target. The role's own `minio_alias` include is not
-ported: the playbook passes it no credentials, so it never runs.
+ported: the former playbook passed it no credentials, so it never ran.
 `tests/test_echoport_runner_generic.py` compares the runner, `config.json`
 and the sudoers rule with what the role wrote on macmini (2026-11-10, sixteen
 targets) and plans no mutating operation on that host.
@@ -573,7 +573,7 @@ targets) and plans no mutating operation on that host.
 ## Golden tests
 
 - `tests/test_echoport_runner_golden.py`: every runner script of the 28
-  register playbooks that use these templates (plus one synthetic variant
+  former register playbooks that used these templates (plus one synthetic variant
   and the generic runner as it is rendered for macmini's sixteen targets,
   `echoport-backup-macmini`), rendered from
   `tests/fixtures/echoport_runner/inputs.json`, has the sha256 recorded in

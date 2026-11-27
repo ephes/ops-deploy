@@ -1,7 +1,7 @@
 # chesslab
 
 Port of the `chesslab_deploy` Ansible role (rsync method) and of the
-operations wiring in ops-control's `deploy-chesslab.yml`: the Chesslab
+operations wiring in ops-control's former deployment playbook: the Chesslab
 trainer, a Django app served by granian on one SQLite database, behind
 Traefik with basic auth, plus its Echoport backup target and Nyxmon health
 check.
@@ -109,7 +109,7 @@ Defaults follow the role's `defaults/main.yml`.
       `schedule_required`.
     - Nyxmon (`/home/nyxmon/site`, `.env` sourced): service "Chesslab", check
       "Chesslab trainer health" on `http://<app_host>:<app_port>/healthz`.
-    - Fails when the app is not installed on the host, as the playbook does.
+    - Fails when the app is not installed on the host, as the former playbook did.
 
 Every command in the site, and every wiring command in a neighbour's site,
 has the form `cd / && runuser -u <user> -- env ... sh -c 'cd "$1" && shift && exec "$@"' sh <dir> ...`:
@@ -180,12 +180,11 @@ the route difference above (the golden cases keep `trusted_proxy_hops` at `0`).
 
 Differences:
 
-- The role's `ensure_admin`, migrations and the playbook's upserts run on
-  every deploy; the playbook's upserts always report a change. Here they run
-  only when needed, so a converged deploy changes nothing. A password changed
-  by hand in Django is reset by the next Ansible deploy, but by ops-deploy
-  only when the `users` secret changes or a user is missing.
-- `uv sync` uses `--frozen` (the role runs plain `uv sync --no-dev`, which may
+- The role's `ensure_admin`, migrations and the playbook's upserts ran on
+  every deploy. The upserts always reported a change. Here they run
+  only when needed, so a converged deploy changes nothing. The former role reset passwords changed by hand in Django on every deploy.
+  Pyinfra resets them only when the `users` secret changes or a user is missing.
+- `uv sync` uses `--frozen` (the role ran plain `uv sync --no-dev`, which may
   rewrite `uv.lock` on the host).
 - `apache2-utils` is not installed (the bcrypt hash is computed on the
   controller); the playbook's `uv_install` role is not run (uv must be at
@@ -197,7 +196,7 @@ Differences:
 ## Backup (`ChesslabBackupConfig`)
 
 `deploy_chesslab_backup(ChesslabBackupConfig(prefix=...))` is the port of
-`playbooks/chesslab/backup.yml` (the play has no role). It refuses with the
+the former `playbooks/chesslab/backup.yml` (removed 2026-11-16). It refuses with the
 play's message ("echoport-backup must be registered before Chesslab backups
 can run.") unless `/usr/local/libexec/fastdeploy/echoport-backup/backup.py`
 exists, then runs the play's shell task unchanged: a private `mktemp
@@ -222,5 +221,3 @@ backups: `ops_deploy.services._lifecycle.echoport_runner`
   runs converged; service healthy, `.env` and stamp private, users and
   profiles in the database, Traefik route; the port preflight refuses another
   listener. The wiring is off on the VM.
-- Ansible coexistence (deploys taking turns, data kept) runs from
-  ops-control: `just smoke-chesslab-coexistence`.
