@@ -256,7 +256,18 @@ def test_admin_panel_disabled_drops_the_admin_keys_from_config_json(cfg: Vaultwa
     request = smtp_request(cfg, ADMIN_CONFIG_KEYS)
     assert '"remove": ["admin_token", "disable_admin_token"]' in request
     assert [stdin for command, stdin in run.stdin if command == apply] == [request]
-    assert run.op(f"{P}Probe again: vaultwarden admin panel").read_only
+    verify = run.op(f"{P}Probe again: vaultwarden admin panel")
+    assert verify.read_only
+    # The final check retries while the service starts and goes straight to loopback.
+    assert any("$(seq 24)" in c and "--noproxy '*'" in c and "curl -q " in c for c in run.executed_commands)
+
+
+def test_the_admin_probe_follows_the_domain_path() -> None:
+    from ops_deploy.services.vaultwarden.deploy import admin_state_command
+
+    cfg = VaultwardenConfig(domain="https://vault.example.com/vw/")
+    assert "http://127.0.0.1:8000/vw/admin" in admin_state_command(cfg)
+    assert "http://127.0.0.1:8000/admin" in admin_state_command(VaultwardenConfig(domain="https://vault.example.com"))
 
 
 def test_admin_panel_enabled_sends_no_removal_and_never_probes_admin(

@@ -390,16 +390,21 @@ ADMIN_CONFIG_KEYS = ("admin_token", "disable_admin_token")
 ADMIN_DISABLED_TEXT = "The admin panel is disabled"
 
 
-def admin_state_command(cfg: VaultwardenConfig) -> str:
+def admin_state_command(cfg: VaultwardenConfig, attempts: int = 1) -> str:
     """Prints ``disabled`` when the running Vaultwarden serves the panel-off page, else ``open``.
 
-    The page body is matched on the host and never printed.
+    Direct to the loopback listener (no curl config file, no proxy), under the
+    ``domain``'s path, where Vaultwarden mounts its routes. ``attempts`` > 1
+    retries every 5 s while the answer is not ``disabled`` (a service that is
+    still starting). The page body is matched on the host and never printed.
     """
 
-    url = f"http://{cfg.rocket_address}:{cfg.rocket_port}/admin"
+    path = re.sub(r"^https?://[^/]*", "", cfg.domain).rstrip("/")
+    url = f"http://{cfg.rocket_address}:{cfg.rocket_port}{path}/admin"
+    one = f"curl -q -fsS --noproxy '*' --max-time 10 {shlex.quote(url)} | grep -qF {shlex.quote(ADMIN_DISABLED_TEXT)}"
     return (
-        f"if curl -fsS --max-time 10 {shlex.quote(url)} | grep -qF {shlex.quote(ADMIN_DISABLED_TEXT)}; "
-        "then echo disabled; else echo open; fi"
+        f"state=open; for i in $(seq {attempts}); do if {one}; then state=disabled; break; fi; "
+        f'[ "$i" -lt {attempts} ] && sleep 5; done; echo "$state"'
     )
 
 
@@ -579,4 +584,4 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
             name="Wait for Vaultwarden to be ready",
         )
     if admin_off:
-        verify_probe(admin_state_command(cfg), name="vaultwarden admin panel", expect="disabled")
+        verify_probe(admin_state_command(cfg, attempts=24), name="vaultwarden admin panel", expect="disabled")

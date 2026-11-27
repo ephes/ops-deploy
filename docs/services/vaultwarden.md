@@ -115,11 +115,13 @@ and the Molecule helpers (`vaultwarden_skip_*`) do not exist.
    `current` only while both keys are absent. Switching the panel back on
    needs a new token in the secrets file; the removed one is not restored.
    While planning, a read-only probe also asks the running Vaultwarden over
-   loopback whether `/admin` serves its panel-off page ("The admin panel is
+   loopback (`curl -q --noproxy '*'`, under the `domain`'s path) whether
+   `/admin` serves its panel-off page ("The admin panel is
    disabled"; matched on the host, never printed); when it does not, step 10
    restarts Vaultwarden even if nothing changed in this run (a run that
    removed the keys but failed before its restart), and after the health
-   check the same probe must answer `disabled` or the deploy fails.
+   check the same probe must answer `disabled` within 24 tries 5 s apart, or
+   the deploy fails.
 8. `/etc/systemd/system/vaultwarden.service.d/override.conf` (`0644`) with
    the role's hardening.
 9. The Traefik route `/etc/traefik/dynamic/vaultwarden.yml` (`0644`), when
@@ -132,7 +134,9 @@ and the Molecule helpers (`vaultwarden_skip_*`) do not exist.
 10. `service_rollout` of `vaultwarden.service`: systemd reloaded when the
     drop-in changed; enabled and started; restarted when a package was
     installed or the env file, config.json or drop-in changed (not right
-    after this run started it).
+    after this run started it). With the admin panel off it is also restarted
+    when the planning probe did not find the panel-off page, even right after
+    this run started it (a first deploy, or a service that was down).
 11. The health check, when enabled.
 
 A config.json check that fails (rather than answering) does not stop
