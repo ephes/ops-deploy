@@ -15,7 +15,7 @@ import pytest
 
 from ops_deploy.core import ConfigValidationError, SecretRef, SecretValues
 from ops_deploy.services.minecraft_java import MinecraftJavaConfig, deploy_minecraft_java
-from ops_deploy.services.minecraft_java.deploy import guard_command, rendered, validate_secrets
+from ops_deploy.services.minecraft_java.deploy import CONTROL_RULE_PATH, guard_command, rendered, validate_secrets
 from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 from tests.goldens import assert_golden
@@ -61,6 +61,12 @@ def values(cfg: MinecraftJavaConfig) -> SecretValues:
         {"seed": " leading space"},
         {"motd": "café"},
         {"site_path": "/tmp/server name"},
+        {"control_user": "a" * 33},
+        {"control_user": "1tile"},
+        {"control_user": 'home"lab'},
+        {"control_user": "homelab\n"},
+        {"control_user": None},
+        {"control_user": 123},
     ],
 )
 def test_invalid_config_is_refused(change: dict[str, Any]) -> None:
@@ -173,6 +179,78 @@ def test_converged_has_no_mutations_and_never_touches_backups() -> None:
     assert not run.mutating_changed_ops, run.mutating_changed_ops
     assert "backup" not in "\n".join(run.executed_commands)
     assert "fixture-rcon-password" not in "\n".join(run.executed_commands)
+
+
+def test_deploy_installs_control_rule_and_keeps_it_on_repeat() -> None:
+    cfg = config(control_user="homelab")
+    responses = {**converged(cfg), "pkaction --version": ["pkaction version 124"]}
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    content = run.upload(CONTROL_RULE_PATH)
+    assert_golden(GOLDEN / "50-minecraft-java-control.rules", content)
+    assert f"chmod 644 {CONTROL_RULE_PATH}" in run.executed_commands
+    assert f"chown root:root {CONTROL_RULE_PATH}" in run.executed_commands
+    assert "systemctl daemon-reload" not in run.executed_commands
+    assert not any("systemctl restart" in command for command in run.executed_commands)
+
+    responses.update(fakehost.file(CONTROL_RULE_PATH, content.decode()))
+    repeat = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert repeat.succeeded, repeat.error
+    assert not repeat.mutating_changed_ops
+
+
+@pytest.mark.parametrize(
+    "version_response",
+    [
+        ["pkaction version 0.105"],
+        ["unknown"],
+        {"success": False},
+    ],
+)
+def test_deploy_requires_polkit_js_support(version_response: Any) -> None:
+    cfg = config(control_user="homelab")
+    responses = {**converged(cfg), "pkaction --version": version_response}
+    with pytest.raises(ValueError, match="control_user requires polkit with JavaScript rules support"):
+        run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+
+
+def test_deploy_with_empty_control_user_revokes_the_grant() -> None:
+    cfg = config()
+    responses = {**converged(cfg), **fakehost.file(CONTROL_RULE_PATH, "old rule")}
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert run.succeeded, run.error
+    assert f"rm -rf {CONTROL_RULE_PATH}" in run.executed_commands
+    assert "systemctl daemon-reload" not in run.executed_commands
+    assert not any("systemctl restart" in command for command in run.executed_commands)
+
+
+@pytest.mark.parametrize(
+    ("service_state", "failing_command"),
+    [
+        ("started", "test -x /usr/lib/jvm/"),
+        ("started", "echo > /dev/tcp/127.0.0.1/25565"),
+        ("stopped", "systemctl stop minecraft-java"),
+    ],
+)
+def test_deploy_revokes_control_before_runtime_failure(service_state: str, failing_command: str) -> None:
+    cfg = config(service_state=service_state)
+    responses = {
+        **converged(cfg),
+        **fakehost.file(CONTROL_RULE_PATH, "old rule"),
+        failing_command: {"success": False},
+    }
+    run = run_deploy_fake(deploy_minecraft_java, cfg, values(cfg), responses=responses)
+    assert not run.succeeded
+    revoke = run.executed_commands.index(f"rm -rf {CONTROL_RULE_PATH}")
+    failure = next(index for index, command in enumerate(run.executed_commands) if failing_command in command)
+    assert revoke < failure
+
+
+def test_control_rule_uses_the_configured_unit() -> None:
+    cfg = config(control_user="_tile-01", service_name="minecraft-custom")
+    rule = rendered(cfg, "50-minecraft-java-control.rules.j2", values(cfg))
+    assert 'subject.user == "_tile-01"' in rule
+    assert 'action.lookup("unit") == "minecraft-custom.service"' in rule
 
 
 def test_changed_properties_restart_and_secret_stays_on_stdin() -> None:

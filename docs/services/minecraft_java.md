@@ -47,12 +47,33 @@ The environment retains `RCON_PASSWORD` for existing backup scripts.
 | `port`, `rcon_port` | 25565, 25575; must differ |
 | `firewall_allowed_networks` | required nonempty CIDR list; no private network defaults |
 | `service_state` | `started`; `stopped` keeps the unit stopped while converging runtime/configuration; enablement remains true |
+| `control_user` | Empty by default. An existing local account can be granted permission through polkit to start and stop `<service_name>.service`. |
 | `rcon_enabled`, `firewall_enabled` | true required; disabling either is deliberately unsupported |
 | `difficulty`, `gamemode`, `max_players`, `pvp` | normal, survival, 20, true |
 | `motd`, `seed`, `level_type` | A Minecraft Server, empty, `minecraft:normal`; MOTD/seed are printable ASCII without backslashes |
 | `online_mode`, `view_distance`, `simulation_distance`, `spawn_protection` | true, 10, 10, 16 |
 | `allow_flight`, `allow_nether`, `generate_structures`, `max_world_size` | false, true, true, 29999984 |
 | `whitelist_enabled`, `whitelist_players`, `ops` | false, empty, empty; empty operators and disabled whitelist retain existing files, matching the role |
+
+Setting a control user requires the polkit JavaScript rules backend
+(polkit 0.106 or newer and an existing `/etc/polkit-1/rules.d` directory).
+Ubuntu 22.04 ships polkit 0.105 with legacy `.pkla` support only, so this
+option is unavailable with its stock packages.
+
+The control user can start and stop the configured unit with `systemctl`
+without sudo. The deploy installs
+`/etc/polkit-1/rules.d/50-minecraft-java-control.rules` as root:root with mode
+`0644`. When `control_user` is empty, the deploy removes the rule before
+runtime changes. Polkit picks up the change automatically. The rule makes
+no decision on unmatched requests. Those fall through to the host's other
+polkit policy, which by default denies unmatched systemd management requests
+from a non-admin system user without a session.
+
+The deployment accepts a residual risk in systemd 255, which passes only the
+unit and verb to polkit and omits the job mode. The control user can submit a
+start or stop job with `--job-mode=flush`, which can cancel other units'
+pending jobs. Systemd refuses `isolate` because the Minecraft unit has no
+`AllowIsolate`.
 
 Artifact URLs must use HTTPS without credentials, query strings or fragments.
 Downloaded JARs are verified and atomically replaced entirely as the service
@@ -157,8 +178,9 @@ A root account, `/`, a top-level directory or a traversal as `home` is refused.
 
 The role's order, with its ignored failures (marked *ignored*):
 
-1. stop the service (*ignored*), then disable it (*ignored*), with the
-   `systemd` module's semantics (an absent unit is a failure, ignored);
+1. remove the polkit start/stop rule, stop the service (*ignored*), then
+   disable it (*ignored*), with the `systemd` module's semantics (an absent
+   unit is a failure, ignored);
 2. remove `/etc/systemd/system/<service_name>.service` and reload systemd;
 3. remove the user crontab job named `Minecraft world backup` the way the
    `cron` module does (every `#Ansible: Minecraft world backup` line with the
@@ -293,7 +315,8 @@ Forge server. They were recorded when they equalled the role's renders
 (ops-library `3110a0f1`) except the deliberate env/unit
 change that keeps the RCON password out of process arguments and accepts
 Forge's successful RCON shutdown status, and the explicit JDK binary in place
-of `/usr/bin/java` (unit and Forge wrapper). The public path
+of `/usr/bin/java` (unit and Forge wrapper). The polkit rule has a shared
+golden file rendered from the Ansible template. The public path
 and network defaults are generic, and RCON/firewall disabling and custom Forge
 artifact paths are refused instead of being silently ignored. The role's local
 cron backup path is intentionally excluded: use an independently approved

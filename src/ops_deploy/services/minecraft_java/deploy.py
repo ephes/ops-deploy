@@ -8,10 +8,12 @@ import re
 import shlex
 from collections.abc import Generator
 from functools import partial
+from io import StringIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlsplit
 
+from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pyinfra import host
 from pyinfra.api import StringCommand, deploy, operation
@@ -21,14 +23,17 @@ from pyinfra.facts.server import Command
 from pyinfra.operations import apt, files, server, systemd
 from pyinfra.operations.util import any_changed
 
-from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
+from ops_deploy.core.config import UNIX_USER_PATTERN, BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretContent, SecretValues
 from ops_deploy.core.templates import render
 from ops_deploy.helpers import mark_read_only, service_rollout, systemd_unit
 from ops_deploy.helpers.probes import probe, verify_probe
 from ops_deploy.ops import secret_file, secret_stdin
+from ops_deploy.services._lifecycle.ansible_remove import absent
 
 PACKAGE = "ops_deploy.services.minecraft_java"
+POLKIT_RULES_DIR = "/etc/polkit-1/rules.d"
+CONTROL_RULE_PATH = f"{POLKIT_RULES_DIR}/50-minecraft-java-control.rules"
 SafeText = Annotated[str, Field(pattern=r"^[^\r\n\\]*$")]
 PropertiesText = Annotated[str, Field(pattern=r"^[\x20-\x5B\x5D-\x7E]*$")]
 Name = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
@@ -58,6 +63,7 @@ class Mod(BaseModel):
 class MinecraftJavaConfig(BaseServiceConfig):
     required_secret_keys: ClassVar[tuple[str, ...]] = ("rcon_password",)
     service_name: ServiceName = "minecraft-java"
+    control_user: str = ""
     user: UnixUser = "minecraft"
     group: UnixUser = "minecraft"
     site_path: PurePosixPath = PurePosixPath("/opt/minecraft/server")
@@ -126,6 +132,13 @@ class MinecraftJavaConfig(BaseServiceConfig):
     service_state: Literal["started", "stopped"] = "started"
     firewall_enabled: Literal[True] = True
     firewall_allowed_networks: tuple[str, ...]
+
+    @field_validator("control_user")
+    @classmethod
+    def valid_control_user(cls, value: str) -> str:
+        if value and not re.fullmatch(UNIX_USER_PATTERN, value):
+            raise ValueError("control_user must be empty or a valid local user name")
+        return value
 
     @field_validator("firewall_allowed_networks")
     @classmethod
@@ -313,6 +326,17 @@ def guard_command(cfg: MinecraftJavaConfig) -> str:
     )
 
 
+def _require_polkit_rules() -> None:
+    command = f"test -d {POLKIT_RULES_DIR} && LC_ALL=C pkaction --version"
+    output = host.get_fact(Command, command=command, _ignore_errors=True) or ""
+    match = re.fullmatch(r"pkaction version ([0-9]+(?:[.][0-9]+)*)", output)
+    if not match or Version(match[1]) < Version("0.106"):
+        raise ValueError(
+            "Minecraft control_user requires polkit with JavaScript rules support "
+            f"(pkaction version 0.106 or newer and an existing {POLKIT_RULES_DIR} directory)"
+        )
+
+
 @deploy("Deploy Minecraft Java")
 def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> None:
     validate_secrets(secrets)
@@ -326,9 +350,14 @@ def deploy_minecraft_java(cfg: MinecraftJavaConfig, secrets: SecretValues) -> No
     except ValueError:
         raise ValueError("Minecraft loader/world guard returned invalid state") from None
     if cfg.service_state == "started":
-        if (host.get_fact(Command, command="LC_ALL=C ufw status") or "").splitlines()[:1] != ["Status: active"]:
+        ufw_status = host.get_fact(Command, command="LC_ALL=C ufw status") or ""
+        if ufw_status.splitlines()[:1] != ["Status: active"]:
             raise ValueError("Minecraft requires active UFW before starting; no changes scheduled")
+    if cfg.control_user:
+        _require_polkit_rules()
     else:
+        absent("Remove Minecraft start and stop polkit rule when disabled", CONTROL_RULE_PATH)
+    if cfg.service_state == "stopped":
         # Stop before replacing any runtime inputs, including the old unit/env.
         systemd.service(name="Keep Minecraft stopped", service=cfg.service_name, running=False)
     apt.packages(
@@ -445,6 +474,16 @@ install -o root -g root -m 0755 "$build_dir/mcrcon" /usr/local/bin/mcrcon"""
     else:
         service_rollout(cfg.service_name, units=[unit], restart_when=changes)
         _verify_running(cfg, secrets)
+    if cfg.control_user:
+        files.put(
+            name="Install Minecraft start and stop polkit rule",
+            src=StringIO(rendered(cfg, "50-minecraft-java-control.rules.j2", secrets)),
+            dest=CONTROL_RULE_PATH,
+            user="root",
+            group="root",
+            mode="0644",
+            create_remote_dir=False,
+        )
     _put(cfg, ".loader_mode", cfg.loader_mode + "\n")
     _put(
         cfg,
