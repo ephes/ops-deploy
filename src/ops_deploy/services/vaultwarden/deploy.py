@@ -30,7 +30,6 @@ import ipaddress
 import json
 import re
 import shlex
-from collections.abc import Mapping
 from functools import cache
 from io import StringIO
 from pathlib import Path, PurePosixPath
@@ -360,15 +359,22 @@ def smtp_settings(cfg: VaultwardenConfig) -> dict[str, Any]:
     return settings
 
 
-def smtp_request(cfg: VaultwardenConfig) -> str:
-    """The stdin of ``smtp_config_sync.py`` (non-secret settings; one JSON line)."""
+def smtp_request(cfg: VaultwardenConfig, remove: tuple[str, ...] = ()) -> str:
+    """The stdin of ``smtp_config_sync.py`` (non-secret settings; one JSON line).
 
-    request: Mapping[str, Any] = {
+    ``remove`` names config.json keys to drop (``admin_token`` while the admin
+    panel is off); the key is added to the request only when it is non-empty,
+    so the request of a deploy with the panel on is unchanged.
+    """
+
+    request: dict[str, Any] = {
         "path": str(CONFIG_JSON),
         "owner": cfg.user,
         "group": cfg.user,
-        "settings": smtp_settings(cfg),
+        "settings": smtp_settings(cfg) if cfg.smtp_host else {},
     }
+    if remove:
+        request["remove"] = list(remove)
     return json.dumps(request, sort_keys=True) + "\n"
 
 
@@ -462,17 +468,20 @@ def _packages() -> OperationMeta:
     return install
 
 
-def _smtp_sync(cfg: VaultwardenConfig) -> OperationMeta | None:
+def _smtp_sync(cfg: VaultwardenConfig, remove: tuple[str, ...] = ()) -> OperationMeta | None:
     """configure.yml's config.json SMTP sync, when it exists and SMTP is configured.
 
+    With the admin panel off it also drops ``admin_token`` from config.json
+    (``remove``), with or without SMTP: a token the panel saved overrides the
+    environment file and would keep ``/admin`` open.
     A read-only check while planning decides; the merge runs on the host, so
     the file (which holds the admin token once the admin panel saved it) never
     reaches the controller.
     """
 
-    if not cfg.smtp_host:
+    if not cfg.smtp_host and not remove:
         return None
-    request = smtp_request(cfg)
+    request = smtp_request(cfg, remove)
     name = "vaultwarden config.json SMTP settings"
     state = probe(smtp_command("check"), name=name, stdin=request)
     sync = server.shell(
@@ -510,7 +519,7 @@ def deploy_vaultwarden(cfg: VaultwardenConfig, secrets: SecretValues) -> None:
         group=cfg.user,
         mode="0640",
     )
-    smtp = _smtp_sync(cfg)
+    smtp = _smtp_sync(cfg, () if admin_enabled(secrets) else ("admin_token",))
     files.directory(name=f"Ensure {DROPIN_DIR}", path=str(DROPIN_DIR), user="root", group="root", mode="0755")
     dropin = files.put(
         name="Deploy systemd override for security hardening",

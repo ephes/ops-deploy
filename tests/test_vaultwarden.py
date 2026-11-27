@@ -240,6 +240,32 @@ def test_without_smtp_host_config_json_is_not_probed(secrets: SecretValues) -> N
     assert SMTP_PASSWORD not in env
 
 
+def test_admin_panel_disabled_drops_the_token_from_config_json(cfg: VaultwardenConfig) -> None:
+    secrets = values(cfg, admin_enabled="false", admin_token="")
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"]}))
+
+    assert run.mutating_changed_ops == changed("Sync SMTP settings to config.json", "Restart vaultwarden.service")
+    apply = next(c for c in run.executed_commands if c.endswith(" apply"))
+    request = smtp_request(cfg, ("admin_token",))
+    assert '"remove": ["admin_token"]' in request
+    assert [stdin for command, stdin in run.stdin if command == apply] == [request]
+
+
+def test_admin_panel_enabled_sends_no_removal(cfg: VaultwardenConfig) -> None:
+    assert "remove" not in smtp_request(cfg)
+
+
+def test_admin_panel_disabled_without_smtp_still_checks_config_json() -> None:
+    cfg = VaultwardenConfig(domain="https://vault.example.com", secrets=SecretRef("secrets/prod/vaultwarden.yml"))
+    secrets = values(cfg, admin_enabled="false", admin_token="")
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{SMTP_CHECK: ["pending"]}))
+
+    apply = next(c for c in run.executed_commands if c.endswith(" apply"))
+    request = [stdin for command, stdin in run.stdin if command == apply]
+    assert request == [smtp_request(cfg, ("admin_token",))]
+    assert '"settings": {}' in request[0]
+
+
 def test_admin_panel_disabled_needs_no_token(cfg: VaultwardenConfig) -> None:
     secrets = values(cfg, admin_enabled="false", admin_token="")
     run = deploy(cfg, secrets, converged(cfg, secrets))

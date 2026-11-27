@@ -106,6 +106,14 @@ and the Molecule helpers (`vaultwarden_skip_*`) do not exist.
    printed. A symlink, another file type (a FIFO is opened without waiting
    for a writer), invalid JSON or a JSON value that is not an object fail
    the deploy.
+   With the admin panel off (`admin_enabled: false`) the same step also
+   removes `admin_token` from `config.json` (with or without `smtp_host`):
+   Vaultwarden reads a token the panel saved there before the environment
+   file, so without this `/admin` stays open after `ADMIN_TOKEN` left
+   `/etc/vaultwarden.env`. The request then names `"remove": ["admin_token"]`;
+   the check answers `current` only while the key is absent. Switching the
+   panel back on needs a new token in the secrets file; the removed one is not
+   restored.
 8. `/etc/systemd/system/vaultwarden.service.d/override.conf` (`0644`) with
    the role's hardening.
 9. The Traefik route `/etc/traefik/dynamic/vaultwarden.yml` (`0644`), when

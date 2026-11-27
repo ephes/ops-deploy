@@ -42,13 +42,17 @@ SAVED: dict[str, Any] = {
 }
 
 
-def run(path: Path, action: str, settings: dict[str, Any] | None = None) -> subprocess.CompletedProcess[str]:
-    request = {
+def run(
+    path: Path, action: str, settings: dict[str, Any] | None = None, remove: Any = None
+) -> subprocess.CompletedProcess[str]:
+    request: dict[str, Any] = {
         "path": str(path),
         "owner": OWNER,
         "group": GROUP,
         "settings": SETTINGS if settings is None else settings,
     }
+    if remove is not None:
+        request["remove"] = remove
     return subprocess.run(
         [sys.executable, "-I", "-c", SMTP_SYNC, action],
         input=json.dumps(request) + "\n",
@@ -234,3 +238,53 @@ def test_unknown_owner_fails(config: Path) -> None:
     assert result.returncode == 1
     assert "owner ops-deploy-no-such-user does not exist" in result.stderr
     assert config.read_text() == json.dumps(SAVED)
+
+
+def test_a_removed_key_is_dropped_and_every_other_key_kept(config: Path) -> None:
+    write(config, nice_json({**SAVED, **SETTINGS}))
+
+    assert run(config, "check", remove=["admin_token"]).stdout == "pending\n"
+    result = run(config, "apply", remove=["admin_token"])
+
+    assert (result.returncode, result.stdout) == (0, "rewritten\n")
+    expected = {key: value for key, value in {**SAVED, **SETTINGS}.items() if key != "admin_token"}
+    assert config.read_text(encoding="utf-8") == nice_json(expected)
+    assert ADMIN_TOKEN not in result.stdout + result.stderr
+    assert run(config, "check", remove=["admin_token"]).stdout == "current\n"
+
+
+def test_removal_alone_needs_no_settings(config: Path) -> None:
+    write(config, nice_json(SAVED))
+
+    assert run(config, "apply", {}, remove=["admin_token"]).stdout == "rewritten\n"
+    assert "admin_token" not in json.loads(config.read_text())
+    assert json.loads(config.read_text())["smtp_host"] == SAVED["smtp_host"]
+    assert run(config, "check", {}, remove=["admin_token"]).stdout == "current\n"
+
+
+def test_a_missing_removed_key_is_current(config: Path) -> None:
+    saved = {key: value for key, value in {**SAVED, **SETTINGS}.items() if key != "admin_token"}
+    write(config, nice_json(saved))
+
+    assert run(config, "check", remove=["admin_token"]).stdout == "current\n"
+
+
+@pytest.mark.parametrize("remove", ["admin_token", [""], [1], ["smtp_host"]])
+def test_a_malformed_removal_fails_without_writing(config: Path, remove: Any) -> None:
+    text = nice_json(SAVED)
+    write(config, text)
+
+    result = run(config, "apply", remove=remove)
+
+    assert result.returncode == 1
+    assert "malformed" in result.stderr
+    assert config.read_text() == text
+
+
+def test_an_empty_request_still_fails(config: Path) -> None:
+    write(config, nice_json(SAVED))
+
+    result = run(config, "apply", {}, remove=[])
+
+    assert result.returncode == 1
+    assert "no settings" in result.stderr
