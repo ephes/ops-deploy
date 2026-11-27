@@ -115,7 +115,10 @@ and the Molecule helpers (`vaultwarden_skip_*`) do not exist.
    `current` only while both keys are absent. Switching the panel back on
    needs a new token in the secrets file; the removed one is not restored.
    While planning, a read-only probe also asks the running Vaultwarden over
-   loopback (`curl -q --noproxy '*'`, under the `domain`'s path) whether
+   loopback (`curl -q --noproxy '*'`, under the path of the effective
+   domain: config.json's `domain` when the panel saved one, since it
+   overrides the environment file, else the role's `domain`; nothing else is
+   read from config.json) whether
    `/admin` serves its panel-off page ("The admin panel is
    disabled"; matched on the host, never printed); when it does not, step 10
    restarts Vaultwarden even if nothing changed in this run (a run that

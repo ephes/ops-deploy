@@ -7,9 +7,11 @@
   `/var/lib/vaultwarden/data/config.json` (on the host, in the existing
   config.json step; its request gains an optional `remove` list), restarts
   Vaultwarden when it did or when the running process still serves the admin
-  panel (loopback probe of `/admin`), and fails unless `/admin` then serves
-  Vaultwarden's panel-off page. Both keys in config.json override the
-  environment file, so until now switching the panel off left `/admin` open
+  panel (loopback probe of `/admin`, direct without proxy or curl config,
+  under the path of the effective domain: config.json's `domain` when the
+  panel saved one, else the role's), and fails unless `/admin` then serves
+  Vaultwarden's panel-off page within 24 tries 5 s apart. Both keys in
+  config.json override the environment file, so until now switching the panel off left `/admin` open
   on a host where the panel had saved settings. Deploys with the panel on
   send the same request as before and never probe `/admin`.
 

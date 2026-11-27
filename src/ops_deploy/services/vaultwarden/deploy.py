@@ -390,25 +390,44 @@ ADMIN_CONFIG_KEYS = ("admin_token", "disable_admin_token")
 ADMIN_DISABLED_TEXT = "The admin panel is disabled"
 
 
+# Prints the path Vaultwarden mounts its routes under: that of config.json's
+# ``domain`` when the panel saved one (it overrides the environment file), else
+# that of the role's ``domain`` (argv[2]). Nothing else from config.json is read
+# or printed.
+DOMAIN_PATH = (
+    "import json, re, sys\n"
+    "domain = sys.argv[2]\n"
+    "try:\n"
+    "    with open(sys.argv[1], encoding='utf-8') as f:\n"
+    "        saved = json.load(f).get('domain')\n"
+    "except (OSError, ValueError, AttributeError):\n"
+    "    saved = None\n"
+    "if isinstance(saved, str) and saved:\n"
+    "    domain = saved\n"
+    "print(re.sub(r'^https?://[^/]*', '', domain).rstrip('/'))\n"
+)
+
+
 def admin_state_command(cfg: VaultwardenConfig, attempts: int = 1) -> str:
     """Prints ``disabled`` when the running Vaultwarden serves the panel-off page, else ``open``.
 
     Direct to the loopback listener (no curl config file, no proxy), under the
-    ``domain``'s path, where Vaultwarden mounts its routes. ``attempts`` > 1
-    retries every 5 s while the answer is not ``disabled`` (a service that is
-    still starting). The page body is matched on the host and never printed.
+    effective domain's path (:data:`DOMAIN_PATH`), where Vaultwarden mounts its
+    routes. ``attempts`` > 1 retries every 5 s while the answer is not
+    ``disabled`` (a service that is still starting). The page body is matched
+    on the host and never printed.
     """
 
-    path = re.sub(r"^https?://[^/]*", "", cfg.domain).rstrip("/")
-    url = f"http://{cfg.rocket_address}:{cfg.rocket_port}{path}/admin"
-    one = f"curl -q -fsS --noproxy '*' --max-time 10 {shlex.quote(url)} | grep -qF {shlex.quote(ADMIN_DISABLED_TEXT)}"
+    path = shlex.join(["python3", "-I", "-c", DOMAIN_PATH, str(CONFIG_JSON), cfg.domain])
+    base = f"http://{cfg.rocket_address}:{cfg.rocket_port}"
+    one = (
+        f"curl -q -fsS --noproxy '*' --max-time 10 \"{base}$path/admin\" | grep -qF {shlex.quote(ADMIN_DISABLED_TEXT)}"
+    )
     return (
+        f"path=$({path}) || exit 1; "
         f"state=open; for i in $(seq {attempts}); do if {one}; then state=disabled; break; fi; "
         f'[ "$i" -lt {attempts} ] && sleep 5; done; echo "$state"'
     )
-
-
-# -- the role's task files ------------------------------------------------------------------
 
 
 def preflight_addresses(cfg: VaultwardenConfig) -> tuple[str, ...] | None:

@@ -262,12 +262,56 @@ def test_admin_panel_disabled_drops_the_admin_keys_from_config_json(cfg: Vaultwa
     assert any("$(seq 24)" in c and "--noproxy '*'" in c and "curl -q " in c for c in run.executed_commands)
 
 
-def test_the_admin_probe_follows_the_domain_path() -> None:
-    from ops_deploy.services.vaultwarden.deploy import admin_state_command
+@pytest.mark.parametrize(
+    ("saved", "domain", "path"),
+    [
+        (None, "https://vault.example.com", ""),
+        (None, "https://vault.example.com/vw/", "/vw"),
+        ('{"domain": "https://vault.example.com/saved"}', "https://vault.example.com/vw", "/saved"),
+        ('{"domain": ""}', "https://vault.example.com/vw", "/vw"),
+        ('{"smtp_host": "localhost"}', "https://vault.example.com", ""),
+        ("not json", "https://vault.example.com/vw", "/vw"),
+    ],
+)
+def test_the_admin_probe_follows_the_effective_domain_path(
+    tmp_path: Path, saved: str | None, domain: str, path: str
+) -> None:
+    from ops_deploy.services.vaultwarden.deploy import DOMAIN_PATH, admin_state_command
 
-    cfg = VaultwardenConfig(domain="https://vault.example.com/vw/")
-    assert "http://127.0.0.1:8000/vw/admin" in admin_state_command(cfg)
-    assert "http://127.0.0.1:8000/admin" in admin_state_command(VaultwardenConfig(domain="https://vault.example.com"))
+    config = tmp_path / "config.json"
+    if saved is not None:
+        config.write_text(saved, encoding="utf-8")
+    out = subprocess.run(
+        ["python3", "-I", "-c", DOMAIN_PATH, str(config), domain], capture_output=True, text=True, check=True
+    )
+    assert out.stdout == f"{path}\n"
+    command = admin_state_command(VaultwardenConfig(domain=domain))
+    assert '"http://127.0.0.1:8000$path/admin"' in command
+    assert "/var/lib/vaultwarden/data/config.json" in command
+
+
+@pytest.mark.parametrize(
+    ("page", "ok"), [("The admin panel is disabled", True), ("<title>Vaultwarden Admin</title>", False)]
+)
+def test_the_final_admin_check_fails_the_deploy_while_the_panel_is_open(
+    cfg: VaultwardenConfig, tmp_path: Path, page: str, ok: bool
+) -> None:
+    secrets = values(cfg, admin_enabled="false", admin_token="")
+    run = deploy(cfg, secrets, converged(cfg, secrets, **{ADMIN_CHECK: ["open"]}))
+    assert f"{P}Restart vaultwarden.service" in run.mutating_changed_ops
+    verify = next(c for c in run.executed_commands if "$(seq 24)" in c)
+
+    # Run the real verification script with curl serving ``page`` and no waiting.
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("curl", f"printf %s {shlex.quote(page)}"), ("sleep", "exit 0")):
+        (stubs / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        (stubs / name).chmod(0o755)
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
+    result = subprocess.run(["sh", "-c", verify], env=env, capture_output=True, text=True, check=False)
+    assert (result.returncode == 0) is ok
+    if not ok:
+        assert "probe answers something else than disabled" in result.stderr
 
 
 def test_admin_panel_enabled_sends_no_removal_and_never_probes_admin(
