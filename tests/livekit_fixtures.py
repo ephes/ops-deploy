@@ -15,6 +15,7 @@ from ops_deploy.core import SecretRef, SecretValues
 from ops_deploy.services.compose_app.render import render_compose, render_config, render_unit
 from ops_deploy.services.compose_app.state import desired_stamp
 from ops_deploy.services.livekit import LivekitConfig, render_route
+from ops_deploy.services.livekit.deploy import render_reserved_ports
 from tests import fakehost
 from tests.test_infra_docker_vector import docker_converged
 
@@ -26,8 +27,16 @@ STATE = "/var/lib/ops-deploy/livekit"
 UNIT = "/etc/systemd/system/livekit.service"
 ROUTE = "/etc/traefik/dynamic/livekit.yml"
 SERVER_IMAGE = "example.org/livekit/livekit-server:v1.12.0@sha256:" + "a" * 64
+# The oldest server TURN accepts (turn_domain refuses older tags).
+TURN_SERVER_IMAGE = "example.org/livekit/livekit-server:v1.13.10@sha256:" + "d" * 64
+TURN_DOMAIN = "turn.example.invalid"
+RESERVED = "/etc/sysctl.d/60-livekit-reserved-ports.conf"
 EGRESS_IMAGE = "example.org/livekit/egress:v1.13.0@sha256:" + "b" * 64
-IMAGE_IDS = {SERVER_IMAGE: "sha256:" + "1" * 64, EGRESS_IMAGE: "sha256:" + "2" * 64}
+IMAGE_IDS = {
+    SERVER_IMAGE: "sha256:" + "1" * 64,
+    EGRESS_IMAGE: "sha256:" + "2" * 64,
+    TURN_SERVER_IMAGE: "sha256:" + "3" * 64,
+}
 HOST = "livekit.example.invalid"
 WEBHOOK = "https://recorder.example.invalid/api/livekit/webhook"
 NODE_IP = "192.0.2.10"
@@ -39,6 +48,26 @@ SECRET_VALUES = {
     "s3_access_key": "fixture-s3-access",
     "s3_secret_key": "fixture-s3-secret-0123456789",
 }
+
+
+def turn_config(**changes: Any) -> LivekitConfig:
+    """``livekit_config`` with TURN on (and a server new enough for it)."""
+
+    return livekit_config(**{"server_image": TURN_SERVER_IMAGE, "turn_domain": TURN_DOMAIN, **changes})
+
+
+def reservation(cfg: LivekitConfig, *, running: str = "50000-50100", sockets: tuple[str, ...] = ()) -> dict[str, Any]:
+    """The media port reservation's facts: the running value, ``ss`` with ``sockets``, the sysctl file."""
+
+    responses: dict[str, Any] = {
+        "cat /proc/sys/net/ipv4/ip_local_reserved_ports": [running, "read"],
+        "test -x /usr/bin/ss": ["present"],
+        "/usr/bin/ss -Hnlup": [*sockets, "checked"],
+        **fakehost.directory("/etc/sysctl.d"),
+    }
+    if running:
+        responses.update(fakehost.file(RESERVED, render_reserved_ports(cfg)))
+    return responses
 
 
 def livekit_config(**changes: Any) -> LivekitConfig:
@@ -96,6 +125,8 @@ def _host(cfg: LivekitConfig) -> dict[str, Any]:
     responses.update(fakehost.service("livekit.service"))
     if cfg.traefik_host is not None:
         responses.update(fakehost.file(ROUTE, render_route(cfg)))
+    if cfg.turn_domain is not None:
+        responses.update(reservation(cfg))
     return responses
 
 

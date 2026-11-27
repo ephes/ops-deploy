@@ -8,7 +8,14 @@
   from loopback) and the route file a TCP router `livekit-turn`
   (`HostSNI(<turn_domain>)`, TLS terminated by Traefik) to
   `127.0.0.1:<turn_tls_port>` (default 5349) with a PROXY v2 header. Needs
-  livekit-server v1.13.10 or newer. Without it both files are unchanged.
+  livekit-server v1.13.10 or newer: with `turn_domain` the config refuses a
+  `server_image` without a `vX.Y.Z` tag at v1.13.10 or above. With it the
+  deploy also reserves the media range (`net.ipv4.ip_local_reserved_ports`,
+  written to `/etc/sysctl.d/60-livekit-reserved-ports.conf` and applied with
+  `sysctl -w`), after refusing when another value is reserved or another
+  program listens on a UDP or TCP port in the range, so no other
+  program's socket can land on a port a relay may reach. Without it both
+  files are unchanged and nothing is reserved.
 
 - openclaw: every deploy installs `openclaw-gateway-weekly-restart.timer`
   and its oneshot service, which run `systemctl try-restart` of the gateway

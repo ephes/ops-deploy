@@ -20,13 +20,17 @@ points the config files at them.
 from __future__ import annotations
 
 import ipaddress
+import re
 from collections.abc import Callable
+from io import StringIO
 from pathlib import PurePath, PurePosixPath
 from typing import Annotated, Any, ClassVar, Self, cast
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
-from pyinfra.api import deploy
+from pyinfra.api import DeployError, deploy
+from pyinfra.operations import files, server
 
+from ops_deploy.base._common import output, require_linux
 from ops_deploy.core.config import BaseServiceConfig, ServiceName, UnixUser
 from ops_deploy.core.secrets import SecretValues
 from ops_deploy.core.templates import render
@@ -56,6 +60,16 @@ EGRESS = "livekit-egress"
 # Where each container reads its config (the role's mount targets).
 SERVER_CONFIG = PurePosixPath("/etc/livekit/livekit.yaml")
 EGRESS_CONFIG = PurePosixPath("/etc/egress.yaml")
+# With TURN the media range is reserved: the kernel then hands none of its ports
+# to another program's unbound socket (a relay may reach every port in the range).
+RESERVED_PORTS_KEY = "net.ipv4.ip_local_reserved_ports"
+RESERVED_PORTS_RUNNING = "/proc/sys/net/ipv4/ip_local_reserved_ports"
+RESERVED_PORTS_PATH = "/etc/sysctl.d/60-livekit-reserved-ports.conf"
+RESERVED_PORTS_HEADER = "# Managed by ops-deploy livekit; local changes are overwritten.\n"
+SS = "/usr/bin/ss"
+# TURN needs v1.13.10+: older servers allow TCP relays and relays to any port of the host.
+MIN_TURN_VERSION = (1, 13, 10)
+_SERVER_TAG = re.compile(r":v?(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)@sha256:")
 
 # One line in double quotes in YAML: no quotes, backslashes, ``$`` or whitespace.
 Url = Annotated[str, Field(pattern=r"^https?://[^\s\"'\\$`]+$")]
@@ -172,6 +186,9 @@ class LivekitConfig(BaseServiceConfig):
                 raise ValueError("turn_domain must be a dotted DNS name (LiveKit and SNI need one)")
             if self.turn_tls_port in {self.http_port, self.rtc_tcp_port}:
                 raise ValueError("turn_tls_port collides with http_port or rtc_tcp_port")
+            version = server_version(self.server_image)
+            if version is None or version < MIN_TURN_VERSION:
+                raise ValueError("turn_domain needs a server_image tagged v1.13.10 or newer")
         return self
 
     @property
@@ -370,6 +387,75 @@ class LivekitConfig(BaseServiceConfig):
         return TraefikRoute(name=ROUTE_NAME, host=self.traefik_host, app_port=self.http_port)
 
 
+def server_version(image: str) -> tuple[int, int, int] | None:
+    """The ``vX.Y.Z`` of the image's tag, or ``None`` without such a tag."""
+
+    match = _SERVER_TAG.search(image)
+    if match is None:
+        return None
+    return int(match["major"]), int(match["minor"]), int(match["patch"])
+
+
+def reserved_ports(cfg: LivekitConfig) -> str:
+    """The media range as the kernel prints ``ip_local_reserved_ports`` (one port alone, else ``a-b``)."""
+
+    start, end = cfg.rtc_port_range_start, cfg.rtc_port_range_end
+    return str(start) if start == end else f"{start}-{end}"
+
+
+def render_reserved_ports(cfg: LivekitConfig) -> str:
+    return f"{RESERVED_PORTS_HEADER}{RESERVED_PORTS_KEY} = {reserved_ports(cfg)}\n"
+
+
+def foreign_sockets(shown: str) -> list[str]:
+    """Lines of ``ss -p`` output whose socket belongs to no ``livekit-server`` process."""
+
+    return [line.strip() for line in shown.splitlines() if line.strip() and '"livekit-server"' not in line]
+
+
+def _reserve_media_ports(cfg: LivekitConfig) -> None:
+    """Write and apply ``ip_local_reserved_ports`` = the media range, after the read-only checks.
+
+    Refused (before any operation) when another value is already reserved (it
+    would be overwritten; merge it by hand) or when a socket of another program
+    listens on a UDP or TCP port in the range (an unconnected UDP socket takes
+    datagrams from anyone; a connected one only from its peer and is ignored).
+    """
+
+    require_linux("livekit's media port reservation")
+    want = reserved_ports(cfg)
+    lines = output(f"cat {RESERVED_PORTS_RUNNING} && echo read").splitlines()
+    if not lines or lines[-1].strip() != "read":
+        raise DeployError(f"livekit: could not read {RESERVED_PORTS_KEY}")
+    running = "".join(lines[:-1]).strip()
+    if running not in ("", want):
+        raise DeployError(f"livekit: {RESERVED_PORTS_KEY} is {running}, not {want}; merge the ranges by hand")
+    if output(f"test -x {SS} && echo present").strip() != "present":
+        raise DeployError(f"livekit needs {SS} (iproute2) to check the media ports")
+    span = f"'( sport >= :{cfg.rtc_port_range_start} and sport <= :{cfg.rtc_port_range_end} )'"
+    shown = output(f"{SS} -Hnlup {span} && {SS} -Hnltp {span} && echo checked").splitlines()
+    if not shown or shown[-1].strip() != "checked":
+        raise DeployError("livekit: could not list the sockets in the media port range")
+    foreign = foreign_sockets("\n".join(shown[:-1]))
+    if foreign:
+        raise DeployError(
+            f"livekit: other programs hold ports in {want}; free them before TURN goes on: " + "; ".join(foreign)
+        )
+    files.put(
+        name=f"Install {RESERVED_PORTS_PATH}",
+        src=StringIO(render_reserved_ports(cfg)),
+        dest=RESERVED_PORTS_PATH,
+        user="root",
+        group="root",
+        mode="0644",
+    )
+    if running != want:
+        server.shell(
+            name=f"Set {RESERVED_PORTS_KEY} to {want}",
+            commands=[f"sysctl -w {RESERVED_PORTS_KEY}={want}"],
+        )
+
+
 def _is_ip(value: str) -> bool:
     try:
         ipaddress.ip_address(value)
@@ -394,7 +480,7 @@ def check_livekit_secrets(cfg: LivekitConfig, secrets: SecretValues) -> None:
 
 
 def deploy_livekit(cfg: LivekitConfig, secrets: SecretValues) -> None:
-    """The Compose app (``Deploy livekit | ...``), then the route (``Deploy livekit route | ...``)."""
+    """The media port reservation (with TURN), the Compose app (``Deploy livekit | ...``), then the route."""
 
     check_livekit_secrets(cfg, secrets)
     if cfg.ca_store_root is not None:
@@ -402,6 +488,12 @@ def deploy_livekit(cfg: LivekitConfig, secrets: SecretValues) -> None:
     app = cfg.compose_app()
     route = cfg.route()
     text = render_route(cfg) if route is not None else None
+    if cfg.turn_domain is not None:
+        # Before the server (and the TURN route) comes up with the new config.
+        reserve = cast(
+            Callable[[LivekitConfig], None], deploy(f"Reserve {cfg.service_name} media ports")(_reserve_media_ports)
+        )
+        reserve(cfg)
     deploy_compose_app(app, secrets)
     if route is not None and text is not None:
         named = cast(Callable[[TraefikRoute, str], None], deploy(f"Deploy {cfg.service_name} route")(_route))

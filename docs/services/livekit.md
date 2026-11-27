@@ -170,8 +170,32 @@ TURN over TLS can, because Traefik routes it by SNI.
 pion/turn v5.0.4) accept RFC 6062 TCP relays without a peer permission check,
 so a holder of TURN credentials could open TCP connections to services on the
 host's networks. v1.13.10 (upstream #4992) refuses every TCP relay and limits
-relays to the host's own addresses to the media UDP ports. The deploy does
-not read the image's version: the consumer's pin decides it.
+relays to the host's own addresses to the media UDP ports. With
+`turn_domain` the config refuses a `server_image` whose tag is not
+`vX.Y.Z` (or `X.Y.Z`) at v1.13.10 or newer, a digest-only pin included.
+Without `turn_domain` any server version is accepted (the rollback to
+v1.12.0 runs with TURN off).
+
+**The media port range is reserved.** LiveKit lets a relay reach every UDP
+port from `rtc_port_range_start` to `rtc_port_range_end` on the host,
+whether LiveKit holds it or not, and the range usually lies inside the
+kernel's ephemeral range (`ip_local_port_range`). With `turn_domain` the
+deploy therefore first runs `Reserve livekit media ports`: it writes
+`/etc/sysctl.d/60-livekit-reserved-ports.conf`
+(`net.ipv4.ip_local_reserved_ports = <start>-<end>`, root `0644`) and, when
+the running value differs, applies it with `sysctl -w`. The kernel then gives
+none of those ports to a socket that binds port 0 or connects unbound (IPv4
+and IPv6, UDP and TCP); LiveKit binds its ports explicitly and is not
+affected. Before any operation it refuses when the running value is another,
+non-empty one (it would be overwritten: merge the ranges by hand), when `ss`
+(`/usr/bin/ss`) or the value cannot be read, or when an unconnected UDP
+socket or a TCP listener in the range belongs to a process other than
+`livekit-server` (`ss -Hnlup`, `ss -Hnltp`). Connected UDP sockets, such as
+a resolver's queries, take datagrams from their peer only and are ignored.
+To free a port, set the reservation by hand, restart that program and deploy
+again. A converged host plans no change. Switching TURN off
+leaves the file and the reservation in place; delete the file and run
+`sysctl -w net.ipv4.ip_local_reserved_ports=` to drop it.
 
 `turn_domain` must be a dotted DNS name (LiveKit refuses others at start,
 and TLS clients send no SNI for an IP), must differ from `traefik_host` (case
@@ -179,4 +203,5 @@ ignored) and needs it (the TCP router
 lives in the same route file); `turn_tls_port` must differ from `http_port`
 and `rtc_tcp_port`. Setting or changing either rewrites `livekit.yaml` and
 restarts the server, which ends running calls. Without `turn_domain`
-`livekit.yaml` and the route are byte for byte as before.
+`livekit.yaml` and the route are byte for byte as before, and no port is
+reserved.

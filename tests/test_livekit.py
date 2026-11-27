@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -25,13 +26,17 @@ from tests.livekit_fixtures import (
     HOST,
     IMAGE_IDS,
     NODE_IP,
+    RESERVED,
     ROUTE,
     SECRET_VALUES,
     SERVER_IMAGE,
     SERVER_YAML,
     STATE,
+    TURN_DOMAIN,
     converged,
     livekit_config,
+    reservation,
+    turn_config,
     unstamped,
     values,
 )
@@ -410,11 +415,11 @@ def test_turn_is_off_by_default_and_the_files_stay_as_before(cfg: LivekitConfig)
 def test_turn_domain_adds_tls_only_turn_that_relays_to_the_sfu_alone() -> None:
     import ipaddress
 
-    turn = livekit_config(turn_domain="turn.example.invalid").server_config()["turn"]
+    turn = turn_config().server_config()["turn"]
     deny = turn.pop("deny_peer_cidrs")
     assert turn == {
         "enabled": True,
-        "domain": "turn.example.invalid",
+        "domain": TURN_DOMAIN,
         "tls_port": 5349,
         "external_tls": True,
         "proxy_protocol": True,
@@ -435,7 +440,7 @@ def test_turn_domain_adds_one_tcp_router_for_that_name_only() -> None:
     import yaml
 
     plain = yaml.safe_load(render_route(livekit_config()))
-    doc = yaml.safe_load(render_route(livekit_config(turn_domain="turn.example.invalid", turn_tls_port=5350)))
+    doc = yaml.safe_load(render_route(turn_config(turn_tls_port=5350)))
     assert doc["http"] == plain["http"]
     assert doc["tcp"] == {
         "routers": {
@@ -473,4 +478,124 @@ def test_turn_domain_adds_one_tcp_router_for_that_name_only() -> None:
 )
 def test_unsafe_turn_inputs_are_refused(change: dict[str, Any], message: str) -> None:
     with pytest.raises(ConfigValidationError, match=message):
-        livekit_config(**change)
+        turn_config(**change)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        SERVER_IMAGE,  # v1.12.0
+        "example.org/livekit/livekit-server:v1.13.9@sha256:" + "e" * 64,
+        "example.org/livekit/livekit-server:v1.9.99@sha256:" + "e" * 64,
+        "example.org/livekit/livekit-server:latest@sha256:" + "e" * 64,
+        "example.org/livekit/livekit-server@sha256:" + "e" * 64,
+        "example.org:5000/livekit/livekit-server@sha256:" + "e" * 64,
+    ],
+)
+def test_turn_refuses_a_server_older_than_v1_13_10_or_without_a_version_tag(image: str) -> None:
+    with pytest.raises(ConfigValidationError, match=r"v1\.13\.10 or newer"):
+        turn_config(server_image=image)
+
+
+def test_turn_accepts_v1_13_10_and_newer_and_old_servers_without_turn() -> None:
+    for tag in ("v1.13.10", "v1.13.11", "1.14.0", "v2.0.0"):
+        turn_config(server_image=f"example.org:5000/livekit/livekit-server:{tag}@sha256:" + "e" * 64)
+    # The documented rollback runs v1.12.0 with TURN off.
+    assert livekit_config(server_image=SERVER_IMAGE).turn_domain is None
+
+
+# --- the media port reservation (with TURN) -----------------------------------------
+
+RESERVE = "Reserve livekit media ports | "
+INSTALL_RESERVED = f"{RESERVE}Install /etc/sysctl.d/60-livekit-reserved-ports.conf"
+SET_RESERVED = f"{RESERVE}Set net.ipv4.ip_local_reserved_ports to 50000-50100"
+
+
+def test_without_turn_no_port_reservation_is_planned(cfg: LivekitConfig, secrets: SecretValues) -> None:
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    assert not any("reserved_ports" in c or "ss -H" in c for c in run.executed_commands)
+    assert not [op.name for op in run.ops if op.name.startswith(RESERVE)]
+
+
+def test_turn_writes_and_applies_the_reservation_before_the_server_changes() -> None:
+    cfg = turn_config()
+    secrets = values(cfg)
+    # The file in place, the value not (set back by hand): only the value is applied.
+    run = deploy(cfg, secrets, converged(cfg, secrets, **reservation(cfg, running="")))
+
+    assert run.mutating_changed_ops == [SET_RESERVED]
+    assert "sysctl -w net.ipv4.ip_local_reserved_ports=50000-50100" in run.executed_commands
+
+    # A host without the file and without the value: both, before compose_app's operations.
+    fresh = {k: v for k, v in unstamped(cfg, **reservation(cfg, running="")).items() if RESERVED not in k}
+    first = deploy(cfg, secrets, fresh)
+    names = first.mutating_changed_ops
+    assert names[:2] == [INSTALL_RESERVED, SET_RESERVED]
+    assert RELOAD in names
+
+
+def test_the_reservation_file_sets_the_media_range() -> None:
+    from ops_deploy.services.livekit.deploy import render_reserved_ports, reserved_ports
+
+    cfg = turn_config()
+    assert render_reserved_ports(cfg).splitlines()[1] == "net.ipv4.ip_local_reserved_ports = 50000-50100"
+    assert reserved_ports(turn_config(rtc_port_range_start=50010, rtc_port_range_end=50010)) == "50010"
+
+
+def test_a_reserved_host_with_turn_is_a_no_op() -> None:
+    cfg = turn_config()
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, converged(cfg, secrets))
+
+    assert run.mutating_changed_ops == []
+    assert container_commands(run) == []
+
+
+def test_livekits_own_sockets_in_the_range_are_allowed() -> None:
+    cfg = turn_config()
+    secrets = values(cfg)
+    own = 'UNCONN 0 0 192.0.2.10:50007 0.0.0.0:* users:(("livekit-server",pid=812,fd=31))'
+    run = deploy(cfg, secrets, converged(cfg, secrets, **reservation(cfg, sockets=(own,))))
+
+    assert run.mutating_changed_ops == []
+
+
+@pytest.mark.parametrize(
+    ("facts", "message"),
+    [
+        (
+            {"sockets": ('UNCONN 0 0 0.0.0.0:50042 0.0.0.0:* users:(("matter-server",pid=90,fd=12))',)},
+            "other programs hold ports in 50000-50100.*matter-server",
+        ),
+        ({"sockets": ("UNCONN 0 0 0.0.0.0:50042 0.0.0.0:*",)}, "other programs hold ports"),
+        ({"running": "8080"}, "ip_local_reserved_ports is 8080, not 50000-50100"),
+        ({"running": "49000-50100"}, "merge the ranges by hand"),
+    ],
+)
+def test_the_reservation_refuses_before_any_operation(facts: dict[str, Any], message: str) -> None:
+    cfg = turn_config()
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, converged(cfg, secrets, **reservation(cfg, **facts)), succeed=False)
+
+    assert not run.succeeded
+    assert run.error is not None
+    assert re.search(message, str(run.error))
+    assert run.mutating_changed_ops == []
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"cat /proc/sys/net/ipv4/ip_local_reserved_ports": []},
+        {"test -x /usr/bin/ss": []},
+        {"/usr/bin/ss -Hnlup": []},
+    ],
+)
+def test_unreadable_reservation_facts_are_refused(drift: dict[str, Any]) -> None:
+    cfg = turn_config()
+    secrets = values(cfg)
+    run = deploy(cfg, secrets, converged(cfg, secrets, **drift), succeed=False)
+
+    assert not run.succeeded
+    assert run.mutating_changed_ops == []
