@@ -6,6 +6,13 @@
   retired Ansible rollback and coexistence instructions, and mark migration
   plans and role comparisons as historical.
 
+- minecraft_java: `control_user` grants a local account start and stop
+  access to the configured unit through polkit JavaScript rules. Unmatched
+  requests fall through to the host's other polkit policy. Clearing the
+  setting removes the rule before runtime changes, and removing the service
+  also deletes it. See the [Minecraft deploy docs](services/minecraft_java.md)
+  for prerequisites and the accepted systemd job-mode risk.
+
 - livekit: `turn_domain` switches on LiveKit's embedded TURN server over
   TLS on 443: `livekit.yaml` gains `turn` (`external_tls`, no UDP TURN,
   relays allowed to `node_ip` only, every other peer denied, PROXY protocol

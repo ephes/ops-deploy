@@ -26,6 +26,8 @@ from ops_deploy.core.config import ServiceName, UnixUser
 from ops_deploy.services._lifecycle import kill_user_processes
 from ops_deploy.services._lifecycle.ansible_remove import absent, service_absent, user_absent
 
+from .deploy import CONTROL_RULE_PATH
+
 Port = Annotated[int, Field(ge=1, le=65535)]
 # The role's ``cron`` task: ``name: "Minecraft world backup"`` in the user's crontab.
 CRON_NAME = "Minecraft world backup"
@@ -122,6 +124,7 @@ def remove_minecraft_java(cfg: MinecraftJavaRemoveConfig) -> None:
     if not cfg.confirm_removal:
         raise DeployError("Minecraft Java removal requires confirm_removal=true")
     require_linux("Minecraft Java removal")
+    absent("Remove Minecraft start and stop polkit rule", CONTROL_RULE_PATH)
     # Two tasks, both with ignore_errors: stop, then disable.
     service_absent(
         name="Stop Minecraft for removal",

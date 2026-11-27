@@ -18,6 +18,7 @@ from ops_deploy.testing import run_deploy_fake
 from tests import fakehost
 
 UNIT = "/etc/systemd/system/minecraft-java.service"
+CONTROL_RULE = "/etc/polkit-1/rules.d/50-minecraft-java-control.rules"
 CRONTAB = "/var/spool/cron/crontabs/minecraft"
 
 
@@ -73,6 +74,7 @@ def host(*, cron: str = "present", processes: bool = True, ufw: bool = True, **u
         "command -v ufw": ["/usr/sbin/ufw"] if ufw else [],
         **fakehost.LINUX,
         **fakehost.file(UNIT, "owned unit"),
+        **fakehost.file(CONTROL_RULE, "control rule"),
         **fakehost.directory(cfg.home, user=cfg.user),
         **fakehost.file(CRONTAB, "", mode="-rw-------"),
         **fakehost.system_account(cfg.user, cfg.home),
@@ -85,6 +87,7 @@ def test_full_removal_follows_the_role_order() -> None:
     assert run.succeeded, run.error
     commands = [command for command in run.executed_commands if "import json, subprocess" not in command]
     assert commands == [
+        "rm -rf " + CONTROL_RULE,
         "systemctl stop minecraft-java",
         "systemctl disable minecraft-java",
         "rm -rf " + UNIT,
