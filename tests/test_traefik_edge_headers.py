@@ -110,7 +110,7 @@ TRAEFIK_OWNED = ("X-Forwarded-For", "X-Real-Ip", "X-Forwarded-Host", "X-Forwarde
 # Middleware types that change the path the backend sees; they set X-Forwarded-Prefix themselves.
 PATH_REWRITES = {"stripPrefix", "stripPrefixRegex", "replacePath", "replacePathRegex", "addPrefix"}
 # Templates whose routers all answer with Traefik's own service.
-REDIRECT_ONLY = {"services/zellij_ingress/templates/zellij-traefik.yml.j2"}
+REDIRECT_ONLY: set[str] = set()
 
 HASH = "$2y$05$29Gfrp5dhiYLdDhT79roVeQM45oGC/gI9VBinrDYyO5ucrXoLooD6"
 AUTH = BasicAuth(user="admin", password=SecretStr("fixture-password"))
@@ -246,7 +246,6 @@ SAMPLES: dict[str, Sample] = {
         "weeknotes_home/*/weeknotes-home.traefik.yml"
     ),
     "services/work_app/templates/work-app.traefik.yml.j2": goldens("work_app/*/traefik.yml"),
-    "services/zellij_ingress/templates/zellij-traefik.yml.j2": goldens("zellij_ingress/*.yml"),
 }
 
 

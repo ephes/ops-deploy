@@ -44,7 +44,6 @@ src/ops_deploy/
   services/weeknotes_home/ weeknotes.home (port of the weeknotes_home_deploy role)
   services/echoport/  echoport (port of the echoport_deploy role)
   services/work_app/  work_app (port of the work_app_deploy role)
-  services/zellij_ingress/ redirect-only Traefik route (port of the zellij_ingress_deploy role)
   services/gotosocial/ GoToSocial from a pinned release (port of the gotosocial_deploy role)
   services/thermal_monitoring/ thermal exporter, cached endpoint and Nyxmon freshness check (two roles)
   services/nfs_tls_status/ NFS-over-TLS units, mounts and certificate expiry as a JSON endpoint and Nyxmon check

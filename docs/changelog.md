@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- zellij_ingress removed: the owner retired the Zellij web client on
+  2026-11-27, so `ops_deploy.services.zellij_ingress` (the redirect-only
+  Traefik route), its goldens, tests and service page are gone. ops-control
+  removes the deployed route itself. vibe_coding still installs zellij.
+
 - livekit: `turn_domain` switches on LiveKit's embedded TURN server over
   TLS on 443: `livekit.yaml` gains `turn` (`external_tls`, no UDP TURN,
   relays allowed to `node_ip` only, every other peer denied, PROXY protocol

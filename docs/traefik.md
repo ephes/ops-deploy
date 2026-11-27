@@ -486,8 +486,8 @@ transaction lock `/run/lock/traefik-transaction.lock`:
 
 - `traefik_route` (every service route) and the services' other dynamic files
   through `ops_deploy.services._traefik_routes` (`route_put`, `route_absent`:
-  gotosocial, django_site's noindex middleware, unifi, vaultwarden, zellij
-  ingress, work_app removal);
+  gotosocial, django_site's noindex middleware, unifi, vaultwarden,
+  work_app removal);
 - `_lifecycle.remove_path` for paths below `/etc/traefik/dynamic` (the
   removals of compose_app, fastdeploy, nyxmon);
 - the work_app restore, just before it writes the route, and the fastdeploy
