@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -43,6 +44,14 @@ RUN_DIR_PREFIXES = ("marina-backup-", "marina-restore-")
 # to that user. ops-control provisions it (register-marina-staging-backup.yml).
 WORK_OWNER_UID = os.geteuid()
 WORK_OWNER_LABEL = "the runner user"
+
+# The unit counts as up only when this URL answers (`curl -fsS -o /dev/null`,
+# one of the host guard's ready_urls): after the backup's restart and after a
+# restore, where a unit that does not get ready rolls the restore back.
+READY_URL = "{{ marina_staging_backup_ready_url }}"
+READY_ATTEMPTS = {{ marina_staging_backup_ready_attempts | default(30) | int(30) }}
+READY_DELAY_SECONDS = {{ marina_staging_backup_ready_delay_seconds | default(2) | int(2) }}
+STOP_ATTEMPTS = 3
 
 # SSH configuration
 SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
@@ -414,6 +423,69 @@ def validate_db_path(remote_host: str, remote_user: str, db_path: str) -> str:
     return canonical
 
 
+# SQLite's files beside the database: WAL mode (-wal, -shm) and a rollback
+# journal (-journal, hot after a crash). They belong to the database: a backup
+# copies every one that exists (or fails), a restore moves them aside with it.
+SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
+
+
+def remote_exists(remote_host: str, remote_user: str, path: str) -> bool:
+    """Whether path exists on the host; any answer but yes or no fails.
+
+    ``test -e`` exits 1 for a missing path; the pinned key's guard also exits
+    1 when it refuses, but then it says why on stderr.
+    """
+    result = ssh(remote_host, remote_user, f"test -e {shlex.quote(path)}", check=False)
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1 and not result.stderr.strip():
+        return False
+    raise RuntimeError(
+        f"Cannot tell whether {path} exists (exit {result.returncode}): {result.stderr.strip()}"
+    )
+
+
+def wait_ready(remote_host: str, remote_user: str) -> bool:
+    """Whether READY_URL answers within READY_ATTEMPTS tries."""
+    for attempt in range(READY_ATTEMPTS):
+        result = ssh(remote_host, remote_user, f"curl -fsS -o /dev/null {shlex.quote(READY_URL)}", check=False)
+        if result.returncode == 0:
+            return True
+        if attempt + 1 < READY_ATTEMPTS:
+            time.sleep(READY_DELAY_SECONDS)
+    return False
+
+
+def start_ready(remote_host: str, remote_user: str, service_name: str) -> bool:
+    """Start the unit; it counts as up only when READY_URL answers.
+
+    The exit status of ``systemctl start`` is not trusted either way: a
+    lost reply can hide a start, and a Type=simple unit reports success
+    before the application has opened its data.
+    """
+    ssh(remote_host, remote_user, f"systemctl start {shlex.quote(service_name)}", check=False)
+    return wait_ready(remote_host, remote_user)
+
+
+def stop_confirmed(remote_host: str, remote_user: str, service_name: str) -> bool:
+    """Stop the unit; True only after a ``systemctl stop`` that exited 0."""
+    for _ in range(STOP_ATTEMPTS):
+        result = ssh(remote_host, remote_user, f"systemctl stop {shlex.quote(service_name)}", check=False)
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def move_reconciled(remote_host: str, remote_user: str, source: str, target: str) -> None:
+    """mv source target (target free); a lost reply is settled by the host's state."""
+    try:
+        ssh(remote_host, remote_user, f"mv {shlex.quote(source)} {shlex.quote(target)}")
+    except subprocess.CalledProcessError:
+        if remote_exists(remote_host, remote_user, target) and not remote_exists(remote_host, remote_user, source):
+            return
+        raise
+
+
 {% include '_sqlite_backup.py.j2' %}
 
 
@@ -516,14 +588,14 @@ def backup(
     1. Validate db_path and backup_files
     2. Validate paths (skip missing with info)
     3. Stop service for consistency
-    4. Copy database + WAL + SHM to macmini
-    5. Run sqlite3 .backup locally
-    6. Run PRAGMA integrity_check
-    7. Copy backup_files via rsync
-    8. Create manifest and tarball
-    9. Calculate checksum
-    10. Upload to MinIO
-    11. Restart service
+    4. Copy the database and every existing -wal/-shm/-journal (each required)
+    5. Copy backup_files via rsync (still stopped: one matched set)
+    6. Restart service (before any local processing or upload)
+    7. Run sqlite3 .backup locally (applies the WAL, rolls back a hot journal)
+    8. Run PRAGMA integrity_check
+    9. Create manifest and tarball
+    10. Calculate checksum
+    11. Upload and verify
 
     Returns 0 on success, 1 on failure.
     """
@@ -536,6 +608,7 @@ def backup(
     if work_dir is None:
         return 1
     service_stopped = False
+    not_ready = False
     backup_success = False
     result_data = {}
 
@@ -582,24 +655,55 @@ def backup(
             finish_stdout("failure", "Failed to stop service")
             return 1
 
-        # Copy database + WAL + SHM to macmini
+        # Copy the database and every sidecar that exists. A sidecar that
+        # exists but does not arrive fails the backup: committed changes may
+        # live only in the WAL, and a hot journal must roll back locally.
         emit_step("copy_database", "running", "Copying database files")
-        for suffix in ["", "-wal", "-shm"]:
+        for suffix in ("",) + SQLITE_SIDECARS:
             src = f"{db_path}{suffix}"
             dest = work_dir / f"db.sqlite3{suffix}"
             try:
+                if suffix and not remote_exists(remote_host, remote_user, src):
+                    print(f"[INFO] {src} not found, skipping", file=sys.stderr)
+                    continue
                 scp_from_remote(remote_host, remote_user, src, str(dest))
-            except subprocess.CalledProcessError:
-                if suffix == "":
-                    # Main DB is required
-                    emit_step("copy_database", "failure", f"Failed to copy database: {db_path}")
-                    emit_result(success=False, error=f"Failed to copy database: {db_path}")
-                    finish_stdout("failure", "Database copy failed")
-                    return 1
-                # WAL/SHM may not exist, that's OK
-                print(f"[INFO] {src} not found, skipping", file=sys.stderr)
+            except (subprocess.CalledProcessError, RuntimeError) as e:
+                emit_step("copy_database", "failure", f"Failed to copy {src}: {e}")
+                emit_result(success=False, error=f"Failed to copy {src}: {e}")
+                finish_stdout("failure", "Database copy failed")
+                return 1
 
         emit_step("copy_database", "success", "Database files copied")
+
+        # Copy backup_files via rsync (directories only) while still stopped,
+        # so the database and the files are one matched set.
+        file_count = 1  # DB
+        for backup_path in valid_backup_files:
+            emit_step("copy_files", "running", f"Copying {backup_path}")
+            # Use basename as archive name (uniqueness validated above)
+            dest = work_dir / Path(backup_path).name
+            dest.mkdir(parents=True, exist_ok=True)
+            try:
+                rsync_from_remote(remote_host, remote_user, backup_path, str(dest))
+                emit_step("copy_files", "success", f"Copied {backup_path}")
+                file_count += 1
+            except subprocess.CalledProcessError as e:
+                emit_step("copy_files", "failure", f"Failed to copy {backup_path}: {e.stderr}")
+                emit_result(success=False, error=f"Failed to copy {backup_path}: {e.stderr}")
+                finish_stdout("failure", "File copy failed")
+                return 1
+
+        # Everything is copied: restart now, not after the local processing
+        # and the upload, so a slow store does not keep the site down. The
+        # archive is still made when the site does not come back; the run
+        # then fails so the operator looks at the site.
+        emit_step("start_service", "running", f"Starting {service_name}")
+        service_stopped = False
+        if start_ready(remote_host, remote_user, service_name):
+            emit_step("start_service", "success", f"Started {service_name}; {READY_URL} answers")
+        else:
+            not_ready = True
+            emit_step("start_service", "failure", f"{service_name} not ready: {READY_URL} does not answer")
 
         # Create clean snapshot locally (keeps staging dumb)
         emit_step("create_snapshot", "running", "Creating consistent snapshot")
@@ -625,23 +729,6 @@ def backup(
             return 1
 
         emit_step("integrity_check", "success", "Database integrity verified")
-
-        # Copy backup_files via rsync (directories only)
-        file_count = 1  # DB
-        for backup_path in valid_backup_files:
-            emit_step("copy_files", "running", f"Copying {backup_path}")
-            # Use basename as archive name (uniqueness validated above)
-            dest = work_dir / Path(backup_path).name
-            dest.mkdir(parents=True, exist_ok=True)
-            try:
-                rsync_from_remote(remote_host, remote_user, backup_path, str(dest))
-                emit_step("copy_files", "success", f"Copied {backup_path}")
-                file_count += 1
-            except subprocess.CalledProcessError as e:
-                emit_step("copy_files", "failure", f"Failed to copy {backup_path}: {e.stderr}")
-                emit_result(success=False, error=f"Failed to copy {backup_path}: {e.stderr}")
-                finish_stdout("failure", "File copy failed")
-                return 1
 
         # Create manifest
         manifest = {
@@ -719,14 +806,13 @@ def backup(
         return 1
     finally:
         # Always restart service before emitting final result
-        restart_failed = False
+        restart_failed = not_ready
         if service_stopped:
             emit_step("start_service", "running", f"Starting {service_name}")
-            try:
-                ssh(remote_host, remote_user, f"systemctl start {shlex.quote(service_name)}")
-                emit_step("start_service", "success", f"Started {service_name}")
-            except subprocess.CalledProcessError as e:
-                emit_step("start_service", "failure", f"Failed to restart service: {e.stderr}")
+            if start_ready(remote_host, remote_user, service_name):
+                emit_step("start_service", "success", f"Started {service_name}; {READY_URL} answers")
+            else:
+                emit_step("start_service", "failure", f"{service_name} not ready: {READY_URL} does not answer")
                 restart_failed = True
 
         # Clean up temp directory
@@ -743,6 +829,49 @@ def backup(
             return 1
 
     return 1  # Should not reach here, but return failure as safety
+
+
+def move_aside(remote_host: str, remote_user: str, live: str, aside: str) -> bool:
+    """Move live to aside (see move_reconciled); True when done."""
+    move_reconciled(remote_host, remote_user, live, aside)
+    return True
+
+
+def rollback_restore(
+    remote_host: str,
+    remote_user: str,
+    sets: list,
+    restore_stamp: str,
+) -> bool:
+    """Put every path the restore moved aside back; True when all are back.
+
+    ``sets`` lists ``(live, aside, replaced)`` in the order they were moved:
+    ``replaced`` is True once the restore may have written ``live`` (then a
+    live file is the restore's and goes to ``<live>.failed-restore-<stamp>``
+    first); before that a live path is the untouched original. Decided from
+    the host's state with ``test -e``, so a lost ssh reply does not mislead it.
+    """
+    emit_step("rollback", "running", "Restoring the previous database and files")
+    try:
+        for live, aside, replaced in reversed(sets):
+            live_exists = remote_exists(remote_host, remote_user, live)
+            aside_exists = remote_exists(remote_host, remote_user, aside)
+            if replaced and live_exists:
+                move_reconciled(remote_host, remote_user, live, f"{live}.failed-restore-{restore_stamp}")
+                live_exists = False
+            if aside_exists:
+                if live_exists:
+                    raise RuntimeError(f"both {live} and {aside} exist")
+                move_reconciled(remote_host, remote_user, aside, live)
+    except (subprocess.CalledProcessError, RuntimeError) as e:
+        detail = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
+        emit_step(
+            "rollback", "failure",
+            f"Rollback incomplete, service left stopped; previous set at *.pre-restore-{restore_stamp}: {detail}",
+        )
+        return False
+    emit_step("rollback", "success", "Previous database and files restored")
+    return True
 
 
 def restore(
@@ -765,13 +894,13 @@ def restore(
     3. Extract with safety validation
     4. Validate manifest
     5. Validate db_path and all restore paths
-    6. Stop service
-    7. Remove WAL/SHM on staging
-    8. Copy database to temp file (atomic restore)
-    9. Atomic rename
+    6. Upload the database to <db>.tmp (site still running)
+    7. Stop service
+    8. Move the live database and its -wal/-shm/-journal aside
+    9. Rename <db>.tmp into place
     10. Restore backup_files directories
     11. Fix ownership
-    12. Start service
+    12. Start service; on any failure after step 8 the moved files go back
 
     Returns 0 on success, 1 on failure.
     """
@@ -782,6 +911,10 @@ def restore(
     service_stopped = False
     restore_success = False
     result_data = {}
+    restore_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    # (live, aside, replaced) of every path moved aside, see rollback_restore.
+    moved_sets: list = []
+    rollback_blocked = False
 
     try:
         emit_step("init", "running", "Starting restore")
@@ -862,6 +995,19 @@ def restore(
             finish_stdout("failure", "Path validation failed")
             return 1
 
+        # Upload the replacement next to the live database first, while the
+        # site still runs; nothing live changes if the upload fails.
+        emit_step("copy_database", "running", "Uploading replacement database")
+        temp_db_path = f"{db_path}.tmp"
+        try:
+            scp_to_remote(remote_host, remote_user, str(db_backup_path), temp_db_path)
+        except subprocess.CalledProcessError as e:
+            emit_step("copy_database", "failure", f"Failed to copy database: {e.stderr}")
+            emit_result(success=False, error=f"Failed to copy database: {e.stderr}")
+            finish_stdout("failure", "Database copy failed")
+            return 1
+        emit_step("copy_database", "success", "Replacement database uploaded")
+
         # Stop service
         emit_step("stop_service", "running", f"Stopping {service_name}")
         try:
@@ -874,33 +1020,34 @@ def restore(
             finish_stdout("failure", "Failed to stop service")
             return 1
 
-        # Remove WAL/SHM on staging (before restore)
-        emit_step("clean_wal", "running", "Cleaning WAL/SHM files")
+        # Move the live database and its sidecars aside (never delete them):
+        # a failed restore moves them back, a successful one leaves them as
+        # <db>.pre-restore-<stamp>[-wal|-shm|-journal].
+        emit_step("clean_wal", "running", "Moving the live database and its WAL/SHM/journal aside")
+        aside_prefix = f"{db_path}.pre-restore-{restore_stamp}"
         try:
-            ssh(
-                remote_host,
-                remote_user,
-                f"rm -f {shlex.quote(db_path)}-wal {shlex.quote(db_path)}-shm",
-            )
-            emit_step("clean_wal", "success", "WAL/SHM files cleaned")
-        except subprocess.CalledProcessError as e:
-            emit_step("clean_wal", "failure", f"Failed to clean WAL/SHM: {e.stderr}")
-            emit_result(success=False, error=f"Failed to clean WAL/SHM: {e.stderr}")
-            finish_stdout("failure", "WAL cleanup failed")
+            for suffix in ("",) + SQLITE_SIDECARS:
+                live = f"{db_path}{suffix}"
+                if remote_exists(remote_host, remote_user, live):
+                    moved_sets.append([live, aside_prefix + suffix, False])
+                    move_aside(remote_host, remote_user, live, aside_prefix + suffix)
+            emit_step("clean_wal", "success", f"Live database moved aside to {aside_prefix}")
+        except (subprocess.CalledProcessError, RuntimeError) as e:
+            emit_step("clean_wal", "failure", f"Failed to move the live database aside: {e}")
+            emit_result(success=False, error=f"Failed to move the live database aside: {e}")
+            finish_stdout("failure", "Moving the live database aside failed")
             return 1
 
-        # Copy database to temp file (atomic restore)
-        emit_step("copy_database", "running", "Copying database")
-        temp_db_path = f"{db_path}.tmp"
-        try:
-            scp_to_remote(remote_host, remote_user, str(db_backup_path), temp_db_path)
-        except subprocess.CalledProcessError as e:
-            emit_step("copy_database", "failure", f"Failed to copy database: {e.stderr}")
-            emit_result(success=False, error=f"Failed to copy database: {e.stderr}")
-            finish_stdout("failure", "Database copy failed")
-            return 1
+        # From here on every database path may hold the restore's files.
+        for entry in moved_sets:
+            entry[2] = True
+        moved_sets.extend(
+            [f"{db_path}{suffix}", aside_prefix + suffix, True]
+            for suffix in ("",) + SQLITE_SIDECARS
+            if not any(entry[0] == f"{db_path}{suffix}" for entry in moved_sets)
+        )
 
-        # Atomic rename
+        # Put the uploaded replacement in place
         emit_step("finalize_database", "running", "Finalizing database")
         try:
             ssh(remote_host, remote_user, f"mv {shlex.quote(temp_db_path)} {shlex.quote(db_path)}")
@@ -911,7 +1058,8 @@ def restore(
             finish_stdout("failure", "Database finalization failed")
             return 1
 
-        # Restore backup_files directories (if any)
+        # Restore backup_files directories (if any): the live directory moves
+        # aside like the database, so a rollback restores a matched set.
         files_restored = 1  # DB
         for restore_path in manifest.get("files", []):
             emit_step("restore_files", "running", f"Restoring {restore_path}")
@@ -922,15 +1070,20 @@ def restore(
                 finish_stdout("failure", "File restore failed")
                 return 1
 
+            aside = f"{restore_path}.pre-restore-{restore_stamp}"
             try:
-                # Ensure target directory exists
+                moved_sets.append([restore_path, aside, False])
+                if remote_exists(remote_host, remote_user, restore_path):
+                    move_aside(remote_host, remote_user, restore_path, aside)
+                moved_sets[-1][2] = True
                 ssh(remote_host, remote_user, f"mkdir -p {shlex.quote(restore_path)}")
                 rsync_to_remote(remote_host, remote_user, str(src), restore_path)
                 emit_step("restore_files", "success", f"Restored {restore_path}")
                 files_restored += 1
-            except subprocess.CalledProcessError as e:
-                emit_step("restore_files", "failure", f"Failed to restore {restore_path}: {e.stderr}")
-                emit_result(success=False, error=f"Failed to restore {restore_path}: {e.stderr}")
+            except (subprocess.CalledProcessError, RuntimeError) as e:
+                detail = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
+                emit_step("restore_files", "failure", f"Failed to restore {restore_path}: {detail}")
+                emit_result(success=False, error=f"Failed to restore {restore_path}: {detail}")
                 finish_stdout("failure", "File restore failed")
                 return 1
 
@@ -954,6 +1107,22 @@ def restore(
                 finish_stdout("failure", "Ownership fix failed")
                 return 1
 
+        # Start on the restored set; it counts only when READY_URL answers.
+        # Otherwise the unit is stopped (confirmed) and the previous set goes
+        # back (below); without a confirmed stop nothing is moved.
+        emit_step("start_service", "running", f"Starting {service_name}")
+        if start_ready(remote_host, remote_user, service_name):
+            service_stopped = False
+            emit_step("start_service", "success", f"Started {service_name}; {READY_URL} answers")
+        else:
+            emit_step("start_service", "failure", f"{service_name} not ready on the restored set")
+            if not stop_confirmed(remote_host, remote_user, service_name):
+                rollback_blocked = True
+                emit_step("rollback", "failure", f"{service_name} could not be stopped; nothing moved back")
+            emit_result(success=False, error=f"{service_name} did not get ready on the restored set")
+            finish_stdout("failure", "Service not ready")
+            return 1
+
         # Mark restore as successful - result will be emitted after service restart
         restore_success = True
         result_data = {
@@ -971,15 +1140,23 @@ def restore(
         finish_stdout("failure", f"Unexpected error: {e}")
         return 1
     finally:
-        # Always restart service before emitting final result
+        # A failed restore puts everything it moved aside back first; when
+        # that is incomplete the service stays stopped (a database without
+        # its WAL would lose committed rows).
+        rollback_ok = not rollback_blocked
+        if not restore_success and moved_sets and not rollback_blocked:
+            rollback_ok = rollback_restore(remote_host, remote_user, moved_sets, restore_stamp)
+        # Restart service before emitting final result (not after a failed
+        # or blocked rollback: the unit then stays as it is for an operator)
         restart_failed = False
-        if service_stopped:
+        if service_stopped and not rollback_ok:
+            emit_step("start_service", "failure", f"{service_name} left stopped: rollback incomplete")
+        elif service_stopped and not rollback_blocked:
             emit_step("start_service", "running", f"Starting {service_name}")
-            try:
-                ssh(remote_host, remote_user, f"systemctl start {shlex.quote(service_name)}")
-                emit_step("start_service", "success", f"Started {service_name}")
-            except subprocess.CalledProcessError as e:
-                emit_step("start_service", "failure", f"Failed to restart service: {e.stderr}")
+            if start_ready(remote_host, remote_user, service_name):
+                emit_step("start_service", "success", f"Started {service_name}; {READY_URL} answers")
+            else:
+                emit_step("start_service", "failure", f"{service_name} not ready: {READY_URL} does not answer")
                 restart_failed = True
 
         # Clean up temp directory

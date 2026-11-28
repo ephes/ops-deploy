@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- Echoport runners and SQLite's sidecar files (`-wal`, `-shm`, `-journal`):
+  - `marina_staging_backup.py.j2` (every runner on that template): a backup asks `test -e` for each sidecar and
+    then requires its copy; before, any failed `scp` counted as "missing",
+    so committed changes that lived only in the WAL could be left out while
+    the archive still passed `integrity_check`. A hot rollback journal is
+    copied too, so the local `.backup` rolls it back. Backup files are copied
+    while the unit is still stopped, and the unit starts right after the
+    copy instead of after the upload, so a slow store no longer keeps the
+    site down.
+  - Its restore uploads `<db>.tmp` while the site still runs, then moves the
+    live database, every sidecar and every backup-files directory aside
+    (`<path>.pre-restore-<stamp>`, kept) instead of deleting the WAL first
+    and merging files over the live ones; the restored directories replace
+    the live ones. Any failure, including a unit that does not start on the
+    restored set, moves the previous set back (decided from `test -e`, so a
+    lost ssh reply does not mislead it) and starts the unit on it; an
+    incomplete rollback leaves the unit stopped. All commands stay within the
+    pinned guard's rules (`test -e`, `mv` within one path root onto a free
+    name, `mv <db>.tmp`).
+  - `heis_production_backup.py.j2`: the restore moves the live database's
+    sidecars into the restore-safety snapshot with it (before, it deleted
+    `-wal`/`-shm` first, so a rollback lost what the WAL held) and puts them
+    back on rollback; an incomplete rollback stops the watchdog and leaves
+    the units stopped.
+  - The marina template needs `marina_staging_backup_ready_url` (a guard
+    `ready_urls` entry): the unit counts as up only when it answers, after a
+    backup's restart and after a restore (a restore whose unit does not get
+    ready is rolled back); a rollback runs only after a confirmed stop, and
+    every rename, forward and back, is settled by `test -e` when its reply
+    is lost.
+  - heis: a marker `<safety>/.inconsistent` keeps the restart watchdog from
+    starting the units while the live set is partly moved; a rollback that
+    cannot stop the units moves nothing; the run reports the script's stderr
+    and whether the rollback completed.
+  - Both templates are in `render.FORKED` now (ops-deploy is their source).
+  - `tests/test_echoport_runner_sqlite_sidecars.py` runs the rendered marina
+    script against a fake host with a database whose last commit is only in
+    its WAL.
+
 - obs_daily: a signature window that is still at the 2,000-line limit after
   five halvings (about 11 minutes) is read again without its loudest
   `service` stream, up to three streams. That stream's lines from the first

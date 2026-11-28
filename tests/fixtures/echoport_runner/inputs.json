@@ -497,7 +497,8 @@
         "marina_staging_backup_service_name": "marina.service",
         "marina_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/marina-production-backup",
         "marina_staging_backup_work_mount": "/mnt/cryptdata",
-        "marina_staging_backup_work_retention_hours": 24
+        "marina_staging_backup_work_retention_hours": 24,
+        "marina_staging_backup_ready_url": "http://127.0.0.1:10021/admin"
       },
       "template": "marina_staging_backup.py.j2"
     },
@@ -515,7 +516,8 @@
         "marina_staging_backup_restore_owner": "marina:marina",
         "marina_staging_backup_service_name": "marina.service",
         "marina_staging_backup_work_dir": "/mnt/cryptdata/backups/tmp/marina-staging-backup",
-        "marina_staging_backup_work_mount": "/mnt/cryptdata"
+        "marina_staging_backup_work_mount": "/mnt/cryptdata",
+        "marina_staging_backup_ready_url": "http://127.0.0.1:10021/admin"
       },
       "template": "marina_staging_backup.py.j2"
     },
@@ -921,7 +923,7 @@
       ]
     },
     "root-runner": {
-      "description": "Paperless backup – same-host PostgreSQL + filesystem backup/restore with rollback safety",
+      "description": "Paperless backup \u2013 same-host PostgreSQL + filesystem backup/restore with rollback safety",
       "run_as": "root",
       "service": "paperless-backup",
       "steps": [

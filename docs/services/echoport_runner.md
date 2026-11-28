@@ -61,7 +61,9 @@ moved on here after their registration moved to pyinfra (2026-11-09,
 restores onto a fresh install, below), and
 `villakunterbunt_staging_backup.py.j2` (2026-11-10: the restart of the
 staging services is armed before the first stop and tries every service,
-so a failed Django stop or start no longer leaves Next.js down). ops-deploy is their source;
+so a failed Django stop or start no longer leaves Next.js down), and
+`marina_staging_backup.py.j2` and `heis_production_backup.py.j2`
+(2026-11-23: SQLite's `-wal`/`-shm`/`-journal`, below). ops-deploy is their source;
 ops-library's copies stay as they were and serve only the Ansible rollback
 of the register playbooks.
 `render.render_runner(template, variables)` renders one as Ansible's
@@ -71,6 +73,51 @@ of the register playbooks.
 name the template reads with `default(...)` may be left out.
 `render.render_text` renders a playbook's inline text (a task's `content:`)
 the same way, with ansible-core's `quote` (`shlex.quote`) as well.
+
+### SQLite sidecars in the marina and heis templates
+
+The marina template (every runner on it, through the pinned key's guard):
+
+- Variables: `marina_staging_backup_ready_url` (required; one of the host
+  guard's `ready_urls`, `http://127.0.0.1:<port>/<path>`), plus
+  `marina_staging_backup_ready_attempts` (30) and
+  `marina_staging_backup_ready_delay_seconds` (2). The unit counts as up
+  only when `curl -fsS -o /dev/null <ready_url>` succeeds; the exit status
+  of `systemctl start` is not trusted.
+- A backup copies each of `<db>-wal`, `-shm`, `-journal` that `test -e`
+  reports and fails when one does not arrive or the check gets no clear
+  answer; the local `.backup` applies the WAL and rolls a hot journal back.
+  Backup files are copied while the unit is stopped, and the unit starts
+  right after the copy, before the snapshot and the upload. When the site
+  does not get ready, the archive is still made and the run fails.
+- A restore uploads `<db>.tmp` while the site runs, stops the unit and moves
+  the live set aside, then puts the restored set in place (directories are
+  replaced, not merged) and starts the unit. The previous set stays after a
+  successful restore, for an operator to remove by hand:
+
+  | Live path | Kept as |
+  |---|---|
+  | `<db>` | `<db>.pre-restore-<stamp>` |
+  | `<db>-wal`, `<db>-shm`, `<db>-journal` | `<db>.pre-restore-<stamp>-wal`, `-shm`, `-journal` |
+  | each backup-files directory `<dir>` | `<dir>.pre-restore-<stamp>` |
+
+  `<stamp>` is the restore's UTC time, `%Y%m%dT%H%M%S%fZ`. On any failure,
+  including a unit that does not get ready on the restored set, the unit is
+  stopped (a `systemctl stop` that exits 0; without it nothing is moved and
+  the run says so), the restore's paths go to
+  `<path>.failed-restore-<stamp>` (same suffix rule) and the previous ones
+  back, each rename settled by `test -e` when its reply is lost, and the
+  unit starts on the previous set. An incomplete rollback leaves the unit
+  stopped and names the `.pre-restore-` paths.
+
+The heis template's restore moves the live database and its sidecars into
+`/home/heis/restore-safety/<restore id>/` (`db.sqlite3`, `db.sqlite3-wal`,
+`-shm`, `-journal`, `media`) and back on rollback. A marker
+`<safety>/.inconsistent` exists from before the first move until a complete
+set is in place; the 10-minute restart watchdog starts the units only while
+it is absent. A rollback that cannot stop the units moves nothing (exit 76);
+an incomplete one stops the watchdog and leaves the units stopped (exit 75);
+the run reports which, with the script's stderr.
 
 ## Object-store access (`access.minio_access`)
 

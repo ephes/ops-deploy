@@ -1036,18 +1036,31 @@ def restore(
         app_user=${open_brace}owner%%:*{close_brace}
         install -d -m 0700 "$safety"
         old_db_moved=0
+        moved_sidecars=""
         old_media_moved=0
         new_db_installed=0
         new_media_installed=0
+        # While this marker exists the live set is inconsistent (partly moved):
+        # the watchdog then does not start the application.
+        marker="$safety/.inconsistent"
         rollback_restore() {open_brace}
           failure_status=$?
           trap - ERR
           set +e
           rollback_failed=0
-          systemctl stop {' '.join(shlex.quote(name) for name in service_names)} || rollback_failed=1
-          test "$new_db_installed" != 1 || rm -f "$site_db" "$site_db-wal" "$site_db-shm" || rollback_failed=1
+          touch "$marker"
+          if ! systemctl stop {' '.join(shlex.quote(name) for name in service_names)}; then
+            # Still running (or unknown): moving files under it would corrupt
+            # the live set. Leave everything as it is for an operator.
+            echo "rollback not started: the units could not be stopped; restored set left in place, previous set in $safety" >&2
+            exit 76
+          fi
+          test "$new_db_installed" != 1 || rm -f "$site_db" "$site_db-wal" "$site_db-shm" "$site_db-journal" || rollback_failed=1
           test "$new_media_installed" != 1 || rm -rf "$site_media" || rollback_failed=1
           test "$old_db_moved" != 1 || mv "$safety/db.sqlite3" "$site_db" || rollback_failed=1
+          for suffix in $moved_sidecars; do
+            mv "$safety/db.sqlite3$suffix" "$site_db$suffix" || rollback_failed=1
+          done
           if test "$old_media_moved" = 1; then
             mv "$safety/media" "$site_media" || rollback_failed=1
           else
@@ -1055,6 +1068,14 @@ def restore(
           fi
           test ! -f "$site_db" || chown "$owner" "$site_db" || rollback_failed=1
           chown -R "$owner" "$site_media" || rollback_failed=1
+          if test "$rollback_failed" != 0; then
+            # An incomplete previous set (say, a database without its WAL)
+            # must not start: the marker keeps the watchdog from starting it.
+            systemctl stop {restore_watchdog_unit}.timer {restore_watchdog_unit}.service 2>/dev/null || true
+            echo "rollback incomplete; services left stopped; previous set in $safety" >&2
+            exit 75
+          fi
+          rm -f "$marker"
           systemctl start {' '.join(shlex.quote(name) for name in service_names)} || rollback_failed=1
           for service in {' '.join(shlex.quote(name) for name in service_names)}; do
             systemctl is-active --quiet "$service" || rollback_failed=1
@@ -1062,12 +1083,20 @@ def restore(
           if test "$rollback_failed" != 0; then exit 1; fi
           exit "$failure_status"
         {close_brace}
+        touch "$marker"
         systemd-run --unit={restore_watchdog_unit} --on-active=10m \
-          /bin/systemctl start {' '.join(shlex.quote(name) for name in service_names)}
+          /bin/sh -c {shlex.quote('test -e ' + shlex.quote(remote_restore_safety + '/.inconsistent') + ' || /bin/systemctl start ' + ' '.join(shlex.quote(name) for name in service_names))}
         trap rollback_restore ERR
         systemctl stop {' '.join(shlex.quote(name) for name in service_names)}
-        rm -f "$site_db-wal" "$site_db-shm"
+        # The live database's WAL/SHM/journal hold or protect committed data:
+        # they go into the safety snapshot with it (and back on rollback).
         if test -f "$site_db"; then mv "$site_db" "$safety/db.sqlite3"; old_db_moved=1; fi
+        for suffix in -wal -shm -journal; do
+          if test -e "$site_db$suffix"; then
+            mv "$site_db$suffix" "$safety/db.sqlite3$suffix"
+            moved_sidecars="$moved_sidecars $suffix"
+          fi
+        done
         if test -d "$site_media"; then mv "$site_media" "$safety/media"; old_media_moved=1; fi
         mv "$stage_db" "$site_db"; new_db_installed=1
         mv "$stage_media" "$site_media"; new_media_installed=1
@@ -1076,6 +1105,8 @@ def restore(
         test "$(sqlite3 "$site_db" 'PRAGMA integrity_check;')" = ok
         runuser -u "$app_user" -- "$site_dir/.venv/bin/python" \
           "$site_dir/manage.py" migrate --noinput
+        # The restored set is complete: the watchdog may start it from here on.
+        rm -f "$marker"
         systemctl start {' '.join(shlex.quote(name) for name in service_names)}
         for service in {' '.join(shlex.quote(name) for name in service_names)}; do
           systemctl is-active --quiet "$service"
@@ -1096,10 +1127,23 @@ def restore(
             )
             recovery_proven = True
             emit_step("finalize_database", "success", "Restore verified; safety snapshot retained")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            emit_step("finalize_database", "failure", f"Restore rolled back: {e}")
-            emit_result(success=False, error=f"Restore rolled back: {e}")
-            finish_stdout("failure", "Restore failed and safety snapshot was restored")
+        except subprocess.CalledProcessError as e:
+            detail = (e.stderr or "").strip()[-2000:]
+            if e.returncode == 75:
+                message = f"Restore failed and the rollback is incomplete; services left stopped: {detail}"
+            elif e.returncode == 76:
+                message = f"Restore failed and the units could not be stopped; nothing rolled back: {detail}"
+            else:
+                message = f"Restore failed and was rolled back to the safety snapshot: {detail}"
+            emit_step("finalize_database", "failure", message)
+            emit_result(success=False, error=message)
+            finish_stdout("failure", message)
+            return 1
+        except subprocess.TimeoutExpired as e:
+            message = f"Restore did not finish in time; check the units and {remote_restore_safety}: {e}"
+            emit_step("finalize_database", "failure", message)
+            emit_result(success=False, error=message)
+            finish_stdout("failure", message)
             return 1
 
         # Mark restore as successful - result will be emitted after service restart
